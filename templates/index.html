@@ -240,11 +240,26 @@
 
     // Tickets table
     const tableHolder=document.getElementById('tickets-table'); document.getElementById('btn-refresh').onclick=loadTickets;
+    function formatSlaLine(label, minutesLeft, breached){
+      if(minutesLeft===null || minutesLeft===undefined) return '';
+      const mins=Math.round(minutesLeft);
+      let color='text-green-600';
+      if(breached){ color='text-red-600'; }
+      else if(mins<=15){ color='text-amber-600'; }
+      const text = mins>=0 ? `${label}: ${mins} min left` : `${label}: overdue by ${Math.abs(mins)} min`;
+      return `<div class="text-xs font-semibold ${color}">${text}</div>`;
+    }
+    function renderSla(t, showPlaceholder=true){
+      const resp=formatSlaLine('Response', t.sla_response_minutes_left, t.sla_response_breached);
+      const comp=formatSlaLine('Completion', t.sla_completion_minutes_left, t.sla_completion_breached);
+      const combined=`${resp||''}${comp||''}`;
+      return combined || (showPlaceholder?'—':'');
+    }
     async function loadTickets(){
       const res=await fetch('/api/tickets',{cache:'no-store'}); if(!res.ok){ tableHolder.innerHTML='<div class="text-sm text-slate-500">Требуется вход.</div>'; return; }
       const data=await res.json();
       let html=`<table class="min-w-full text-sm"><thead><tr class="text-left border-b">
-      <th class="py-2 px-2">№</th><th class="py-2 px-2">Объект</th><th class="py-2 px-2">Адрес</th><th class="py-2 px-2">Координаты</th><th class="py-2 px-2">Мастер</th><th class="py-2 px-2">Статус</th><th class="py-2 px-2">Файлы</th><th class="py-2 px-2">Действия</th>
+      <th class="py-2 px-2">№</th><th class="py-2 px-2">Объект</th><th class="py-2 px-2">Адрес</th><th class="py-2 px-2">Координаты</th><th class="py-2 px-2">Мастер</th><th class="py-2 px-2">Статус</th><th class="py-2 px-2">SLA</th><th class="py-2 px-2">Файлы</th><th class="py-2 px-2">Действия</th>
       </tr></thead><tbody>`;
       for(const t of data){
         const coords=`${t.lat.toFixed(6)}, ${t.lon.toFixed(6)}`;
@@ -253,6 +268,7 @@
         <td class="py-2 px-2">${t.object_name ?? ''}<div class="text-xs text-slate-500">${t.description ?? ''}</div></td>
         <td class="py-2 px-2">${t.address ?? ''}</td><td class="py-2 px-2"><button class="underline" onclick="openMap(${t.lat},${t.lon})">${coords}</button></td>
         <td class="py-2 px-2">${t.assigned_master_name ?? '—'}</td><td class="py-2 px-2"><span class="px-2 py-1 rounded-lg ring-1 ring-slate-200">${t.status}</span></td>
+        <td class="py-2 px-2">${renderSla(t)}</td>
         <td class="py-2 px-2">${files}</td>
         <td class="py-2 px-2"><div class="flex gap-2 items-center">
           <div id="reassign-select-${t.id}" class="flex gap-2">
@@ -327,9 +343,12 @@
       const res=await fetch('/api/tickets',{cache:'no-store'}); if(!res.ok) return; const data=await res.json();
       const cols=['NEW','ASSIGNED','IN_PROGRESS','COMPLETED','CANCELLED']; for(const c of cols) document.getElementById('col-'+c).innerHTML='';
       for(const t of data){
+        const slaInfo=renderSla(t,false);
+        const slaBlock = slaInfo ? `<div class="text-[11px] mt-1">${slaInfo}</div>` : '';
         const card=document.createElement('div'); card.className='p-3 rounded-xl ring-1 ring-slate-200 bg-white';
         card.innerHTML=`<div class="flex items-center justify-between"><div class="font-semibold">#${t.id} — ${t.object_name ?? ''}</div><div class="text-xs">${t.assigned_master_name ?? '—'}</div></div>
         <div class="text-xs text-slate-600 mt-1">${t.description ?? ''}</div>
+        ${slaBlock}
         <div class="text-[11px] text-slate-500 mt-2"><button class="underline" onclick="openMap(${t.lat},${t.lon})">${t.lat.toFixed(5)}, ${t.lon.toFixed(5)}</button></div>`;
         document.getElementById('col-'+t.status).appendChild(card);
       }
@@ -418,16 +437,22 @@
       for(const t of data){
         const elapsed = (typeof t.elapsed_ms === 'number') ? t.elapsed_ms : (now - (t.created_at?new Date(t.created_at).getTime():now));
         let barColor=t.status==='CANCELLED'?'bg-red-500':(t.status==='COMPLETED'?'bg-green-600':'bg-slate-900');
-        const twoH=2*3600*1000, fourH=4*3600*1000; let slaBadge='';
-        if((t.status==='NEW'||t.status==='ASSIGNED') && elapsed>twoH){ barColor='bg-red-500'; slaBadge=' <span class="text-red-600">• SLA</span>'; }
-        if(t.status==='IN_PROGRESS' && elapsed>fourH){ barColor='bg-red-500'; slaBadge=' <span class="text-red-600">• SLA</span>'; }
+        let slaBadge='';
+        const slaWindows = [t.sla_response_minutes_left, t.sla_completion_minutes_left]
+          .filter(v=>v!==null && v!==undefined)
+          .map(v=>Math.round(v));
+        const soonest = slaWindows.length ? Math.min(...slaWindows) : Infinity;
+        if(t.sla_response_breached || t.sla_completion_breached){ barColor='bg-red-500'; slaBadge=' <span class="text-red-600">• SLA breach</span>'; }
+        else if(Number.isFinite(soonest) && soonest<=15){ slaBadge=' <span class="text-amber-500">• SLA soon</span>'; }
         const pct=statusProgress(t.status);
+        const slaLine = renderSla(t,false);
         const card=document.createElement('div'); card.className='p-3 rounded-xl ring-1 ring-slate-200 bg-white';
         card.innerHTML=`<div class="flex items-center justify-between"><div class="font-semibold">#${t.id} — ${t.object_name ?? ''}</div>
         <div class="text-xs text-slate-600">${t.assigned_master_name ?? '—'} • ${t.status}${slaBadge}</div></div>
         <div class="text-xs text-slate-500 mt-1">${t.address ?? ''}</div>
         <div class="mt-2 w-full h-3 rounded-lg bg-slate-100 overflow-hidden"><div class="${barColor} h-3" style="width:${pct}%;"></div></div>
-        <div class="text-xs text-slate-600 mt-1">Прошло: <span data-elapsed="1">${fmtDuration(elapsed)}</span></div>`;
+        <div class="text-xs text-slate-600 mt-1">Прошло: <span data-elapsed="1">${fmtDuration(elapsed)}</span></div>
+        ${slaLine ? `<div class="text-[11px] mt-1">${slaLine}</div>` : ''}`;
         holder.appendChild(card);
       }
     }
@@ -480,7 +505,9 @@
       const res = await fetch('/api/metrics',{cache:'no-store'}); if(!res.ok) return; const m = await res.json();
       const ov = m.overall || {};
       function fmtSec(sec){ if(sec==null) return '—'; const s=Math.round(sec); const h=Math.floor(s/3600); const mi=Math.floor((s%3600)/60); const ss=s%60; const parts=[]; if(h) parts.push(h+'ч'); if(mi) parts.push(mi+'м'); if(!h&&!mi) parts.push(ss+'с'); return parts.join(' '); }
-      document.getElementById('metrics-overall').innerHTML = `Всего: ${ov.total||0}<br>NEW: ${ov.counts?.NEW||0} • ASSIGNED: ${ov.counts?.ASSIGNED||0} • IN_PROGRESS: ${ov.counts?.IN_PROGRESS||0} • COMPLETED: ${ov.counts?.COMPLETED||0} • CANCELLED: ${ov.counts?.CANCELLED||0}<br>Среднее закрытие: ${fmtSec(ov.avg_close_sec)} • Медиана: ${fmtSec(ov.median_close_sec)}`;
+      const respPct = (typeof m.response_sla_breach_percent==='number') ? m.response_sla_breach_percent.toFixed(1) : '0.0';
+      const compPct = (typeof m.completion_sla_breach_percent==='number') ? m.completion_sla_breach_percent.toFixed(1) : '0.0';
+      document.getElementById('metrics-overall').innerHTML = `Всего: ${ov.total||m.total_tickets||0}<br>NEW: ${ov.counts?.NEW||0} • ASSIGNED: ${ov.counts?.ASSIGNED||0} • IN_PROGRESS: ${ov.counts?.IN_PROGRESS||0} • COMPLETED: ${ov.counts?.COMPLETED||0} • CANCELLED: ${ov.counts?.CANCELLED||0}<br>Среднее закрытие: ${fmtSec(ov.avg_close_sec)} • Медиана: ${fmtSec(ov.median_close_sec)}<br>SLA ответ: ${respPct}% (${m.response_sla_breached_count||0}/${m.total_tickets||0}) • SLA завершение: ${compPct}% (${m.completion_sla_breached_count||0}/${m.total_tickets||0})`;
       const ms = m.masters || []; let html = '<table class="min-w-full text-sm"><thead><tr class="text-left border-b"><th class="py-2 px-2">#</th><th class="py-2 px-2">Мастер</th><th class="py-2 px-2">Закрыто (30д)</th><th class="py-2 px-2">Среднее</th><th class="py-2 px-2">Медиана</th></tr></thead><tbody>';
       ms.forEach((row, i) => { html += `<tr class="border-b"><td class="py-2 px-2">${i+1}</td><td class="py-2 px-2">${row.master_name}</td><td class="py-2 px-2">${row.count}</td><td class="py-2 px-2">${fmtSec(row.avg_sec)}</td><td class="py-2 px-2">${fmtSec(row.median_sec)}</td></tr>`; });
       html += '</tbody></table>'; document.getElementById('metrics-masters').innerHTML = html;

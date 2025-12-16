@@ -1,11 +1,58 @@
 from sqlalchemy import func  # re-exported for service usage
 
+from datetime import datetime, timedelta, timezone
+
+from .. import config
 from ..db import Ticket
 from ..utils.time import to_utc
-from datetime import datetime, timezone
+
+
+def compute_sla_fields(t: Ticket):
+    created = to_utc(t.created_at)
+    now = datetime.now(timezone.utc)
+    if not created:
+        return {
+            "sla_response_deadline": None,
+            "sla_completion_deadline": None,
+            "sla_response_breached": False,
+            "sla_completion_breached": False,
+            "sla_response_minutes_left": None,
+            "sla_completion_minutes_left": None,
+        }
+
+    response_deadline = created + timedelta(minutes=config.SLA_RESPONSE_MINUTES)
+    completion_deadline = created + timedelta(minutes=config.SLA_COMPLETION_MINUTES)
+
+    arrived = to_utc(t.arrived_at)
+    completed = to_utc(t.completed_at)
+
+    response_breached = False
+    if arrived:
+        response_breached = arrived > response_deadline
+    else:
+        response_breached = now > response_deadline
+
+    completion_breached = False
+    if completed:
+        completion_breached = completed > completion_deadline
+    else:
+        completion_breached = now > completion_deadline
+
+    response_left = int((response_deadline - now).total_seconds() // 60)
+    completion_left = int((completion_deadline - now).total_seconds() // 60)
+
+    return {
+        "sla_response_deadline": response_deadline.isoformat(),
+        "sla_completion_deadline": completion_deadline.isoformat(),
+        "sla_response_breached": bool(response_breached),
+        "sla_completion_breached": bool(completion_breached),
+        "sla_response_minutes_left": response_left,
+        "sla_completion_minutes_left": completion_left,
+    }
 
 
 def serialize_ticket(t: Ticket):
+    sla = compute_sla_fields(t)
     return {
         "id": t.id,
         "object_name": t.object_name,
@@ -29,4 +76,5 @@ def serialize_ticket(t: Ticket):
         "elapsed_ms": (
             int(((datetime.now(timezone.utc) - to_utc(t.created_at)).total_seconds()) * 1000) if t.created_at else 0
         ),
+        **sla,
     }

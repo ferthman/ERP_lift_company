@@ -380,6 +380,12 @@ def metrics():
 
     with SessionLocal() as db:
         tickets = db.query(Ticket).filter(Ticket.archived_at.is_(None)).all()
+        sla_infos = [repository.compute_sla_fields(t) for t in tickets]
+        response_breaches = [info.get("sla_response_breached") for info in sla_infos]
+        completion_breaches = [info.get("sla_completion_breached") for info in sla_infos]
+        total_tickets = len(tickets)
+        resp_breach_count = sum(1 for x in response_breaches if x)
+        comp_breach_count = sum(1 for x in completion_breaches if x)
         counts = {"NEW": 0, "ASSIGNED": 0, "IN_PROGRESS": 0, "COMPLETED": 0, "CANCELLED": 0}
         for t in tickets:
             counts[t.status] = counts.get(t.status, 0) + 1
@@ -412,7 +418,17 @@ def metrics():
                     "median_close_sec": (median(mdurs) if mdurs else None),
                 }
             )
-        return jsonify({"overall": overall, "masters": masters_data})
+        return jsonify(
+            {
+                "overall": overall,
+                "masters": masters_data,
+                "total_tickets": total_tickets,
+                "response_sla_breached_count": resp_breach_count,
+                "completion_sla_breached_count": comp_breach_count,
+                "response_sla_breach_percent": (resp_breach_count / total_tickets * 100) if total_tickets else 0,
+                "completion_sla_breach_percent": (comp_breach_count / total_tickets * 100) if total_tickets else 0,
+            }
+        )
 
 
 @bp.get("/api/archive")
@@ -441,11 +457,14 @@ def download_archive():
             "arrived_at",
             "completed_at",
             "archived_at",
+            "sla_response_breached",
+            "sla_completion_breached",
         ]
     )
     with SessionLocal() as db:
         tickets = db.query(Ticket).order_by(Ticket.id).all()
         for t in tickets:
+            sla = repository.compute_sla_fields(t)
             ws.append(
                 [
                     t.id,
@@ -463,6 +482,8 @@ def download_archive():
                     t.arrived_at.isoformat() if t.arrived_at else None,
                     t.completed_at.isoformat() if t.completed_at else None,
                     t.archived_at.isoformat() if t.archived_at else None,
+                    sla.get("sla_response_breached"),
+                    sla.get("sla_completion_breached"),
                 ]
             )
     try:

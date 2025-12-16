@@ -100,6 +100,8 @@ def archive_ticket(ticket: Ticket, archive_path: str):
         "arrived_at",
         "completed_at",
         "archived_at",
+        "sla_response_breached",
+        "sla_completion_breached",
     ]
     try:
         from openpyxl import Workbook, load_workbook
@@ -109,8 +111,9 @@ def archive_ticket(ticket: Ticket, archive_path: str):
             ws = wb.active
             ws.append(header)
             wb.save(archive_path)
-        wb = load_workbook(archive_path)
+            wb = load_workbook(archive_path)
         ws = wb.active
+        sla = repository.compute_sla_fields(ticket)
         row_data = [
             ticket.id,
             ticket.object_name,
@@ -127,6 +130,8 @@ def archive_ticket(ticket: Ticket, archive_path: str):
             ticket.arrived_at.isoformat() if ticket.arrived_at else None,
             ticket.completed_at.isoformat() if ticket.completed_at else None,
             ticket.archived_at.isoformat() if ticket.archived_at else None,
+            sla.get("sla_response_breached"),
+            sla.get("sla_completion_breached"),
         ]
         ws.append(row_data)
         wb.save(archive_path)
