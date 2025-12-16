@@ -44,6 +44,7 @@ class Ticket(Base):
     lon = Column(Float, nullable=False)
     description = Column(String, nullable=True)
     status = Column(String, default="NEW")
+    priority = Column(String, default="MEDIUM")
     assigned_master_id = Column(Integer, ForeignKey("masters.id"), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(
@@ -118,6 +119,9 @@ def ensure_migrations():
             conn.commit()
         cur.execute("PRAGMA table_info(tickets)")
         tcols = [r[1] for r in cur.fetchall()]
+        if "priority" not in tcols:
+            cur.execute("ALTER TABLE tickets ADD COLUMN priority TEXT DEFAULT 'MEDIUM'")
+            conn.commit()
         if "email" not in tcols:
             cur.execute("ALTER TABLE tickets ADD COLUMN email TEXT")
             conn.commit()

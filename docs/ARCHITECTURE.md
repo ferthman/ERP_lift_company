@@ -21,7 +21,7 @@
 - `/templates/index.html` — единственный HTML; UI логика, запросы к API, отрисовка таблиц/канбан/карт, формы, загрузки файлов.【F:templates/index.html†L1-L540】
 - `/static/` — PWA манифест и иконки; сервис-воркер `sw.js`.【F:static/manifest.webmanifest†L1-L19】
 - `/objects/objects.xlsx` / `/objects/objects.json` — источники данных для карты объектов; автогенерация при первом запуске.【F:liftcrm/__init__.py†L46-L93】
-- `/archive.xlsx` — итоговый экспорт и накопительный архив удалённых заявок.【F:liftcrm/tickets/service.py†L39-L97】【F:liftcrm/tickets/routes.py†L390-L421】
+- `/archive.xlsx` — итоговый экспорт и накопительный архив удалённых заявок; содержит колонку `priority` для фиксации важности тикетов.【F:liftcrm/tickets/service.py†L39-L97】【F:liftcrm/tickets/routes.py†L390-L421】
 - `/vendor/openpyxl` — встроенная копия openpyxl для оффлайн-окружений (подхватывается через sys.path).【F:liftcrm/__init__.py†L7-L20】
 - `/uploads/` — создаётся при первом запросе; хранение загруженных фото вложений для заявок.【F:liftcrm/__init__.py†L33-L44】【F:liftcrm/tickets/routes.py†L259-L282】
 - `/requirements.txt` — зависимости Python (Flask, SQLAlchemy, Flask-Login/CORS, Pillow, pandas, openpyxl).【F:requirements.txt†L1-L8】
@@ -29,7 +29,7 @@
 ## Основные модели и роли
 - `User`: username, password_hash, role (`admin|dispatcher|master`), связь `master_id`.【F:liftcrm/db.py†L27-L43】
 - `Master`: справочник мастеров, флаг `is_active`.【F:liftcrm/db.py†L11-L24】
-- `Ticket`: заявка со статусами `NEW/ASSIGNED/IN_PROGRESS/COMPLETED/CANCELLED`, координатами, временами прибытия/завершения, e-mail клиента, гео факты прибытия/завершения, вложения, **close_reason** (обязателен при завершении, хранит причину закрытия из фиксированного списка).【F:liftcrm/db.py†L46-L75】【F:liftcrm/tickets/routes.py†L188-L209】
+- `Ticket`: заявка со статусами `NEW/ASSIGNED/IN_PROGRESS/COMPLETED/CANCELLED`, координатами, временами прибытия/завершения, e-mail клиента, гео факты прибытия/завершения, вложения, полем **priority** (`HIGH|MEDIUM|LOW`, дефолт MEDIUM) и **close_reason** (обязателен при завершении, из фиксированного списка).【F:liftcrm/db.py†L46-L77】【F:liftcrm/tickets/routes.py†L183-L236】
 - `Attachment`: файл, связанный с заявкой, лежит в `uploads/`.【F:liftcrm/db.py†L76-L84】
 
 ### Связка Users ↔ Masters
@@ -58,7 +58,7 @@
 - Конфиги SLA в минутах: `SLA_RESPONSE_MINUTES` (по умолчанию 30) и `SLA_COMPLETION_MINUTES` (по умолчанию 120) в `liftcrm/config.py`.
 - Дедлайны рассчитываются на лету: `created_at + SLA_RESPONSE_MINUTES` и `created_at + SLA_COMPLETION_MINUTES`; в сериализации тикета добавлены поля с дедлайнами, флагами нарушения и оставшимися минутами (могут быть отрицательными).【F:liftcrm/tickets/repository.py†L1-L68】
 - Нарушение фиксируется как по факту (arrived/completed позже дедлайна), так и для открытых заявок, если текущее время вышло за пределы SLA. Экспорт `archive.xlsx` включает флаги нарушений; метрики `/api/metrics` дополнены счётчиками/процентами нарушений, UI их визуализирует в таблице, канбане и дашборде.【F:liftcrm/tickets/routes.py†L142-L212】【F:liftcrm/tickets/routes.py†L390-L466】【F:templates/index.html†L240-L341】【F:templates/index.html†L520-L567】
-- Метрики `/api/metrics` дополнительно выдают `tickets_by_close_reason` и `sla_breaches_by_reason` для аналитики причин закрытия в UI/архивах.【F:liftcrm/tickets/routes.py†L212-L242】【F:templates/index.html†L531-L548】
+- Метрики `/api/metrics` дополнительно выдают `tickets_by_close_reason`, `sla_breaches_by_reason` и `tickets_by_priority` для аналитики причин/важности в UI/архивах.【F:liftcrm/tickets/routes.py†L212-L242】【F:templates/index.html†L531-L548】
 
 ## Existing behaviors (frozen)
 - Автоназанчение: используется только активные мастера; метрика нагрузки — количество открытых заявок в статусах `NEW/ASSIGNED/IN_PROGRESS`, выбирается минимальная нагрузка (и минимальный id как тайбрейк).【F:liftcrm/tickets/service.py†L15-L38】
@@ -74,23 +74,26 @@
 UI: `loadTickets()` → `GET /api/tickets` (auth required) → SQLAlchemy выборка всех Ticket → сериализация (мастер, статусы, вложения, тайминги) → JSON → отрисовка таблицы и канбана.【F:app.py†L223-L262】【F:templates/index.html†L255-L334】
 
 ### 3) Создание заявки
-UI форма → `POST /api/tickets` (admin/dispatcher) c `object_name`, `lat`, `lon`, опционально `address/description/email` → сервер создаёт Ticket, автоназначает активного мастера (балансировка) → статус `ASSIGNED|NEW` → ответ id/assigned/status → UI обновляет список/канбан.【F:app.py†L264-L312】【F:templates/index.html†L232-L251】
+UI форма с дропдауном приоритета (`HIGH|MEDIUM|LOW`, дефолт MEDIUM) → `POST /api/tickets` (admin/dispatcher) c `object_name`, `lat`, `lon`, опционально `address/description/email/priority` → сервер создаёт Ticket, автоназначает активного мастера (балансировка) → статус `ASSIGNED|NEW` → ответ id/assigned/status → UI обновляет список/канбан.【F:liftcrm/tickets/routes.py†L174-L202】【F:templates/index.html†L33-L69】【F:templates/index.html†L232-L251】
 
-### 4) Назначение мастера (ручное)
+### 4) Изменение приоритета
+Админ/диспетчер могут изменить приоритет заявки через `PATCH /api/tickets/{id}` c JSON `{ "priority": "HIGH|MEDIUM|LOW" }`; поле доступно из таблицы заявок (select рядом с бейджем).【F:liftcrm/tickets/routes.py†L204-L236】【F:templates/index.html†L285-L334】
+
+### 5) Назначение мастера (ручное)
 UI `showReassign()` выбирает master → `POST /api/tickets/{id}/assign/{master_id}` (admin/dispatcher) → проверка активности мастера → обновление `assigned_master_id`, статус `ASSIGNED` если нужно → JSON подтверждение → UI перерисовывает списки.【F:app.py†L618-L639】【F:templates/index.html†L308-L334】
 
-### 5) Обновление статуса мастером
+### 6) Обновление статуса мастером
 - **Прибыл:** мастерский UI → геолокация → `POST /api/tickets/{id}/arrive` (role master) → проверка владельца, геозона 500 м (haversine) → статус `IN_PROGRESS`, `arrived_at`, координаты прибытия → JSON.【F:app.py†L370-L405】【F:templates/index.html†L349-L419】
 - **Завершил:** мастерский UI → выбор причины закрытия (dropdown, без неё кнопка блокируется) → геолокация → `POST /api/tickets/{id}/complete` (role master) → проверки аналогичны → статус `COMPLETED`, `completed_at`, координаты завершения, `close_reason` из разрешённого списка → попытка `send_report()` по email → JSON.【F:liftcrm/tickets/routes.py†L184-L214】【F:templates/index.html†L373-L421】
 
-### 6) Отмена / удаление и архив
+### 7) Отмена / удаление и архив
 - **Отмена:** `POST /api/tickets/{id}/cancel` (admin/dispatcher) → статус `CANCELLED` → ответ.【F:app.py†L326-L338】【F:templates/index.html†L287-L299】
 - **Удаление:** `DELETE /api/tickets/{id}` (admin/dispatcher) → `archive_ticket()` пишет строку в `archive.xlsx` (и копию `archive_N.xlsx`), удаляет вложения с диска → удаляет Ticket → ответ. Экспортируемый архив содержит колонку `close_reason` для аналитики причин закрытия.【F:liftcrm/tickets/service.py†L39-L83】【F:liftcrm/tickets/routes.py†L390-L433】
 
-### 7) Скачивание архива
+### 8) Скачивание архива
 UI кнопка → `GET /api/archive` (admin/dispatcher) → в рантайме создаётся новый `archive.xlsx` со всеми текущими заявками через openpyxl → send_from_directory с attachment.【F:app.py†L667-L693】【F:templates/index.html†L464-L472】
 
-### 8) Загрузка объектов для карты
+### 9) Загрузка объектов для карты
 `GET /api/objects` (auth) → приоритет чтения `objects.xlsx` через openpyxl, fallback `objects.json` → фильтрация координат → JSON → фронт строит Leaflet circleMarker и fitBounds.【F:app.py†L695-L771】【F:templates/index.html†L431-L463】
 
 ## Технический долг и риски
