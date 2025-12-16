@@ -53,6 +53,7 @@ class Ticket(Base):
     )
     arrived_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
+    archived_at = Column(DateTime, nullable=True)
     arrival_lat = Column(Float, nullable=True)
     arrival_lon = Column(Float, nullable=True)
     completion_lat = Column(Float, nullable=True)
@@ -118,6 +119,9 @@ def ensure_migrations():
         tcols = [r[1] for r in cur.fetchall()]
         if "email" not in tcols:
             cur.execute("ALTER TABLE tickets ADD COLUMN email TEXT")
+            conn.commit()
+        if "archived_at" not in tcols:
+            cur.execute("ALTER TABLE tickets ADD COLUMN archived_at DATETIME")
             conn.commit()
         conn.close()
     except Exception as e:

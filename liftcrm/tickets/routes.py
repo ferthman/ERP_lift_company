@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, jsonify, request, send_from_directory
 from flask_login import login_required, current_user
 
-from .service import auto_assign_master, haversine_m, send_report, archive_ticket
+from .service import auto_assign_master, haversine_m, send_report
 from . import repository
 from ..db import SessionLocal, Master, Ticket, Attachment, User
 from ..utils.security import role_required
@@ -67,11 +67,23 @@ def delete_master(master_id):
         if not others:
             return jsonify({"error": "Нельзя удалить единственного активного мастера"}), 400
         open_statuses = ["NEW", "ASSIGNED", "IN_PROGRESS"]
-        open_tickets = db.query(Ticket).filter(Ticket.assigned_master_id == master_id, Ticket.status.in_(open_statuses)).all()
+        open_tickets = (
+            db.query(Ticket)
+            .filter(
+                Ticket.assigned_master_id == master_id,
+                Ticket.status.in_(open_statuses),
+                Ticket.archived_at.is_(None),
+            )
+            .all()
+        )
         counts = {x.id: 0 for x in others}
         rows = (
             db.query(Ticket.assigned_master_id, repository.func.count(Ticket.id))
-            .filter(Ticket.status.in_(open_statuses), Ticket.assigned_master_id.in_([x.id for x in others]))
+            .filter(
+                Ticket.status.in_(open_statuses),
+                Ticket.assigned_master_id.in_([x.id for x in others]),
+                Ticket.archived_at.is_(None),
+            )
             .group_by(Ticket.assigned_master_id)
             .all()
         )
@@ -105,11 +117,23 @@ def toggle_master_active(master_id):
             if not others:
                 return jsonify({"error": "Нет других активных мастеров для перераспределения"}), 400
             open_statuses = ["NEW", "ASSIGNED", "IN_PROGRESS"]
-            open_tickets = db.query(Ticket).filter(Ticket.assigned_master_id == master_id, Ticket.status.in_(open_statuses)).all()
+            open_tickets = (
+                db.query(Ticket)
+                .filter(
+                    Ticket.assigned_master_id == master_id,
+                    Ticket.status.in_(open_statuses),
+                    Ticket.archived_at.is_(None),
+                )
+                .all()
+            )
             counts = {x.id: 0 for x in others}
             rows = (
                 db.query(Ticket.assigned_master_id, repository.func.count(Ticket.id))
-                .filter(Ticket.status.in_(open_statuses), Ticket.assigned_master_id.in_([x.id for x in others]))
+                .filter(
+                    Ticket.status.in_(open_statuses),
+                    Ticket.assigned_master_id.in_([x.id for x in others]),
+                    Ticket.archived_at.is_(None),
+                )
                 .group_by(Ticket.assigned_master_id)
                 .all()
             )
@@ -129,8 +153,12 @@ def toggle_master_active(master_id):
 @bp.get("/api/tickets")
 @login_required
 def list_tickets():
+    include_archived = request.args.get("include_archived") in {"1", "true", "True"}
     with SessionLocal() as db:
-        tickets = db.query(Ticket).order_by(Ticket.created_at.desc()).all()
+        query = db.query(Ticket).order_by(Ticket.created_at.desc())
+        if not include_archived:
+            query = query.filter(Ticket.archived_at.is_(None))
+        tickets = query.all()
         return jsonify([repository.serialize_ticket(t) for t in tickets])
 
 
@@ -168,6 +196,8 @@ def reassign_ticket(ticket_id):
         t = db.get(Ticket, ticket_id)
         if not t:
             return jsonify({"error": "Ticket not found"}), 404
+        if t.archived_at:
+            return jsonify({"error": "Ticket archived"}), 400
         m = auto_assign_master(db)
         if not m:
             return jsonify({"error": "No active masters available"}), 400
@@ -186,6 +216,8 @@ def cancel_ticket(ticket_id):
         t = db.get(Ticket, ticket_id)
         if not t:
             return jsonify({"error": "Ticket not found"}), 404
+        if t.archived_at:
+            return jsonify({"error": "Ticket archived"}), 400
         if t.status in ["COMPLETED", "CANCELLED"]:
             return jsonify({"error": "Ticket already finalized"}), 400
         t.status = "CANCELLED"
@@ -215,6 +247,8 @@ def arrive_ticket(ticket_id):
         t = db.get(Ticket, ticket_id)
         if not t:
             return jsonify({"error": "Ticket not found"}), 404
+        if t.archived_at:
+            return jsonify({"error": "Ticket archived"}), 400
         if t.assigned_master_id != current_user.master_id:
             return jsonify({"error": "Ticket not assigned to you"}), 403
         if lat is None or lon is None:
@@ -242,6 +276,8 @@ def complete_ticket(ticket_id):
         t = db.get(Ticket, ticket_id)
         if not t:
             return jsonify({"error": "Ticket not found"}), 404
+        if t.archived_at:
+            return jsonify({"error": "Ticket archived"}), 400
         if t.assigned_master_id != current_user.master_id:
             return jsonify({"error": "Ticket not assigned to you"}), 403
         if lat is None or lon is None:
@@ -271,6 +307,8 @@ def upload_file(ticket_id):
         t = db.get(Ticket, ticket_id)
         if not t:
             return jsonify({"error": "Ticket not found"}), 404
+        if t.archived_at:
+            return jsonify({"error": "Ticket archived"}), 400
         if current_user.role == "master" and t.assigned_master_id != current_user.master_id:
             return jsonify({"error": "Ticket not assigned to you"}), 403
     if "file" not in request.files:
@@ -305,6 +343,8 @@ def assign_ticket(ticket_id, master_id):
         t = db.get(Ticket, ticket_id)
         if not t:
             return jsonify({"error": "Ticket not found"}), 404
+        if t.archived_at:
+            return jsonify({"error": "Ticket archived"}), 400
         m = db.get(Master, master_id)
         if not m:
             return jsonify({"error": "Master not found"}), 404
@@ -321,24 +361,15 @@ def assign_ticket(ticket_id, master_id):
 @login_required
 @role_required("admin", "dispatcher")
 def delete_ticket(ticket_id):
-    from flask import current_app
-
     with SessionLocal() as db:
         t = db.get(Ticket, ticket_id)
         if not t:
             return jsonify({"error": "Ticket not found"}), 404
-        try:
-            archive_ticket(t, config.ARCHIVE_PATH)
-        except Exception as e:
-            print("Archive failed:", e)
-        for a in list(t.attachments):
-            try:
-                os.remove(os.path.join(current_app.config["UPLOAD_FOLDER"], a.filename))
-            except Exception:
-                pass
-        db.delete(t)
+        if t.archived_at:
+            return jsonify({"error": "Ticket already archived"}), 400
+        t.archived_at = datetime.now(timezone.utc)
         db.commit()
-        return jsonify({"message": "Deleted"})
+        return jsonify({"message": "Deleted", "archived_at": t.archived_at.isoformat()})
 
 
 @bp.get("/api/metrics")
@@ -348,7 +379,7 @@ def metrics():
     from statistics import median
 
     with SessionLocal() as db:
-        tickets = db.query(Ticket).all()
+        tickets = db.query(Ticket).filter(Ticket.archived_at.is_(None)).all()
         counts = {"NEW": 0, "ASSIGNED": 0, "IN_PROGRESS": 0, "COMPLETED": 0, "CANCELLED": 0}
         for t in tickets:
             counts[t.status] = counts.get(t.status, 0) + 1
@@ -409,6 +440,7 @@ def download_archive():
             "updated_at",
             "arrived_at",
             "completed_at",
+            "archived_at",
         ]
     )
     with SessionLocal() as db:
@@ -430,6 +462,7 @@ def download_archive():
                     t.updated_at.isoformat() if t.updated_at else None,
                     t.arrived_at.isoformat() if t.arrived_at else None,
                     t.completed_at.isoformat() if t.completed_at else None,
+                    t.archived_at.isoformat() if t.archived_at else None,
                 ]
             )
     try:

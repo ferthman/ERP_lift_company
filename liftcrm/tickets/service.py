@@ -28,7 +28,11 @@ def auto_assign_master(db):
     if active:
         rows = (
             db.query(Ticket.assigned_master_id, repository.func.count(Ticket.id))
-            .filter(Ticket.status.in_(open_statuses), Ticket.assigned_master_id.in_([m.id for m in active]))
+            .filter(
+                Ticket.status.in_(open_statuses),
+                Ticket.assigned_master_id.in_([m.id for m in active]),
+                Ticket.archived_at.is_(None),
+            )
             .group_by(Ticket.assigned_master_id)
             .all()
         )
@@ -95,6 +99,7 @@ def archive_ticket(ticket: Ticket, archive_path: str):
         "updated_at",
         "arrived_at",
         "completed_at",
+        "archived_at",
     ]
     try:
         from openpyxl import Workbook, load_workbook
@@ -121,6 +126,7 @@ def archive_ticket(ticket: Ticket, archive_path: str):
             ticket.updated_at.isoformat() if ticket.updated_at else None,
             ticket.arrived_at.isoformat() if ticket.arrived_at else None,
             ticket.completed_at.isoformat() if ticket.completed_at else None,
+            ticket.archived_at.isoformat() if ticket.archived_at else None,
         ]
         ws.append(row_data)
         wb.save(archive_path)

@@ -100,6 +100,7 @@ def create_app():
                         "updated_at",
                         "arrived_at",
                         "completed_at",
+                        "archived_at",
                     ]
                 )
                 wb.save(archive_path)
