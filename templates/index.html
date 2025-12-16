@@ -166,6 +166,14 @@
       UNSPECIFIED: 'Не указана',
     };
 
+    function extractErrorMessage(data, fallback = 'Ошибка') {
+      if (!data) return fallback;
+      if (typeof data === 'string') return data;
+      if (typeof data.error === 'string') return data.error;
+      if (data.error && typeof data.error.message === 'string') return data.error.message;
+      return fallback;
+    }
+
     const tabAdmin = document.getElementById('tab-admin');
     const tabOps = document.getElementById('tab-ops');
     const tabTech = document.getElementById('tab-tech');
@@ -415,8 +423,16 @@
           navigator.geolocation.getCurrentPosition(async(pos)=>{
             const payload={lat:pos.coords.latitude, lon:pos.coords.longitude};
             if(action==='complete') payload.close_reason = closeReason;
-            const res=await fetch(`/api/tickets/${id}/${action}`,{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
-            const data=await res.json(); if(!res.ok){ msg.textContent=data.error||'Ошибка'; return; }
+            let res;
+            let data;
+            try{
+              res = await fetch(`/api/tickets/${id}/${action}`,{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+              data = await res.json();
+            }catch(err){
+              msg.textContent = 'Ошибка: ' + (err?.message || 'Не удалось обработать ответ.');
+              return;
+            }
+            if(!res.ok){ msg.textContent=extractErrorMessage(data,'Ошибка'); return; }
             msg.textContent=`${data.message} • дистанция: ${data.distance_m} м • статус: ${data.status}`;
             await loadTickets(); await loadKanban(); await loadMyTickets();
           }, err=>{ msg.textContent='Не удалось получить геолокацию: '+err.message; }, {enableHighAccuracy:true, timeout:10000});
