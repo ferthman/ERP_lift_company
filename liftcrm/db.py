@@ -58,6 +58,7 @@ class Ticket(Base):
     arrival_lon = Column(Float, nullable=True)
     completion_lat = Column(Float, nullable=True)
     completion_lon = Column(Float, nullable=True)
+    close_reason = Column(String, nullable=True)
     assigned_master = relationship("Master", back_populates="tickets")
     attachments = relationship("Attachment", back_populates="ticket", cascade="all, delete-orphan")
     email = Column(String, nullable=True)
@@ -122,6 +123,9 @@ def ensure_migrations():
             conn.commit()
         if "archived_at" not in tcols:
             cur.execute("ALTER TABLE tickets ADD COLUMN archived_at DATETIME")
+            conn.commit()
+        if "close_reason" not in tcols:
+            cur.execute("ALTER TABLE tickets ADD COLUMN close_reason TEXT")
             conn.commit()
         conn.close()
     except Exception as e:

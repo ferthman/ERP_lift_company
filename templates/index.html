@@ -118,6 +118,8 @@
           <div id="dashboard" class="space-y-2"></div>
           <div class="mt-6 grid md:grid-cols-3 gap-3">
             <div class="bg-white rounded-2xl shadow p-4"><h3 class="font-semibold mb-2 text-sm">Итоги</h3><div id="metrics-overall" class="text-sm text-slate-700">—</div></div>
+            <div class="bg-white rounded-2xl shadow p-4"><h3 class="font-semibold mb-2 text-sm">Причины закрытия</h3><div id="metrics-close-reasons" class="text-sm text-slate-700">—</div></div>
+            <div class="bg-white rounded-2xl shadow p-4"><h3 class="font-semibold mb-2 text-sm">SLA по причинам</h3><div id="metrics-sla-reasons" class="text-sm text-slate-700">—</div></div>
             <div class="md:col-span-2 bg-white rounded-2xl shadow p-4"><h3 class="font-semibold mb-2 text-sm">Топ мастеров (30 дней)</h3><div id="metrics-masters" class="text-sm overflow-x-auto">—</div></div>
           </div>
         </div>
@@ -153,6 +155,16 @@
   <script>
     const API = location.origin;
     let me = null;
+    const CLOSE_REASONS = ["EQUIPMENT_FAILURE", "PASSENGER_TRAPPED", "FALSE_CALL", "POWER_ISSUE", "EXTERNAL_REASON", "OTHER"];
+    const CLOSE_REASON_LABELS = {
+      EQUIPMENT_FAILURE: 'Неисправность оборудования',
+      PASSENGER_TRAPPED: 'Застрявший пассажир',
+      FALSE_CALL: 'Ложный вызов',
+      POWER_ISSUE: 'Проблема с питанием',
+      EXTERNAL_REASON: 'Внешняя причина',
+      OTHER: 'Другое',
+      UNSPECIFIED: 'Не указана',
+    };
 
     const tabAdmin = document.getElementById('tab-admin');
     const tabOps = document.getElementById('tab-ops');
@@ -255,11 +267,15 @@
       const combined=`${resp||''}${comp||''}`;
       return combined || (showPlaceholder?'—':'');
     }
+    function formatCloseReason(code){
+      if(!code) return '—';
+      return CLOSE_REASON_LABELS[code] || code;
+    }
     async function loadTickets(){
       const res=await fetch('/api/tickets',{cache:'no-store'}); if(!res.ok){ tableHolder.innerHTML='<div class="text-sm text-slate-500">Требуется вход.</div>'; return; }
       const data=await res.json();
       let html=`<table class="min-w-full text-sm"><thead><tr class="text-left border-b">
-      <th class="py-2 px-2">№</th><th class="py-2 px-2">Объект</th><th class="py-2 px-2">Адрес</th><th class="py-2 px-2">Координаты</th><th class="py-2 px-2">Мастер</th><th class="py-2 px-2">Статус</th><th class="py-2 px-2">SLA</th><th class="py-2 px-2">Файлы</th><th class="py-2 px-2">Действия</th>
+      <th class="py-2 px-2">№</th><th class="py-2 px-2">Объект</th><th class="py-2 px-2">Адрес</th><th class="py-2 px-2">Координаты</th><th class="py-2 px-2">Мастер</th><th class="py-2 px-2">Статус</th><th class="py-2 px-2">Причина закрытия</th><th class="py-2 px-2">SLA</th><th class="py-2 px-2">Файлы</th><th class="py-2 px-2">Действия</th>
       </tr></thead><tbody>`;
       for(const t of data){
         const coords=`${t.lat.toFixed(6)}, ${t.lon.toFixed(6)}`;
@@ -268,6 +284,7 @@
         <td class="py-2 px-2">${t.object_name ?? ''}<div class="text-xs text-slate-500">${t.description ?? ''}</div></td>
         <td class="py-2 px-2">${t.address ?? ''}</td><td class="py-2 px-2"><button class="underline" onclick="openMap(${t.lat},${t.lon})">${coords}</button></td>
         <td class="py-2 px-2">${t.assigned_master_name ?? '—'}</td><td class="py-2 px-2"><span class="px-2 py-1 rounded-lg ring-1 ring-slate-200">${t.status}</span></td>
+        <td class="py-2 px-2">${formatCloseReason(t.close_reason)}</td>
         <td class="py-2 px-2">${renderSla(t)}</td>
         <td class="py-2 px-2">${files}</td>
         <td class="py-2 px-2"><div class="flex gap-2 items-center">
@@ -345,10 +362,11 @@
       for(const t of data){
         const slaInfo=renderSla(t,false);
         const slaBlock = slaInfo ? `<div class="text-[11px] mt-1">${slaInfo}</div>` : '';
+        const reasonLine = t.close_reason ? `<div class="text-[11px] text-slate-600 mt-1">Причина: ${formatCloseReason(t.close_reason)}</div>` : '';
         const card=document.createElement('div'); card.className='p-3 rounded-xl ring-1 ring-slate-200 bg-white';
         card.innerHTML=`<div class="flex items-center justify-between"><div class="font-semibold">#${t.id} — ${t.object_name ?? ''}</div><div class="text-xs">${t.assigned_master_name ?? '—'}</div></div>
         <div class="text-xs text-slate-600 mt-1">${t.description ?? ''}</div>
-        ${slaBlock}
+        ${reasonLine}${slaBlock}
         <div class="text-[11px] text-slate-500 mt-2"><button class="underline" onclick="openMap(${t.lat},${t.lon})">${t.lat.toFixed(5)}, ${t.lon.toFixed(5)}</button></div>`;
         document.getElementById('col-'+t.status).appendChild(card);
       }
@@ -366,6 +384,13 @@
         card.innerHTML=`<div class="flex items-center justify-between"><div class="font-semibold">#${t.id} — ${t.object_name}</div><span class="text-xs px-2 py-1 rounded-lg ring-1 ring-slate-200">${t.status}</span></div>
         <div class="text-sm">${t.address ?? ''}</div><div class="text-xs text-slate-600">${t.description ?? ''}</div>
         <div class="text-xs text-slate-500 mt-1">Координаты: <button class="underline" onclick="openMap(${t.lat},${t.lon})">${t.lat.toFixed(6)}, ${t.lon.toFixed(6)}</button></div>
+        <div class="flex items-center gap-2 mt-3">
+          <label for="close-reason-${t.id}" class="text-xs text-slate-600">Причина:</label>
+          <select data-reason="${t.id}" id="close-reason-${t.id}" class="px-2 py-1 rounded-lg ring-1 ring-slate-200 text-xs">
+            <option value="">Выберите причину</option>
+            ${CLOSE_REASONS.map(r=>`<option value="${r}">${formatCloseReason(r)}</option>`).join('')}
+          </select>
+        </div>
         <div class="flex gap-2 mt-3">
           <button class="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm" data-id="${t.id}" data-action="arrive">Приехал</button>
           <button class="px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm" data-id="${t.id}" data-action="complete">Завершить</button>
@@ -379,10 +404,17 @@
       holder.querySelectorAll('button[data-action]').forEach(btn=>{
         btn.onclick=async()=>{
           const action=btn.getAttribute('data-action'); const id=btn.getAttribute('data-id'); const msg=document.getElementById('msg-'+id);
+          let closeReason = null;
+          if(action==='complete'){
+            const select=holder.querySelector(`select[data-reason="${id}"]`);
+            closeReason = select?.value || '';
+            if(!closeReason){ msg.textContent='Выберите причину закрытия перед завершением.'; return; }
+          }
           if(!navigator.geolocation){ msg.textContent='Геолокация не поддерживается.'; return; }
           msg.textContent='Проверяю геозону...';
           navigator.geolocation.getCurrentPosition(async(pos)=>{
             const payload={lat:pos.coords.latitude, lon:pos.coords.longitude};
+            if(action==='complete') payload.close_reason = closeReason;
             const res=await fetch(`/api/tickets/${id}/${action}`,{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
             const data=await res.json(); if(!res.ok){ msg.textContent=data.error||'Ошибка'; return; }
             msg.textContent=`${data.message} • дистанция: ${data.distance_m} м • статус: ${data.status}`;
@@ -508,6 +540,14 @@
       const respPct = (typeof m.response_sla_breach_percent==='number') ? m.response_sla_breach_percent.toFixed(1) : '0.0';
       const compPct = (typeof m.completion_sla_breach_percent==='number') ? m.completion_sla_breach_percent.toFixed(1) : '0.0';
       document.getElementById('metrics-overall').innerHTML = `Всего: ${ov.total||m.total_tickets||0}<br>NEW: ${ov.counts?.NEW||0} • ASSIGNED: ${ov.counts?.ASSIGNED||0} • IN_PROGRESS: ${ov.counts?.IN_PROGRESS||0} • COMPLETED: ${ov.counts?.COMPLETED||0} • CANCELLED: ${ov.counts?.CANCELLED||0}<br>Среднее закрытие: ${fmtSec(ov.avg_close_sec)} • Медиана: ${fmtSec(ov.median_close_sec)}<br>SLA ответ: ${respPct}% (${m.response_sla_breached_count||0}/${m.total_tickets||0}) • SLA завершение: ${compPct}% (${m.completion_sla_breached_count||0}/${m.total_tickets||0})`;
+      const reasons = m.tickets_by_close_reason || {};
+      const reasonEntries = Object.entries(reasons).filter(([,v])=>v>0);
+      const reasonsHtml = reasonEntries.length ? `<ul class="space-y-1">${reasonEntries.map(([k,v])=>`<li>${formatCloseReason(k)} — ${v}</li>`).join('')}</ul>` : 'Нет завершённых заявок с причиной.';
+      document.getElementById('metrics-close-reasons').innerHTML = reasonsHtml;
+      const slaByReason = m.sla_breaches_by_reason || {};
+      const slaEntries = Object.entries(slaByReason).filter(([,v])=> (v.response||v.completion));
+      const slaHtml = slaEntries.length ? `<ul class="space-y-1">${slaEntries.map(([k,v])=>`<li>${formatCloseReason(k)} — ответ: ${v.response}, завершение: ${v.completion}</li>`).join('')}</ul>` : 'Нет нарушений SLA по завершённым заявкам.';
+      document.getElementById('metrics-sla-reasons').innerHTML = slaHtml;
       const ms = m.masters || []; let html = '<table class="min-w-full text-sm"><thead><tr class="text-left border-b"><th class="py-2 px-2">#</th><th class="py-2 px-2">Мастер</th><th class="py-2 px-2">Закрыто (30д)</th><th class="py-2 px-2">Среднее</th><th class="py-2 px-2">Медиана</th></tr></thead><tbody>';
       ms.forEach((row, i) => { html += `<tr class="border-b"><td class="py-2 px-2">${i+1}</td><td class="py-2 px-2">${row.master_name}</td><td class="py-2 px-2">${row.count}</td><td class="py-2 px-2">${fmtSec(row.avg_sec)}</td><td class="py-2 px-2">${fmtSec(row.median_sec)}</td></tr>`; });
       html += '</tbody></table>'; document.getElementById('metrics-masters').innerHTML = html;
