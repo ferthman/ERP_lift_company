@@ -14,6 +14,14 @@ from .. import config
 bp = Blueprint("tickets", __name__)
 
 ALLOWED_EXTS = {"png", "jpg", "jpeg", "webp"}
+CLOSE_REASONS = [
+    "EQUIPMENT_FAILURE",
+    "PASSENGER_TRAPPED",
+    "FALSE_CALL",
+    "POWER_ISSUE",
+    "EXTERNAL_REASON",
+    "OTHER",
+]
 
 
 @bp.get("/api/masters")
@@ -272,6 +280,7 @@ def complete_ticket(ticket_id):
     data = request.get_json() or {}
     lat = data.get("lat")
     lon = data.get("lon")
+    close_reason = data.get("close_reason")
     with SessionLocal() as db:
         t = db.get(Ticket, ticket_id)
         if not t:
@@ -282,6 +291,10 @@ def complete_ticket(ticket_id):
             return jsonify({"error": "Ticket not assigned to you"}), 403
         if lat is None or lon is None:
             return jsonify({"error": "lat/lon required"}), 400
+        if not close_reason:
+            return jsonify({"error": "close_reason is required"}), 400
+        if close_reason not in CLOSE_REASONS:
+            return jsonify({"error": "Invalid close_reason"}), 400
         dist = haversine_m(float(lat), float(lon), t.lat, t.lon)
         if dist > 500:
             return jsonify({"error": f"Outside geofence ({int(dist)} m > 500 m)"}), 403
@@ -289,6 +302,7 @@ def complete_ticket(ticket_id):
         t.completed_at = datetime.now(timezone.utc)
         t.completion_lat = float(lat)
         t.completion_lon = float(lon)
+        t.close_reason = close_reason
         db.commit()
         try:
             send_report(t)
@@ -386,9 +400,19 @@ def metrics():
         total_tickets = len(tickets)
         resp_breach_count = sum(1 for x in response_breaches if x)
         comp_breach_count = sum(1 for x in completion_breaches if x)
+        reason_counts = {r: 0 for r in CLOSE_REASONS}
+        reason_counts["UNSPECIFIED"] = 0
+        sla_breaches_by_reason = {k: {"response": 0, "completion": 0} for k in reason_counts}
         counts = {"NEW": 0, "ASSIGNED": 0, "IN_PROGRESS": 0, "COMPLETED": 0, "CANCELLED": 0}
-        for t in tickets:
+        for t, info in zip(tickets, sla_infos):
             counts[t.status] = counts.get(t.status, 0) + 1
+            if t.status == "COMPLETED":
+                reason = t.close_reason if t.close_reason in CLOSE_REASONS else "UNSPECIFIED"
+                reason_counts[reason] = reason_counts.get(reason, 0) + 1
+                if info.get("sla_response_breached"):
+                    sla_breaches_by_reason[reason]["response"] += 1
+                if info.get("sla_completion_breached"):
+                    sla_breaches_by_reason[reason]["completion"] += 1
         durs = [
             (to_utc(t.completed_at) - to_utc(t.created_at)).total_seconds() for t in tickets if t.completed_at and t.created_at
         ]
@@ -418,17 +442,19 @@ def metrics():
                     "median_close_sec": (median(mdurs) if mdurs else None),
                 }
             )
-        return jsonify(
-            {
-                "overall": overall,
-                "masters": masters_data,
-                "total_tickets": total_tickets,
-                "response_sla_breached_count": resp_breach_count,
-                "completion_sla_breached_count": comp_breach_count,
-                "response_sla_breach_percent": (resp_breach_count / total_tickets * 100) if total_tickets else 0,
-                "completion_sla_breach_percent": (comp_breach_count / total_tickets * 100) if total_tickets else 0,
-            }
-        )
+            return jsonify(
+                {
+                    "overall": overall,
+                    "masters": masters_data,
+                    "total_tickets": total_tickets,
+                    "response_sla_breached_count": resp_breach_count,
+                    "completion_sla_breached_count": comp_breach_count,
+                    "response_sla_breach_percent": (resp_breach_count / total_tickets * 100) if total_tickets else 0,
+                    "completion_sla_breach_percent": (comp_breach_count / total_tickets * 100) if total_tickets else 0,
+                    "tickets_by_close_reason": reason_counts,
+                    "sla_breaches_by_reason": sla_breaches_by_reason,
+                }
+            )
 
 
 @bp.get("/api/archive")
@@ -450,6 +476,7 @@ def download_archive():
             "description",
             "email",
             "status",
+            "close_reason",
             "assigned_master_id",
             "assigned_master_name",
             "created_at",
@@ -475,6 +502,7 @@ def download_archive():
                     t.description,
                     t.email,
                     t.status,
+                    t.close_reason,
                     t.assigned_master_id,
                     t.assigned_master.name if t.assigned_master else None,
                     t.created_at.isoformat() if t.created_at else None,

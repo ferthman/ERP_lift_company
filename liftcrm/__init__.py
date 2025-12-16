@@ -94,6 +94,7 @@ def create_app():
                         "description",
                         "email",
                         "status",
+                        "close_reason",
                         "assigned_master_id",
                         "assigned_master_name",
                         "created_at",
