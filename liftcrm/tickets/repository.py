@@ -60,6 +60,7 @@ def serialize_ticket(t: Ticket):
         "lat": t.lat,
         "lon": t.lon,
         "description": t.description,
+        "priority": t.priority or "MEDIUM",
         "email": t.email,
         "status": t.status,
         "assigned_master_id": t.assigned_master_id,

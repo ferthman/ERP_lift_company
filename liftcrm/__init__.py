@@ -92,6 +92,7 @@ def create_app():
                         "lat",
                         "lon",
                         "description",
+                        "priority",
                         "email",
                         "status",
                         "close_reason",

@@ -23,6 +23,8 @@ CLOSE_REASONS = [
     "OTHER",
 ]
 
+PRIORITY_VALUES = ["HIGH", "MEDIUM", "LOW"]
+
 
 @bp.get("/api/masters")
 @login_required
@@ -178,6 +180,9 @@ def create_ticket():
     for k in ("object_name", "lat", "lon"):
         if k not in data:
             return jsonify({"error": f"Missing field: {k}"}), 400
+    priority = (data.get("priority") or "MEDIUM").upper()
+    if priority not in PRIORITY_VALUES:
+        return jsonify({"error": "Invalid priority"}), 400
     with SessionLocal() as db:
         t = Ticket(
             object_name=data["object_name"],
@@ -185,6 +190,7 @@ def create_ticket():
             lat=float(data["lat"]),
             lon=float(data["lon"]),
             description=data.get("description"),
+            priority=priority,
             email=data.get("email"),
             status="NEW",
         )
@@ -194,6 +200,29 @@ def create_ticket():
         db.add(t)
         db.commit()
         return jsonify({"id": t.id, "assigned_master_id": t.assigned_master_id, "status": t.status}), 201
+
+
+@bp.patch("/api/tickets/<int:ticket_id>")
+@login_required
+@role_required("admin", "dispatcher")
+def update_ticket(ticket_id):
+    data = request.get_json() or {}
+    priority = data.get("priority")
+    if priority is None:
+        return jsonify({"error": "priority is required"}), 400
+    priority = str(priority).upper()
+    if priority not in PRIORITY_VALUES:
+        return jsonify({"error": "Invalid priority"}), 400
+    with SessionLocal() as db:
+        t = db.get(Ticket, ticket_id)
+        if not t:
+            return jsonify({"error": "Ticket not found"}), 404
+        if t.archived_at:
+            return jsonify({"error": "Ticket archived"}), 400
+        t.priority = priority
+        db.commit()
+        db.refresh(t)
+        return jsonify(repository.serialize_ticket(t))
 
 
 @bp.post("/api/tickets/<int:ticket_id>/reassign")
@@ -404,8 +433,10 @@ def metrics():
         reason_counts["UNSPECIFIED"] = 0
         sla_breaches_by_reason = {k: {"response": 0, "completion": 0} for k in reason_counts}
         counts = {"NEW": 0, "ASSIGNED": 0, "IN_PROGRESS": 0, "COMPLETED": 0, "CANCELLED": 0}
+        priority_counts = {p: 0 for p in PRIORITY_VALUES}
         for t, info in zip(tickets, sla_infos):
             counts[t.status] = counts.get(t.status, 0) + 1
+            priority_counts[t.priority or "MEDIUM"] = priority_counts.get(t.priority or "MEDIUM", 0) + 1
             if t.status == "COMPLETED":
                 reason = t.close_reason if t.close_reason in CLOSE_REASONS else "UNSPECIFIED"
                 reason_counts[reason] = reason_counts.get(reason, 0) + 1
@@ -453,6 +484,7 @@ def metrics():
                     "completion_sla_breach_percent": (comp_breach_count / total_tickets * 100) if total_tickets else 0,
                     "tickets_by_close_reason": reason_counts,
                     "sla_breaches_by_reason": sla_breaches_by_reason,
+                    "tickets_by_priority": priority_counts,
                 }
             )
 
@@ -474,6 +506,7 @@ def download_archive():
             "lat",
             "lon",
             "description",
+            "priority",
             "email",
             "status",
             "close_reason",
@@ -500,6 +533,7 @@ def download_archive():
                     t.lat,
                     t.lon,
                     t.description,
+                    t.priority or "MEDIUM",
                     t.email,
                     t.status,
                     t.close_reason,
