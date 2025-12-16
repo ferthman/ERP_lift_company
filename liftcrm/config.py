@@ -14,6 +14,10 @@ DISPATCHER_USERNAME = os.environ.get("DISPATCHER_USERNAME", "dispatcher")
 DISPATCHER_PASSWORD = os.environ.get("DISPATCHER_PASSWORD", "disp123")
 MASTER_PASSWORD = os.environ.get("MASTER_PASSWORD", "m123456")
 
+# SLA
+SLA_RESPONSE_MINUTES = int(os.environ.get("SLA_RESPONSE_MINUTES", 30))
+SLA_COMPLETION_MINUTES = int(os.environ.get("SLA_COMPLETION_MINUTES", 120))
+
 # SMTP (optional)
 SMTP_SERVER = os.environ.get("SMTP_SERVER")
 SMTP_PORT = os.environ.get("SMTP_PORT")

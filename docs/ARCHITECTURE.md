@@ -54,6 +54,11 @@
 | Отменено                    | `CANCELLED`      | `POST /api/tickets/{id}/cancel`      | —                        |
 | (Удалено → архивируется)    | — (запись удаляется) | `DELETE /api/tickets/{id}`          | В архив пишется все поля |
 
+### SLA (ответ и завершение)
+- Конфиги SLA в минутах: `SLA_RESPONSE_MINUTES` (по умолчанию 30) и `SLA_COMPLETION_MINUTES` (по умолчанию 120) в `liftcrm/config.py`.
+- Дедлайны рассчитываются на лету: `created_at + SLA_RESPONSE_MINUTES` и `created_at + SLA_COMPLETION_MINUTES`; в сериализации тикета добавлены поля с дедлайнами, флагами нарушения и оставшимися минутами (могут быть отрицательными).【F:liftcrm/tickets/repository.py†L1-L68】
+- Нарушение фиксируется как по факту (arrived/completed позже дедлайна), так и для открытых заявок, если текущее время вышло за пределы SLA. Экспорт `archive.xlsx` включает флаги нарушений; метрики `/api/metrics` дополнены счётчиками/процентами нарушений, UI их визуализирует в таблице, канбане и дашборде.【F:liftcrm/tickets/routes.py†L142-L212】【F:liftcrm/tickets/routes.py†L390-L466】【F:templates/index.html†L240-L341】【F:templates/index.html†L520-L567】
+
 ## Existing behaviors (frozen)
 - Автоназанчение: используется только активные мастера; метрика нагрузки — количество открытых заявок в статусах `NEW/ASSIGNED/IN_PROGRESS`, выбирается минимальная нагрузка (и минимальный id как тайбрейк).【F:liftcrm/tickets/service.py†L15-L38】
 - Переназначение при удалении/деактивации мастера: все открытые заявки (`NEW/ASSIGNED/IN_PROGRESS`) переводятся на других активных мастеров по той же логике минимальной нагрузки; если активных мастеров нет — операция запрещена.【F:liftcrm/tickets/routes.py†L33-L122】

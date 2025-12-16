@@ -13,6 +13,12 @@
 - Каталог `uploads/` для файлов вложений и `objects/objects.{xlsx,json}` с примером объекта.【F:app.py†L124-L175】
 - Файл `archive.xlsx` (пустой с заголовками) для скачивания архива заявок.【F:app.py†L170-L175】
 
+## SLA: контроль ответа и завершения
+- SLA ответа = `created_at` → `arrived_at`; SLA завершения = `created_at` → `completed_at`.
+- Дедлайны считаются динамически из `SLA_RESPONSE_MINUTES` и `SLA_COMPLETION_MINUTES`; по умолчанию 30/120 минут, можно переопределять через переменные окружения.
+- Нарушение фиксируется, если время факта позже дедлайна или если факт отсутствует, а текущее время уже вышло за срок. Флаги отображаются в таблице заявок, карточках канбана/дашборда и выгружаются в `archive.xlsx`.
+- API `/api/metrics` отдаёт счётчики и проценты нарушений, UI показывает их в блоке «Дашборд выполнения».
+
 ## Архивация заявок (soft-delete)
 - `DELETE /api/tickets/{id}` больше не удаляет строку из БД, а проставляет `archived_at`; вложения остаются, запись скрывается из активного списка.【F:liftcrm/tickets/routes.py†L360-L372】
 - `GET /api/tickets` по умолчанию отдаёт только активные заявки; добавьте `?include_archived=1`, чтобы увидеть архивированные (для админа/диспетчера).【F:liftcrm/tickets/routes.py†L153-L162】
@@ -47,6 +53,7 @@
   - `ADMIN_USERNAME` / `ADMIN_PASSWORD` — креды админа (dev: `admin` / `admin123`).【F:liftcrm/config.py†L7-L18】【F:liftcrm/db.py†L58-L73】
   - `DISPATCHER_USERNAME` / `DISPATCHER_PASSWORD` — креды диспетчера (dev: `dispatcher` / `disp123`).【F:liftcrm/config.py†L7-L18】【F:liftcrm/db.py†L58-L73】
   - `MASTER_PASSWORD` — пароль для всех мастеров при сидировании (dev: `m123456`).【F:liftcrm/config.py†L7-L18】【F:liftcrm/db.py†L58-L73】
+  - `SLA_RESPONSE_MINUTES`, `SLA_COMPLETION_MINUTES` — опциональные, задают лимиты SLA в минутах (30/120 по умолчанию).【F:liftcrm/config.py†L7-L23】
 - Опционально:
   - `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` — для email-отправки отчёта при завершении; если пусто, отправка пропускается.【F:liftcrm/config.py†L20-L23】【F:liftcrm/tickets/service.py†L43-L77】
 - Файлы и данные:
@@ -79,6 +86,7 @@
 6. Метрики (`GET /api/metrics`) отвечают корректно под admin/dispatcher.
 7. Скачивание архива (`GET /api/archive`) отдаёт `archive.xlsx`.
 8. Вкладка «Объекты» грузит точки с `objects.xlsx` (`GET /api/objects`).
+9. SLA отображается: создание тикета, ожидание > SLA (или ручная правка времени) → флаги «overdue» в таблице/канбане/дашборде и рост счётчиков в `/api/metrics`.
 
 ### Важно: не менять правила автоназначения/перераспределения без решения продукта
 Текущее поведение фиксировано: активные мастера, минимальная нагрузка (`NEW/ASSIGNED/IN_PROGRESS`), перераспределение при деактивации/удалении. Любые изменения требуют отдельного продуктового решения.
