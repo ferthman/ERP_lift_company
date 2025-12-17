@@ -56,6 +56,15 @@
                 <option value="LOW">Не срочно</option>
               </select>
             </div>
+            <div class="space-y-2 hidden" data-sla-override>
+              <div><label class="block text-sm">SLA ответа, мин (опционально)</label>
+                <input name="custom_sla_response_minutes" type="number" min="1" class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200" placeholder="Например, 20">
+              </div>
+              <div><label class="block text-sm">SLA завершения, мин (опционально)</label>
+                <input name="custom_sla_completion_minutes" type="number" min="1" class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200" placeholder="Например, 90">
+              </div>
+              <p class="text-xs text-slate-500">Overrides default SLA if set</p>
+            </div>
             <div><label class="block text-sm">Описание</label><textarea name="description" rows="3" class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200" placeholder="Неисправен привод двери..."></textarea></div>
             <div class="flex items-center gap-2">
               <button class="px-4 py-2 rounded-xl bg-slate-900 text-white font-semibold">Создать</button>
@@ -244,10 +253,14 @@
     function renderAuth(){
       if (!me||!me.authenticated){ loginState.textContent='Не вошли'; btnLogin.classList.remove('hidden'); btnLogout.classList.add('hidden'); tabSuper.classList.add('hidden');
         document.querySelectorAll('[data-admin-only]').forEach(el=>el.classList.add('opacity-50','pointer-events-none'));
+        document.querySelectorAll('[data-sla-override]').forEach(el=>el.classList.add('hidden'));
       } else { loginState.textContent=`${me.username} (${me.role})`; btnLogin.classList.add('hidden'); btnLogout.classList.remove('hidden');
         if (me.role==='admin'){ tabSuper.classList.remove('hidden'); } else { tabSuper.classList.add('hidden'); }
         if (['admin','dispatcher'].includes(me.role)){
           document.querySelectorAll('[data-admin-only]').forEach(el=>el.classList.remove('opacity-50','pointer-events-none'));
+          document.querySelectorAll('[data-sla-override]').forEach(el=>el.classList.remove('hidden'));
+        } else {
+          document.querySelectorAll('[data-sla-override]').forEach(el=>el.classList.add('hidden'));
         }
       }
     }
@@ -275,7 +288,10 @@
     const formCreate=document.getElementById('form-create'); const createMsg=document.getElementById('create-msg');
     formCreate.addEventListener('submit', async (e)=>{
       e.preventDefault(); const fd=new FormData(formCreate); const body=Object.fromEntries(fd.entries());
-      body.lat=parseFloat(body.lat); body.lon=parseFloat(body.lon); createMsg.textContent='Создаю...';
+      body.lat=parseFloat(body.lat); body.lon=parseFloat(body.lon);
+      if(body.custom_sla_response_minutes==='') delete body.custom_sla_response_minutes; else body.custom_sla_response_minutes=parseInt(body.custom_sla_response_minutes,10);
+      if(body.custom_sla_completion_minutes==='') delete body.custom_sla_completion_minutes; else body.custom_sla_completion_minutes=parseInt(body.custom_sla_completion_minutes,10);
+      createMsg.textContent='Создаю...';
       const res=await fetch('/api/tickets',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); const data=await res.json();
       if(!res.ok){ createMsg.textContent=data.error||'Ошибка'; return; }
       createMsg.textContent=`Готово! №${data.id} → мастер: ${data.assigned_master_id ?? '—'}, статус: ${data.status}`; formCreate.reset(); await loadTickets(); await loadKanban();
@@ -311,8 +327,10 @@
       const res=await fetch('/api/tickets',{cache:'no-store'}); if(!res.ok){ tableHolder.innerHTML='<div class="text-sm text-slate-500">Требуется вход.</div>'; return; }
       const data=await res.json();
       const canEditPriority = me && ['admin','dispatcher'].includes(me.role);
+      const showSlaOverrides = canEditPriority;
+      const slaOverrideHeader = showSlaOverrides ? '<th class="py-2 px-2">Кастом SLA (мин)</th>' : '';
       let html=`<table class="min-w-full text-sm"><thead><tr class="text-left border-b">
-      <th class="py-2 px-2">№</th><th class="py-2 px-2">Объект</th><th class="py-2 px-2">Адрес</th><th class="py-2 px-2">Координаты</th><th class="py-2 px-2">Мастер</th><th class="py-2 px-2">Статус</th><th class="py-2 px-2">Приоритет</th><th class="py-2 px-2">Причина закрытия</th><th class="py-2 px-2">SLA</th><th class="py-2 px-2">Файлы</th><th class="py-2 px-2">Действия</th>
+      <th class="py-2 px-2">№</th><th class="py-2 px-2">Объект</th><th class="py-2 px-2">Адрес</th><th class="py-2 px-2">Координаты</th><th class="py-2 px-2">Мастер</th><th class="py-2 px-2">Статус</th><th class="py-2 px-2">Приоритет</th><th class="py-2 px-2">Причина закрытия</th>${slaOverrideHeader}<th class="py-2 px-2">SLA</th><th class="py-2 px-2">Файлы</th><th class="py-2 px-2">Действия</th>
       </tr></thead><tbody>`;
       for(const t of data){
         const coords=`${t.lat.toFixed(6)}, ${t.lon.toFixed(6)}`;
@@ -320,12 +338,21 @@
         const priorityBadge = renderPriorityBadge(t.priority);
         const prioritySelect = canEditPriority ? `<select data-edit-priority="${t.id}" class="px-2 py-1 text-xs rounded-lg ring-1 ring-slate-200 bg-white">${renderPriorityOptions(t.priority)}</select>` : '';
         const priorityCell = canEditPriority ? `<div class="flex items-center gap-2">${priorityBadge}${prioritySelect}</div>` : priorityBadge;
+        const overrideCell = showSlaOverrides ? `<div class="space-y-1">
+          <div class="text-[11px] text-slate-600">Ответ</div>
+          <input type="number" min="1" data-sla-response="${t.id}" value="${t.custom_sla_response_minutes ?? ''}" placeholder="—" class="w-full px-2 py-1 text-xs rounded-lg ring-1 ring-slate-200">
+          <div class="text-[11px] text-slate-600">Завершение</div>
+          <input type="number" min="1" data-sla-completion="${t.id}" value="${t.custom_sla_completion_minutes ?? ''}" placeholder="—" class="w-full px-2 py-1 text-xs rounded-lg ring-1 ring-slate-200">
+          <button data-save-sla="${t.id}" class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white">Сохранить</button>
+          <p class="text-[10px] text-slate-500">Overrides default SLA if set</p>
+        </div>` : '';
         html+=`<tr class="border-b last:border-none"><td class="py-2 px-2 font-mono">${t.id}</td>
         <td class="py-2 px-2">${t.object_name ?? ''}<div class="text-xs text-slate-500">${t.description ?? ''}</div></td>
         <td class="py-2 px-2">${t.address ?? ''}</td><td class="py-2 px-2"><button class="underline" onclick="openMap(${t.lat},${t.lon})">${coords}</button></td>
         <td class="py-2 px-2">${t.assigned_master_name ?? '—'}</td><td class="py-2 px-2"><span class="px-2 py-1 rounded-lg ring-1 ring-slate-200">${t.status}</span></td>
         <td class="py-2 px-2">${priorityCell}</td>
         <td class="py-2 px-2">${formatCloseReason(t.close_reason)}</td>
+        ${showSlaOverrides?`<td class="py-2 px-2 align-top">${overrideCell}</td>`:''}
         <td class="py-2 px-2">${renderSla(t)}</td>
         <td class="py-2 px-2">${files}</td>
         <td class="py-2 px-2"><div class="flex gap-2 items-center">
@@ -362,6 +389,37 @@
               sel.value=prev;
             }finally{
               sel.disabled=false;
+            }
+          };
+        });
+        tableHolder.querySelectorAll('button[data-save-sla]').forEach(btn=>{
+          btn.onclick=async()=>{
+            const id=btn.getAttribute('data-save-sla');
+            const resp=document.querySelector(`[data-sla-response="${id}"]`);
+            const comp=document.querySelector(`[data-sla-completion="${id}"]`);
+            const payload={};
+            const prioritySel=document.querySelector(`select[data-edit-priority="${id}"]`);
+            if(prioritySel) payload.priority = prioritySel.value;
+            const respVal=resp?.value ?? '';
+            const compVal=comp?.value ?? '';
+            payload.custom_sla_response_minutes = respVal === '' ? null : parseInt(respVal,10);
+            payload.custom_sla_completion_minutes = compVal === '' ? null : parseInt(compVal,10);
+            btn.disabled=true;
+            let data;
+            try{
+              const res=await fetch(`/api/tickets/${id}`,{method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+              data=await res.json();
+              if(!res.ok){
+                alert(extractErrorMessage(data,'Ошибка обновления SLA'));
+                return;
+              }
+              if(resp) resp.value = data.custom_sla_response_minutes ?? '';
+              if(comp) comp.value = data.custom_sla_completion_minutes ?? '';
+              await loadKanban(); await loadMyTickets();
+            }catch(err){
+              alert('Ошибка: '+(err?.message || 'не удалось обновить SLA'));
+            }finally{
+              btn.disabled=false;
             }
           };
         });
