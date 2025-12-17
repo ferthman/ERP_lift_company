@@ -20,8 +20,11 @@ def compute_sla_fields(t: Ticket):
             "sla_completion_minutes_left": None,
         }
 
-    response_deadline = created + timedelta(minutes=config.SLA_RESPONSE_MINUTES)
-    completion_deadline = created + timedelta(minutes=config.SLA_COMPLETION_MINUTES)
+    response_minutes = t.custom_sla_response_minutes or config.SLA_RESPONSE_MINUTES
+    completion_minutes = t.custom_sla_completion_minutes or config.SLA_COMPLETION_MINUTES
+
+    response_deadline = created + timedelta(minutes=response_minutes)
+    completion_deadline = created + timedelta(minutes=completion_minutes)
 
     arrived = to_utc(t.arrived_at)
     completed = to_utc(t.completed_at)
@@ -74,6 +77,8 @@ def serialize_ticket(t: Ticket):
         "attachments": [
             {"id": a.id, "url": f"/uploads/{a.filename}", "name": a.orig_name} for a in t.attachments
         ],
+        "custom_sla_response_minutes": t.custom_sla_response_minutes,
+        "custom_sla_completion_minutes": t.custom_sla_completion_minutes,
         "created_ts": (int(to_utc(t.created_at).timestamp() * 1000) if t.created_at else None),
         "elapsed_ms": (
             int(((datetime.now(timezone.utc) - to_utc(t.created_at)).total_seconds()) * 1000) if t.created_at else 0

@@ -102,6 +102,8 @@ def archive_ticket(ticket: Ticket, archive_path: str):
         "arrived_at",
         "completed_at",
         "archived_at",
+        "custom_sla_response_minutes",
+        "custom_sla_completion_minutes",
         "sla_response_breached",
         "sla_completion_breached",
     ]
@@ -134,6 +136,8 @@ def archive_ticket(ticket: Ticket, archive_path: str):
             ticket.arrived_at.isoformat() if ticket.arrived_at else None,
             ticket.completed_at.isoformat() if ticket.completed_at else None,
             ticket.archived_at.isoformat() if ticket.archived_at else None,
+            ticket.custom_sla_response_minutes,
+            ticket.custom_sla_completion_minutes,
             sla.get("sla_response_breached"),
             sla.get("sla_completion_breached"),
         ]

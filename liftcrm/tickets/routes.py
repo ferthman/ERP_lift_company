@@ -183,6 +183,22 @@ def create_ticket():
     priority = (data.get("priority") or "MEDIUM").upper()
     if priority not in PRIORITY_VALUES:
         return jsonify({"error": "Invalid priority"}), 400
+
+    def _parse_custom(val):
+        if val in (None, ""):
+            return None
+        try:
+            num = int(val)
+        except Exception:
+            return "INVALID"
+        if num <= 0:
+            return "INVALID"
+        return num
+
+    custom_resp = _parse_custom(data.get("custom_sla_response_minutes"))
+    custom_comp = _parse_custom(data.get("custom_sla_completion_minutes"))
+    if custom_resp == "INVALID" or custom_comp == "INVALID":
+        return jsonify({"error": "custom SLA minutes must be positive integers"}), 400
     with SessionLocal() as db:
         t = Ticket(
             object_name=data["object_name"],
@@ -193,6 +209,8 @@ def create_ticket():
             priority=priority,
             email=data.get("email"),
             status="NEW",
+            custom_sla_response_minutes=custom_resp,
+            custom_sla_completion_minutes=custom_comp,
         )
         m = auto_assign_master(db)
         if m:
@@ -207,19 +225,43 @@ def create_ticket():
 @role_required("admin", "dispatcher")
 def update_ticket(ticket_id):
     data = request.get_json() or {}
+
+    def _parse_custom(val):
+        if val in (None, ""):
+            return None
+        try:
+            num = int(val)
+        except Exception:
+            return "INVALID"
+        if num <= 0:
+            return "INVALID"
+        return num
+
     priority = data.get("priority")
-    if priority is None:
-        return jsonify({"error": "priority is required"}), 400
-    priority = str(priority).upper()
-    if priority not in PRIORITY_VALUES:
-        return jsonify({"error": "Invalid priority"}), 400
+    if priority is not None:
+        priority = str(priority).upper()
+        if priority not in PRIORITY_VALUES:
+            return jsonify({"error": "Invalid priority"}), 400
+
+    custom_resp = _parse_custom(data.get("custom_sla_response_minutes"))
+    custom_comp = _parse_custom(data.get("custom_sla_completion_minutes"))
+    if custom_resp == "INVALID" or custom_comp == "INVALID":
+        return jsonify({"error": "custom SLA minutes must be positive integers"}), 400
+
+    if priority is None and custom_resp is None and custom_comp is None:
+        return jsonify({"error": "No fields to update"}), 400
     with SessionLocal() as db:
         t = db.get(Ticket, ticket_id)
         if not t:
             return jsonify({"error": "Ticket not found"}), 404
         if t.archived_at:
             return jsonify({"error": "Ticket archived"}), 400
-        t.priority = priority
+        if priority is not None:
+            t.priority = priority
+        if custom_resp is not None:
+            t.custom_sla_response_minutes = custom_resp
+        if custom_comp is not None:
+            t.custom_sla_completion_minutes = custom_comp
         db.commit()
         db.refresh(t)
         return jsonify(repository.serialize_ticket(t))
@@ -517,6 +559,8 @@ def download_archive():
             "arrived_at",
             "completed_at",
             "archived_at",
+            "custom_sla_response_minutes",
+            "custom_sla_completion_minutes",
             "sla_response_breached",
             "sla_completion_breached",
         ]
@@ -544,6 +588,8 @@ def download_archive():
                     t.arrived_at.isoformat() if t.arrived_at else None,
                     t.completed_at.isoformat() if t.completed_at else None,
                     t.archived_at.isoformat() if t.archived_at else None,
+                    t.custom_sla_response_minutes,
+                    t.custom_sla_completion_minutes,
                     sla.get("sla_response_breached"),
                     sla.get("sla_completion_breached"),
                 ]

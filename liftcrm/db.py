@@ -60,6 +60,8 @@ class Ticket(Base):
     completion_lat = Column(Float, nullable=True)
     completion_lon = Column(Float, nullable=True)
     close_reason = Column(String, nullable=True)
+    custom_sla_response_minutes = Column(Integer, nullable=True)
+    custom_sla_completion_minutes = Column(Integer, nullable=True)
     assigned_master = relationship("Master", back_populates="tickets")
     attachments = relationship("Attachment", back_populates="ticket", cascade="all, delete-orphan")
     email = Column(String, nullable=True)
@@ -130,6 +132,12 @@ def ensure_migrations():
             conn.commit()
         if "close_reason" not in tcols:
             cur.execute("ALTER TABLE tickets ADD COLUMN close_reason TEXT")
+            conn.commit()
+        if "custom_sla_response_minutes" not in tcols:
+            cur.execute("ALTER TABLE tickets ADD COLUMN custom_sla_response_minutes INTEGER")
+            conn.commit()
+        if "custom_sla_completion_minutes" not in tcols:
+            cur.execute("ALTER TABLE tickets ADD COLUMN custom_sla_completion_minutes INTEGER")
             conn.commit()
         conn.close()
     except Exception as e:

@@ -29,7 +29,7 @@
 ## Основные модели и роли
 - `User`: username, password_hash, role (`admin|dispatcher|master`), связь `master_id`.【F:liftcrm/db.py†L27-L43】
 - `Master`: справочник мастеров, флаг `is_active`.【F:liftcrm/db.py†L11-L24】
-- `Ticket`: заявка со статусами `NEW/ASSIGNED/IN_PROGRESS/COMPLETED/CANCELLED`, координатами, временами прибытия/завершения, e-mail клиента, гео факты прибытия/завершения, вложения, полем **priority** (`HIGH|MEDIUM|LOW`, дефолт MEDIUM) и **close_reason** (обязателен при завершении, из фиксированного списка).【F:liftcrm/db.py†L46-L77】【F:liftcrm/tickets/routes.py†L183-L236】
+- `Ticket`: заявка со статусами `NEW/ASSIGNED/IN_PROGRESS/COMPLETED/CANCELLED`, координатами, временами прибытия/завершения, e-mail клиента, гео факты прибытия/завершения, вложения, полем **priority** (`HIGH|MEDIUM|LOW`, дефолт MEDIUM), **custom_sla_response_minutes/custom_sla_completion_minutes** (опциональные, только для admin/dispatcher, перекрывают конфиг SLA) и **close_reason** (обязателен при завершении, из фиксированного списка).【F:liftcrm/db.py†L46-L80】【F:liftcrm/tickets/routes.py†L174-L240】
 - `Attachment`: файл, связанный с заявкой, лежит в `uploads/`.【F:liftcrm/db.py†L76-L84】
 
 ### Связка Users ↔ Masters
@@ -55,9 +55,9 @@
 | (Удалено → архивируется)    | — (запись удаляется) | `DELETE /api/tickets/{id}`          | В архив пишется все поля |
 
 ### SLA (ответ и завершение)
-- Конфиги SLA в минутах: `SLA_RESPONSE_MINUTES` (по умолчанию 30) и `SLA_COMPLETION_MINUTES` (по умолчанию 120) в `liftcrm/config.py`.
-- Дедлайны рассчитываются на лету: `created_at + SLA_RESPONSE_MINUTES` и `created_at + SLA_COMPLETION_MINUTES`; в сериализации тикета добавлены поля с дедлайнами, флагами нарушения и оставшимися минутами (могут быть отрицательными).【F:liftcrm/tickets/repository.py†L1-L68】
-- Нарушение фиксируется как по факту (arrived/completed позже дедлайна), так и для открытых заявок, если текущее время вышло за пределы SLA. Экспорт `archive.xlsx` включает флаги нарушений; метрики `/api/metrics` дополнены счётчиками/процентами нарушений, UI их визуализирует в таблице, канбане и дашборде.【F:liftcrm/tickets/routes.py†L142-L212】【F:liftcrm/tickets/routes.py†L390-L466】【F:templates/index.html†L240-L341】【F:templates/index.html†L520-L567】
+- Конфиги SLA в минутах: `SLA_RESPONSE_MINUTES` (по умолчанию 30) и `SLA_COMPLETION_MINUTES` (по умолчанию 120) в `liftcrm/config.py`. Админ/диспетчер могут задать кастомные минуты в полях заявки `custom_sla_response_minutes/custom_sla_completion_minutes` (валидация >0), чтобы перекрыть конфиг только для конкретного тикета.【F:liftcrm/tickets/routes.py†L174-L240】【F:templates/index.html†L38-L78】【F:templates/index.html†L268-L334】
+- Дедлайны рассчитываются на лету: `created_at + SLA_{...}_MINUTES`, где приоритет — кастомные поля заявки, иначе значения конфига; в сериализации тикета добавлены поля с дедлайнами, флагами нарушения и оставшимися минутами (могут быть отрицательными).【F:liftcrm/tickets/repository.py†L10-L68】
+- Нарушение фиксируется как по факту (arrived/completed позже дедлайна), так и для открытых заявок, если текущее время вышло за пределы SLA. Экспорт `archive.xlsx` включает флаги нарушений и кастомные SLA; метрики `/api/metrics` дополнены счётчиками/процентами нарушений, UI их визуализирует в таблице, канбане и дашборде.【F:liftcrm/tickets/routes.py†L142-L212】【F:liftcrm/tickets/routes.py†L390-L421】【F:templates/index.html†L268-L341】【F:templates/index.html†L520-L567】
 - Метрики `/api/metrics` дополнительно выдают `tickets_by_close_reason`, `sla_breaches_by_reason` и `tickets_by_priority` для аналитики причин/важности в UI/архивах.【F:liftcrm/tickets/routes.py†L212-L242】【F:templates/index.html†L531-L548】
 
 ## Existing behaviors (frozen)
