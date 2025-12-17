@@ -29,20 +29,17 @@ def compute_sla_fields(t: Ticket):
     arrived = to_utc(t.arrived_at)
     completed = to_utc(t.completed_at)
 
-    response_breached = False
-    if arrived:
-        response_breached = arrived > response_deadline
-    else:
-        response_breached = now > response_deadline
+    response_elapsed_end = arrived or now
+    completion_elapsed_end = completed or now
 
-    completion_breached = False
-    if completed:
-        completion_breached = completed > completion_deadline
-    else:
-        completion_breached = now > completion_deadline
+    response_elapsed_minutes = int((response_elapsed_end - created).total_seconds() // 60)
+    completion_elapsed_minutes = int((completion_elapsed_end - created).total_seconds() // 60)
 
-    response_left = int((response_deadline - now).total_seconds() // 60)
-    completion_left = int((completion_deadline - now).total_seconds() // 60)
+    response_breached = response_elapsed_minutes > response_minutes
+    completion_breached = completion_elapsed_minutes > completion_minutes
+
+    response_left = response_minutes - response_elapsed_minutes
+    completion_left = completion_minutes - completion_elapsed_minutes
 
     return {
         "sla_response_deadline": response_deadline.isoformat(),
