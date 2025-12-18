@@ -15,7 +15,28 @@
     #objects-map-shell{height:70vh;width:100%}
     @media (max-width:768px){ #objects-map-shell{height:60vh} }
     #objects-map-shell.objects-map-fullscreen{height:100%}
-    .objects-search-overlay{z-index:20}
+    .objects-search-overlay{
+      position:absolute;
+      top:12px;
+      left:12px;
+      z-index:1000;
+      width:320px;
+      max-width:calc(100% - 24px);
+      background:#fff;
+      border:1px solid #e2e8f0;
+      border-radius:12px;
+      box-shadow:0 10px 25px rgba(15,23,42,0.12);
+      padding:8px;
+    }
+    .objects-suggestions{
+      position:absolute;
+      top:100%;
+      left:0;
+      right:0;
+      z-index:1100;
+      max-height:18rem;
+      overflow-y:auto;
+    }
     .objects-suggestion-item:hover{background-color:#f8fafc}
   </style>
 </head>
@@ -162,10 +183,10 @@
       </div>
       <div id="objects-map-home" class="w-full">
         <div id="objects-map-shell" class="relative w-full rounded-2xl ring-1 ring-slate-200 overflow-hidden bg-white">
-          <div class="objects-search-overlay absolute top-3 left-3 right-3 md:right-auto md:w-96">
+          <div class="objects-search-overlay">
             <div class="relative">
               <input id="objects-search" placeholder="Поиск объекта или адреса" class="w-full px-3 py-2 rounded-xl bg-white/90 ring-1 ring-slate-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm" type="text" autocomplete="off">
-              <div id="objects-suggestions" class="hidden absolute mt-1 w-full bg-white rounded-xl shadow-lg ring-1 ring-slate-200 overflow-hidden max-h-72"></div>
+              <div id="objects-suggestions" class="objects-suggestions hidden mt-1 w-full bg-white rounded-xl shadow-lg ring-1 ring-slate-200 overflow-hidden"></div>
             </div>
           </div>
           <div id="objects-map" class="w-full h-full"></div>
