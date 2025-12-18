@@ -2,6 +2,7 @@ import os
 from flask import Blueprint, jsonify
 from flask_login import login_required
 from .. import config
+from .service import ensure_objects_workbook
 
 bp = Blueprint("objects", __name__)
 
@@ -10,7 +11,11 @@ bp = Blueprint("objects", __name__)
 @login_required
 def api_objects():
     objects_dir = config.OBJECTS_DIR
-    xlsx_path = os.path.join(objects_dir, "objects.xlsx")
+    try:
+        xlsx_path = ensure_objects_workbook()
+    except Exception as e:
+        print("Failed to ensure objects.xlsx:", e)
+        xlsx_path = os.path.join(objects_dir, "objects.xlsx")
     json_path = os.path.join(objects_dir, "objects.json")
     records = []
     if os.path.exists(xlsx_path):

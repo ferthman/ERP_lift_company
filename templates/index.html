@@ -294,7 +294,7 @@
       createMsg.textContent='Создаю...';
       const res=await fetch('/api/tickets',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); const data=await res.json();
       if(!res.ok){ createMsg.textContent=data.error||'Ошибка'; return; }
-      createMsg.textContent=`Готово! №${data.id} → мастер: ${data.assigned_master_id ?? '—'}, статус: ${data.status}`; formCreate.reset(); await loadTickets(); await loadKanban();
+      createMsg.textContent=`Готово! №${data.id} → мастер: ${data.assigned_master_id ?? '—'}, статус: ${data.status}`; formCreate.reset(); await loadTickets(); await loadKanban(); if(!viewObjects.classList.contains('hidden')){ await loadObjects(); }
     });
     document.getElementById('btn-fill-loc').onclick=()=>{ if(!navigator.geolocation) return alert('Геолокация не поддерживается.');
       navigator.geolocation.getCurrentPosition((pos)=>{ const lat=pos.coords.latitude, lon=pos.coords.longitude;
@@ -640,7 +640,7 @@
       // Remove existing markers
       objectsMarkers.forEach(m => objectsMap.removeLayer(m));
       objectsMarkers = [];
-      const res = await fetch('/api/objects');
+      const res = await fetch('/api/objects',{cache:'no-store'});
       const data = await res.json();
       data.forEach(obj => {
         // Draw a small circle marker for each object. Users can click to see the name.
