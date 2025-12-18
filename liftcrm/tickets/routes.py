@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime, timezone
 
@@ -7,11 +8,13 @@ from flask_login import login_required, current_user
 from .service import auto_assign_master, haversine_m, send_report
 from . import repository
 from ..db import SessionLocal, Master, Ticket, Attachment, User
+from ..objects.service import upsert_object_from_ticket
 from ..utils.security import role_required
 from ..utils.time import to_utc
 from .. import config
 
 bp = Blueprint("tickets", __name__)
+logger = logging.getLogger(__name__)
 
 ALLOWED_EXTS = {"png", "jpg", "jpeg", "webp"}
 CLOSE_REASONS = [
@@ -217,7 +220,12 @@ def create_ticket():
             t.assigned_master_id, t.status = m.id, "ASSIGNED"
         db.add(t)
         db.commit()
-        return jsonify({"id": t.id, "assigned_master_id": t.assigned_master_id, "status": t.status}), 201
+        db.refresh(t)
+    try:
+        upsert_object_from_ticket(t.object_name, t.address, t.lat, t.lon, ticket_id=t.id)
+    except Exception:
+        logger.warning("objects upsert failed", extra={"ticket_id": t.id}, exc_info=True)
+    return jsonify({"id": t.id, "assigned_master_id": t.assigned_master_id, "status": t.status}), 201
 
 
 @bp.patch("/api/tickets/<int:ticket_id>")
