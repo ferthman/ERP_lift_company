@@ -18,10 +18,10 @@
     .objects-search-overlay{
       position:absolute;
       top:12px;
-      left:12px;
+      left:60px;
       z-index:1000;
       width:320px;
-      max-width:calc(100% - 24px);
+      max-width:calc(100% - 72px);
       background:#fff;
       border:1px solid #e2e8f0;
       border-radius:12px;
@@ -185,7 +185,8 @@
         <div id="objects-map-shell" class="relative w-full rounded-2xl ring-1 ring-slate-200 overflow-hidden bg-white">
           <div class="objects-search-overlay">
             <div class="relative">
-              <input id="objects-search" placeholder="Поиск объекта или адреса" class="w-full px-3 py-2 rounded-xl bg-white/90 ring-1 ring-slate-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm" type="text" autocomplete="off">
+              <input id="objects-search" placeholder="Поиск объекта или адреса" class="w-full px-3 pr-10 py-2 rounded-xl bg-white/90 ring-1 ring-slate-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm" type="text" autocomplete="off">
+              <button id="objects-search-clear" type="button" class="hidden absolute inset-y-1 right-2 px-2 rounded-full text-slate-400 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-400 text-lg leading-none">×</button>
               <div id="objects-suggestions" class="objects-suggestions hidden mt-1 w-full bg-white rounded-xl shadow-lg ring-1 ring-slate-200 overflow-hidden"></div>
             </div>
           </div>
@@ -282,6 +283,7 @@
     const objectsMapModalBody = document.getElementById('objects-map-modal-body');
     const objectsMapModalClose = document.getElementById('objects-map-modal-close');
     const objectsSearchInput = document.getElementById('objects-search');
+    const objectsSearchClear = document.getElementById('objects-search-clear');
     const objectsSuggestions = document.getElementById('objects-suggestions');
 
     function setTab(which) {
@@ -782,7 +784,11 @@
       }
       const matches = buildSuggestionMatches(tokens);
       if(matches.length===0){
-        objectsSuggestions.classList.add('hidden');
+        const emptyRow = document.createElement('div');
+        emptyRow.className = 'px-3 py-2 text-sm text-slate-500 bg-white';
+        emptyRow.textContent = 'Объект не найден';
+        objectsSuggestions.appendChild(emptyRow);
+        objectsSuggestions.classList.remove('hidden');
         return;
       }
       for(const {entry} of matches){
@@ -798,9 +804,15 @@
       }
       objectsSuggestions.classList.remove('hidden');
     }
+    function updateObjectsSearchUI(){
+      if(!objectsSearchInput || !objectsSearchClear) return;
+      const hasValue = (objectsSearchInput.value || '').length > 0;
+      objectsSearchClear.classList.toggle('hidden', !hasValue);
+    }
     function applyObjectsSearch(){
       if(!objectsSearchInput) return;
       objectsSearchQuery = objectsSearchInput.value || '';
+      updateObjectsSearchUI();
       const tokens = tokenizeSearchQuery(objectsSearchQuery);
       updateObjectsVisibility(tokens);
       renderObjectsSuggestions(tokens);
@@ -847,11 +859,21 @@
         if(ev.key === 'Escape' && objectsSuggestions) objectsSuggestions.classList.add('hidden');
       });
     }
+    if(objectsSearchClear){
+      objectsSearchClear.addEventListener('click', () => {
+        if(!objectsSearchInput) return;
+        objectsSearchInput.value = '';
+        applyObjectsSearch();
+        if(objectsSuggestions) objectsSuggestions.classList.add('hidden');
+        objectsSearchInput.focus();
+      });
+    }
     document.addEventListener('click', (ev) => {
       if(!objectsSuggestions || !objectsSearchInput) return;
       if(objectsSearchInput.contains(ev.target) || objectsSuggestions.contains(ev.target)) return;
       objectsSuggestions.classList.add('hidden');
     });
+    updateObjectsSearchUI();
 
     async function loadObjects(){
       // Ensure map is initialized
