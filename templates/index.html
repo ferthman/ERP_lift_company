@@ -15,6 +15,8 @@
     #objects-map-shell{height:70vh;width:100%}
     @media (max-width:768px){ #objects-map-shell{height:60vh} }
     #objects-map-shell.objects-map-fullscreen{height:100%}
+    .objects-search-overlay{z-index:20}
+    .objects-suggestion-item:hover{background-color:#f8fafc}
   </style>
 </head>
 <body class="bg-slate-50 text-slate-900">
@@ -159,7 +161,13 @@
         </div>
       </div>
       <div id="objects-map-home" class="w-full">
-        <div id="objects-map-shell" class="w-full rounded-2xl ring-1 ring-slate-200 overflow-hidden bg-white">
+        <div id="objects-map-shell" class="relative w-full rounded-2xl ring-1 ring-slate-200 overflow-hidden bg-white">
+          <div class="objects-search-overlay absolute top-3 left-3 right-3 md:right-auto md:w-96">
+            <div class="relative">
+              <input id="objects-search" placeholder="Поиск объекта или адреса" class="w-full px-3 py-2 rounded-xl bg-white/90 ring-1 ring-slate-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm" type="text" autocomplete="off">
+              <div id="objects-suggestions" class="hidden absolute mt-1 w-full bg-white rounded-xl shadow-lg ring-1 ring-slate-200 overflow-hidden max-h-72"></div>
+            </div>
+          </div>
           <div id="objects-map" class="w-full h-full"></div>
         </div>
       </div>
@@ -252,6 +260,8 @@
     const objectsMapModal = document.getElementById('objects-map-modal');
     const objectsMapModalBody = document.getElementById('objects-map-modal-body');
     const objectsMapModalClose = document.getElementById('objects-map-modal-close');
+    const objectsSearchInput = document.getElementById('objects-search');
+    const objectsSuggestions = document.getElementById('objects-suggestions');
 
     function setTab(which) {
       for (const btn of [tabAdmin, tabOps, tabTech, tabObjects, tabSuper]) btn.classList.remove('bg-slate-900','text-white');
@@ -664,6 +674,116 @@
     // Objects map
     let objectsMap = null;
     let objectsMarkers = [];
+    let objectsData = [];
+    let objectsSearchQuery = '';
+
+    const STREET_TOKEN_MAP = {
+      'ул': 'улица',
+      'улица': 'улица',
+      'пр': 'проспект',
+      'просп': 'проспект',
+      'проспект': 'проспект',
+      'д': 'дом',
+      'дом': 'дом',
+      'кв': 'квартира',
+      'квартира': 'квартира'
+    };
+
+    function normalizeSearchText(value){
+      if(!value) return '';
+      let text = value.toLowerCase();
+      text = text.replace(/[.,;:()\[\]'"-]/g,' ');
+      text = text.replace(/\s+/g,' ').trim();
+      if(!text) return '';
+      const tokens = text.split(' ').map(tok => STREET_TOKEN_MAP[tok] || tok);
+      return tokens.join(' ');
+    }
+    function tokenizeSearchQuery(query){
+      const norm = normalizeSearchText(query || '');
+      if(!norm) return [];
+      return norm.split(' ').filter(Boolean);
+    }
+    function matchesAllTokens(normalizedText, tokens){
+      if(tokens.length===0) return true;
+      if(!normalizedText) return false;
+      return tokens.every(tok => normalizedText.includes(tok));
+    }
+    function computeMatchScore(normalizedText, tokens){
+      const positions = tokens.map(tok => normalizedText.indexOf(tok));
+      const positionScore = positions.reduce((acc,pos)=> acc + (pos >= 0 ? pos : 10000), 0);
+      return { positionScore, lengthScore: normalizedText.length || Number.MAX_SAFE_INTEGER };
+    }
+    function focusObjectMarker(entry){
+      if(!entry || !entry.marker || !objectsMap) return;
+      if(!objectsMap.hasLayer(entry.marker)){
+        entry.marker.addTo(objectsMap);
+      }
+      entry.marker.setStyle({opacity:1, fillOpacity:0.8});
+      objectsMap.setView([entry.data.lat, entry.data.lon], 16);
+      entry.marker.openPopup();
+    }
+    function updateObjectsVisibility(tokens){
+      if(!objectsMap) return;
+      const hasTokens = tokens.length>0;
+      objectsMarkers.forEach(entry => {
+        const match = matchesAllTokens(entry.normalizedText, tokens);
+        if(match || !hasTokens){
+          if(!objectsMap.hasLayer(entry.marker)) entry.marker.addTo(objectsMap);
+          entry.marker.setStyle({opacity:1, fillOpacity:0.8});
+          entry.isVisible = true;
+        } else {
+          entry.isVisible = false;
+          if(objectsMap.hasLayer(entry.marker)) objectsMap.removeLayer(entry.marker);
+        }
+      });
+    }
+    function buildSuggestionMatches(tokens){
+      if(tokens.length===0) return [];
+      const matches = [];
+      for(const entry of objectsMarkers){
+        if(!matchesAllTokens(entry.normalizedText, tokens)) continue;
+        const score = computeMatchScore(entry.normalizedText, tokens);
+        matches.push({ entry, ...score });
+      }
+      matches.sort((a,b)=>{
+        if(a.positionScore !== b.positionScore) return a.positionScore - b.positionScore;
+        if(a.lengthScore !== b.lengthScore) return a.lengthScore - b.lengthScore;
+        return (a.entry.data.object_name || '').localeCompare(b.entry.data.object_name || '');
+      });
+      return matches.slice(0,10);
+    }
+    function renderObjectsSuggestions(tokens){
+      if(!objectsSuggestions) return;
+      objectsSuggestions.innerHTML = '';
+      if(tokens.length===0){
+        objectsSuggestions.classList.add('hidden');
+        return;
+      }
+      const matches = buildSuggestionMatches(tokens);
+      if(matches.length===0){
+        objectsSuggestions.classList.add('hidden');
+        return;
+      }
+      for(const {entry} of matches){
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'objects-suggestion-item w-full text-left px-3 py-2 flex flex-col gap-0.5';
+        btn.innerHTML = `<div class="font-semibold">${entry.data.object_name || '—'}</div><div class="text-xs text-slate-600">${entry.data.address || ''}</div>`;
+        btn.onclick = () => {
+          focusObjectMarker(entry);
+          objectsSuggestions.classList.add('hidden');
+        };
+        objectsSuggestions.appendChild(btn);
+      }
+      objectsSuggestions.classList.remove('hidden');
+    }
+    function applyObjectsSearch(){
+      if(!objectsSearchInput) return;
+      objectsSearchQuery = objectsSearchInput.value || '';
+      const tokens = tokenizeSearchQuery(objectsSearchQuery);
+      updateObjectsVisibility(tokens);
+      renderObjectsSuggestions(tokens);
+    }
 
     function scheduleObjectsMapResize(delay = 150){
       if(objectsMap) setTimeout(() => { objectsMap.invalidateSize(); }, delay);
@@ -699,6 +819,18 @@
     document.addEventListener('keydown', (ev) => {
       if(ev.key === 'Escape' && isObjectsFullscreenOpen()) closeObjectsFullscreen();
     });
+    if(objectsSearchInput){
+      objectsSearchInput.addEventListener('input', applyObjectsSearch);
+      objectsSearchInput.addEventListener('focus', applyObjectsSearch);
+      objectsSearchInput.addEventListener('keydown', (ev) => {
+        if(ev.key === 'Escape' && objectsSuggestions) objectsSuggestions.classList.add('hidden');
+      });
+    }
+    document.addEventListener('click', (ev) => {
+      if(!objectsSuggestions || !objectsSearchInput) return;
+      if(objectsSearchInput.contains(ev.target) || objectsSuggestions.contains(ev.target)) return;
+      objectsSuggestions.classList.add('hidden');
+    });
 
     async function loadObjects(){
       // Ensure map is initialized
@@ -707,11 +839,12 @@
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ attribution:'&copy; OpenStreetMap' }).addTo(objectsMap);
       }
       // Remove existing markers
-      objectsMarkers.forEach(m => objectsMap.removeLayer(m));
+      objectsMarkers.forEach(m => objectsMap.removeLayer(m.marker));
       objectsMarkers = [];
       const res = await fetch('/api/objects',{cache:'no-store'});
       const data = await res.json();
-      data.forEach(obj => {
+      objectsData = Array.isArray(data) ? data : [];
+      objectsData.forEach(obj => {
         // Draw a small circle marker for each object. Users can click to see the name.
         const circle = L.circleMarker([obj.lat, obj.lon], {
           radius: 6,
@@ -720,13 +853,15 @@
           fillOpacity: 0.8
         }).addTo(objectsMap);
         circle.bindPopup(`<b>${obj.object_name}</b><br>${obj.address ?? ''}`);
-        objectsMarkers.push(circle);
+        const normalizedText = normalizeSearchText(`${obj.object_name ?? ''} ${obj.address ?? ''}`);
+        objectsMarkers.push({ marker: circle, data: obj, normalizedText, isVisible: true });
       });
       // Fit bounds to markers if any
-      if(objectsMarkers.length>0){
-        const group = new L.featureGroup(objectsMarkers);
+      if(objectsMarkers.length>0 && tokenizeSearchQuery(objectsSearchInput?.value || '').length === 0){
+        const group = new L.featureGroup(objectsMarkers.map(m => m.marker));
         objectsMap.fitBounds(group.getBounds().pad(0.2));
       }
+      applyObjectsSearch();
       // Invalidate map size to fix display issues
       scheduleObjectsMapResize(150);
     }
