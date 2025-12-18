@@ -9,7 +9,13 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <style>.modal{display:none;position:fixed;inset:0;background:rgba(2,6,23,.6);align-items:center;justify-content:center;z-index:50}.modal.open{display:flex}</style>
+  <style>
+    .modal{display:none;position:fixed;inset:0;background:rgba(2,6,23,.6);align-items:center;justify-content:center;z-index:50}
+    .modal.open{display:flex}
+    #objects-map-shell{height:70vh;width:100%}
+    @media (max-width:768px){#objects-map-shell{height:60vh}}
+    #objects-map-shell.objects-map-fullscreen{height:100%}
+  </style>
 </head>
 <body class="bg-slate-50 text-slate-900">
   <header class="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
@@ -145,13 +151,31 @@
     <!-- Objects Map view -->
     <section id="view-objects" class="hidden space-y-4">
       <h2 class="text-lg font-semibold">Объекты</h2>
-      <div class="flex items-center justify-between mb-3">
-        <p class="text-sm text-slate-600">На карте отображаются объекты из файла objects.xlsx. Вы можете обновлять файл вручную.</p>
-        <button id="btn-objects-refresh" class="px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Обновить</button>
+      <div class="flex flex-col gap-3 mb-3 md:flex-row md:items-center md:justify-between">
+        <p class="text-sm text-slate-600 md:max-w-3xl">На карте отображаются объекты из файла objects.xlsx. Вы можете обновлять файл вручную.</p>
+        <div class="flex items-center gap-2 md:justify-end">
+          <button id="btn-objects-fullscreen" class="px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Полный экран</button>
+          <button id="btn-objects-refresh" class="px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Обновить</button>
+        </div>
       </div>
-      <div id="objects-map" class="h-96 w-full rounded-xl ring-1 ring-slate-200 overflow-hidden"></div>
+      <div id="objects-map-home" class="w-full">
+        <div id="objects-map-shell" class="w-full rounded-2xl ring-1 ring-slate-200 overflow-hidden bg-white">
+          <div id="objects-map" class="w-full h-full"></div>
+        </div>
+      </div>
     </section>
   </main>
+
+  <!-- Objects fullscreen modal -->
+  <div id="objects-map-modal" class="modal">
+    <div class="bg-white rounded-2xl shadow-xl w-full h-full md:h-[90vh] md:w-[95vw] md:max-w-6xl flex flex-col overflow-hidden">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+        <h3 class="font-semibold text-lg">Карта объектов</h3>
+        <button id="objects-map-modal-close" class="px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Закрыть</button>
+      </div>
+      <div id="objects-map-modal-body" class="flex-1 flex items-stretch bg-slate-50 p-3"></div>
+    </div>
+  </div>
 
   <!-- Map Modal -->
   <div id="modal" class="modal">
@@ -221,6 +245,13 @@
     const viewTech = document.getElementById('view-tech');
     const viewSuper = document.getElementById('view-super');
     const viewObjects = document.getElementById('view-objects');
+    const btnObjectsRefresh = document.getElementById('btn-objects-refresh');
+    const btnObjectsFullscreen = document.getElementById('btn-objects-fullscreen');
+    const objectsMapHome = document.getElementById('objects-map-home');
+    const objectsMapShell = document.getElementById('objects-map-shell');
+    const objectsMapModal = document.getElementById('objects-map-modal');
+    const objectsMapModalBody = document.getElementById('objects-map-modal-body');
+    const objectsMapModalClose = document.getElementById('objects-map-modal-close');
 
     function setTab(which) {
       for (const btn of [tabAdmin, tabOps, tabTech, tabObjects, tabSuper]) btn.classList.remove('bg-slate-900','text-white');
@@ -230,6 +261,8 @@
       if (extended[which]) {
         extended[which][0].classList.add('bg-slate-900','text-white');
         extended[which][1].classList.remove('hidden');
+        if(which==='objects'){ scheduleObjectsMapResize(); }
+        else { closeObjectsFullscreen(); }
       }
     }
     tabAdmin.onclick = () => setTab('admin');
@@ -631,6 +664,42 @@
     // Objects map
     let objectsMap = null;
     let objectsMarkers = [];
+
+    function scheduleObjectsMapResize(delay = 150){
+      if(objectsMap) setTimeout(() => { objectsMap.invalidateSize(); }, delay);
+    }
+    function isObjectsFullscreenOpen(){
+      return !!(objectsMapModal && objectsMapModal.classList.contains('open'));
+    }
+    function openObjectsFullscreen(){
+      if(!objectsMapShell || !objectsMapModalBody || !objectsMapModal) return;
+      if(!objectsMapModalBody.contains(objectsMapShell)){
+        objectsMapModalBody.appendChild(objectsMapShell);
+      }
+      objectsMapShell.classList.add('objects-map-fullscreen');
+      objectsMapModal.classList.add('open');
+      scheduleObjectsMapResize(150);
+    }
+    function closeObjectsFullscreen(){
+      if(!objectsMapShell || !objectsMapModal || !objectsMapHome) return;
+      if(!objectsMapHome.contains(objectsMapShell)){
+        objectsMapHome.appendChild(objectsMapShell);
+      }
+      objectsMapShell.classList.remove('objects-map-fullscreen');
+      objectsMapModal.classList.remove('open');
+      scheduleObjectsMapResize(150);
+    }
+
+    if(objectsMapModal){
+      objectsMapModal.addEventListener('click', (ev) => {
+        if(ev.target === objectsMapModal) closeObjectsFullscreen();
+      });
+    }
+    if(objectsMapModalClose){ objectsMapModalClose.onclick = closeObjectsFullscreen; }
+    document.addEventListener('keydown', (ev) => {
+      if(ev.key === 'Escape' && isObjectsFullscreenOpen()) closeObjectsFullscreen();
+    });
+
     async function loadObjects(){
       // Ensure map is initialized
       if(!objectsMap){
@@ -659,9 +728,10 @@
         objectsMap.fitBounds(group.getBounds().pad(0.2));
       }
       // Invalidate map size to fix display issues
-      setTimeout(() => { if(objectsMap) objectsMap.invalidateSize(); }, 100);
+      scheduleObjectsMapResize(150);
     }
-    document.getElementById('btn-objects-refresh').onclick = () => { loadObjects(); };
+    if(btnObjectsRefresh){ btnObjectsRefresh.onclick = () => { loadObjects(); }; }
+    if(btnObjectsFullscreen){ btnObjectsFullscreen.onclick = () => { loadObjects(); openObjectsFullscreen(); }; }
 
     // Download archive
     const btnDownloadArchive = document.getElementById('btn-download-archive');
