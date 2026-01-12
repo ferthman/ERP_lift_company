@@ -400,6 +400,10 @@
       </tr></thead><tbody>`;
       for(const t of data){
         const coords=`${t.lat.toFixed(6)}, ${t.lon.toFixed(6)}`;
+        const hasCoords = Number.isFinite(t.lat) && Number.isFinite(t.lon);
+        const mapButton = hasCoords
+          ? `<button type="button" data-open-map="${encodeURIComponent(JSON.stringify({lat:t.lat, lon:t.lon, object_name:t.object_name, address:t.address}))}" class="ml-2 text-xs px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200">📍 Карта</button>`
+          : '';
         const files=t.attachments?.map(a=>`<a class="underline" href="${a.url}" target="_blank">${a.name}</a>`).join(', ')||'—';
         const priorityBadge = renderPriorityBadge(t.priority);
         const prioritySelect = canEditPriority ? `<select data-edit-priority="${t.id}" class="px-2 py-1 text-xs rounded-lg ring-1 ring-slate-200 bg-white">${renderPriorityOptions(t.priority)}</select>` : '';
@@ -414,7 +418,7 @@
         </div>` : '';
         html+=`<tr class="border-b last:border-none"><td class="py-2 px-2 font-mono">${t.id}</td>
         <td class="py-2 px-2">${t.object_name ?? ''}<div class="text-xs text-slate-500">${t.description ?? ''}</div></td>
-        <td class="py-2 px-2">${t.address ?? ''}</td><td class="py-2 px-2"><button class="underline" onclick="openMap(${t.lat},${t.lon})">${coords}</button></td>
+        <td class="py-2 px-2">${t.address ?? ''}</td><td class="py-2 px-2"><button class="underline" onclick="openMap(${t.lat},${t.lon})">${coords}</button>${mapButton}</td>
         <td class="py-2 px-2">${t.assigned_master_name ?? '—'}</td><td class="py-2 px-2"><span class="px-2 py-1 rounded-lg ring-1 ring-slate-200">${t.status}</span></td>
         <td class="py-2 px-2">${priorityCell}</td>
         <td class="py-2 px-2">${formatCloseReason(t.close_reason)}</td>
@@ -430,6 +434,14 @@
         </div></td></tr>`;
       }
       html+='</tbody></table>'; tableHolder.innerHTML=html; renderAuth();
+      tableHolder.querySelectorAll('button[data-open-map]').forEach(btn => {
+        btn.onclick = () => {
+          const payload = btn.getAttribute('data-open-map');
+          if(!payload) return;
+          const ticket = JSON.parse(decodeURIComponent(payload));
+          openTicketOnObjectsMap(ticket);
+        };
+      });
       if(canEditPriority){
         tableHolder.querySelectorAll('select[data-edit-priority]').forEach(sel=>{
           sel.setAttribute('data-prev', sel.value);
@@ -699,6 +711,8 @@
     let objectsMarkers = [];
     let objectsData = [];
     let objectsSearchQuery = '';
+    let pendingObjectsFocus = null;
+    let objectsFocusPopup = null;
 
     const STREET_TOKEN_MAP = {
       'ул': 'улица',
@@ -745,6 +759,52 @@
       objectsMap.setView([entry.data.lat, entry.data.lon], 16);
       entry.marker.openPopup();
     }
+    function focusObjectsMap(lat, lon, label){
+      if(!objectsMap || typeof lat !== 'number' || typeof lon !== 'number') return;
+      const target = L.latLng(lat, lon);
+      let nearest = null;
+      let nearestDistance = Infinity;
+      objectsMarkers.forEach(entry => {
+        const distance = objectsMap.distance(target, L.latLng(entry.data.lat, entry.data.lon));
+        if(distance < nearestDistance){
+          nearestDistance = distance;
+          nearest = entry;
+        }
+      });
+      const thresholdMeters = 200;
+      if(nearest && nearestDistance <= thresholdMeters){
+        focusObjectMarker(nearest);
+      } else {
+        objectsMap.setView([lat, lon], 16);
+        if(objectsFocusPopup){
+          objectsMap.closePopup(objectsFocusPopup);
+        }
+        objectsFocusPopup = L.popup({autoClose: true, closeOnClick: true})
+          .setLatLng([lat, lon])
+          .setContent(label || 'Заявка')
+          .openOn(objectsMap);
+      }
+    }
+    function applyPendingObjectsFocus(){
+      if(!pendingObjectsFocus || !objectsMap) return;
+      const { lat, lon, label } = pendingObjectsFocus;
+      pendingObjectsFocus = null;
+      focusObjectsMap(lat, lon, label);
+    }
+    function openTicketOnObjectsMap(ticket){
+      if(!ticket || typeof ticket.lat !== 'number' || typeof ticket.lon !== 'number') return;
+      const labelParts = [
+        ticket.object_name ? `Заявка: ${ticket.object_name}` : 'Заявка',
+        ticket.address ? ticket.address : ''
+      ].filter(Boolean);
+      pendingObjectsFocus = { lat: ticket.lat, lon: ticket.lon, label: labelParts.join(' / ') };
+      setTab('objects');
+      loadObjects().then(() => {
+        if(isObjectsFullscreenOpen()) openObjectsFullscreen();
+        applyPendingObjectsFocus();
+      });
+    }
+    window.openTicketOnObjectsMap = openTicketOnObjectsMap;
     function updateObjectsVisibility(tokens){
       if(!objectsMap) return;
       const hasTokens = tokens.length>0;
@@ -905,6 +965,7 @@
         objectsMap.fitBounds(group.getBounds().pad(0.2));
       }
       applyObjectsSearch();
+      applyPendingObjectsFocus();
       // Invalidate map size to fix display issues
       scheduleObjectsMapResize(150);
     }
