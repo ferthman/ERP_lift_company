@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, jsonify, request, send_from_directory
 from flask_login import login_required, current_user
 
-from .service import auto_assign_master, haversine_m, send_report
+from .service import auto_assign_master, haversine_m, send_report, validate_status_transition
 from . import repository
 from ..db import SessionLocal, Master, Ticket, Attachment, User
 from ..objects.service import upsert_object_from_ticket
@@ -27,6 +27,10 @@ CLOSE_REASONS = [
 ]
 
 PRIORITY_VALUES = ["HIGH", "MEDIUM", "LOW"]
+
+
+def _transition_error(code, message, status=400):
+    return jsonify({"error": {"code": code, "message": message}}), status
 
 
 @bp.get("/api/masters")
@@ -288,9 +292,19 @@ def reassign_ticket(ticket_id):
         m = auto_assign_master(db)
         if not m:
             return jsonify({"error": "No active masters available"}), 400
+        old_status = t.status
         t.assigned_master_id = m.id
         if t.status in ["NEW", "ASSIGNED"]:
             t.status = "ASSIGNED"
+            ok, code, message = validate_status_transition(
+                old_status,
+                t.status,
+                t,
+                current_user.role,
+                {},
+            )
+            if not ok:
+                return _transition_error(code, message)
         db.commit()
         return jsonify({"message": "Reassigned", "assigned_master_id": t.assigned_master_id})
 
@@ -299,15 +313,26 @@ def reassign_ticket(ticket_id):
 @login_required
 @role_required("admin", "dispatcher")
 def cancel_ticket(ticket_id):
+    data = request.get_json() or {}
     with SessionLocal() as db:
         t = db.get(Ticket, ticket_id)
         if not t:
             return jsonify({"error": "Ticket not found"}), 404
         if t.archived_at:
             return jsonify({"error": "Ticket archived"}), 400
-        if t.status in ["COMPLETED", "CANCELLED"]:
-            return jsonify({"error": "Ticket already finalized"}), 400
+        old_status = t.status
+        t.cancel_reason = data.get("cancel_reason")
         t.status = "CANCELLED"
+        ok, code, message = validate_status_transition(
+            old_status,
+            t.status,
+            t,
+            current_user.role,
+            data,
+        )
+        if not ok:
+            status = 403 if code == "FORBIDDEN" else 400
+            return _transition_error(code, message, status=status)
         db.commit()
         return jsonify({"message": "Cancelled"})
 
@@ -336,6 +361,15 @@ def arrive_ticket(ticket_id):
             return jsonify({"error": "Ticket not found"}), 404
         if t.archived_at:
             return jsonify({"error": "Ticket archived"}), 400
+        if not t.assigned_master_id:
+            ok, code, message = validate_status_transition(
+                t.status,
+                "IN_PROGRESS",
+                t,
+                current_user.role,
+                {},
+            )
+            return _transition_error(code, message)
         if t.assigned_master_id != current_user.master_id:
             return jsonify({"error": "Ticket not assigned to you"}), 403
         if lat is None or lon is None:
@@ -343,10 +377,20 @@ def arrive_ticket(ticket_id):
         dist = haversine_m(float(lat), float(lon), t.lat, t.lon)
         if dist > 500:
             return jsonify({"error": f"Outside geofence ({int(dist)} m > 500 m)"}), 403
+        old_status = t.status
         t.status = "IN_PROGRESS"
         t.arrived_at = datetime.now(timezone.utc)
         t.arrival_lat = float(lat)
         t.arrival_lon = float(lon)
+        ok, code, message = validate_status_transition(
+            old_status,
+            t.status,
+            t,
+            current_user.role,
+            {},
+        )
+        if not ok:
+            return _transition_error(code, message)
         db.commit()
         return jsonify({"message": "Arrived", "distance_m": int(dist), "status": t.status})
 
@@ -366,6 +410,15 @@ def complete_ticket(ticket_id):
             return jsonify({"error": "Ticket not found"}), 404
         if t.archived_at:
             return jsonify({"error": "Ticket archived"}), 400
+        if not t.assigned_master_id:
+            ok, code, message = validate_status_transition(
+                t.status,
+                "COMPLETED",
+                t,
+                current_user.role,
+                {},
+            )
+            return _transition_error(code, message)
         if t.assigned_master_id != current_user.master_id:
             return jsonify({"error": "Ticket not assigned to you"}), 403
         if lat is None or lon is None:
@@ -377,11 +430,21 @@ def complete_ticket(ticket_id):
         dist = haversine_m(float(lat), float(lon), t.lat, t.lon)
         if dist > 500:
             return jsonify({"error": f"Outside geofence ({int(dist)} m > 500 m)"}), 403
+        old_status = t.status
         t.status = "COMPLETED"
         t.completed_at = datetime.now(timezone.utc)
         t.completion_lat = float(lat)
         t.completion_lon = float(lon)
         t.close_reason = close_reason
+        ok, code, message = validate_status_transition(
+            old_status,
+            t.status,
+            t,
+            current_user.role,
+            {},
+        )
+        if not ok:
+            return _transition_error(code, message)
         db.commit()
         try:
             send_report(t)
@@ -443,9 +506,19 @@ def assign_ticket(ticket_id, master_id):
             return jsonify({"error": "Master not found"}), 404
         if int(getattr(m, "is_active", 1)) != 1:
             return jsonify({"error": "Мастер неактивен"}), 400
+        old_status = t.status
         t.assigned_master_id = m.id
         if t.status in ["NEW", "ASSIGNED"]:
             t.status = "ASSIGNED"
+            ok, code, message = validate_status_transition(
+                old_status,
+                t.status,
+                t,
+                current_user.role,
+                {},
+            )
+            if not ok:
+                return _transition_error(code, message)
         db.commit()
         return jsonify({"message": "Assigned", "assigned_master_id": t.assigned_master_id, "assigned_master_name": m.name})
 

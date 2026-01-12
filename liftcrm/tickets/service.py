@@ -95,6 +95,7 @@ def archive_ticket(ticket: Ticket, archive_path: str):
         "email",
         "status",
         "close_reason",
+        "cancel_reason",
         "assigned_master_id",
         "assigned_master_name",
         "created_at",
@@ -129,6 +130,7 @@ def archive_ticket(ticket: Ticket, archive_path: str):
             ticket.email,
             ticket.status,
             ticket.close_reason,
+            ticket.cancel_reason,
             ticket.assigned_master_id,
             ticket.assigned_master.name if ticket.assigned_master else None,
             ticket.created_at.isoformat() if ticket.created_at else None,
@@ -162,3 +164,79 @@ def archive_ticket(ticket: Ticket, archive_path: str):
 
 def _to_utc(dt):
     return to_utc(dt)
+
+
+def validate_status_transition(old_status, new_status, ticket, actor_role, payload):
+    allowed_transitions = {
+        "NEW": {"ASSIGNED", "CANCELLED"},
+        "ASSIGNED": {"IN_PROGRESS", "CANCELLED"},
+        "IN_PROGRESS": {"COMPLETED", "CANCELLED"},
+        "COMPLETED": {"CANCELLED"},
+        "CANCELLED": set(),
+    }
+    if old_status == new_status:
+        return _validate_status_invariants(new_status, ticket, actor_role, payload)
+    allowed = allowed_transitions.get(old_status, set())
+    if new_status not in allowed:
+        hint = _transition_hint(old_status, new_status)
+        if hint:
+            message = f"Invalid transition {old_status} -> {new_status}. {hint}"
+        elif allowed:
+            allowed_list = "/".join(sorted(allowed))
+            message = f"Invalid transition {old_status} -> {new_status}. Allowed: {allowed_list}."
+        else:
+            message = f"Invalid transition {old_status} -> {new_status}."
+        return False, "INVALID_STATUS_TRANSITION", message
+    return _validate_status_invariants(new_status, ticket, actor_role, payload)
+
+
+def _transition_hint(old_status, new_status):
+    hints = {
+        ("NEW", "IN_PROGRESS"): "Must go through ASSIGNED.",
+        ("NEW", "COMPLETED"): "Must go through ASSIGNED/IN_PROGRESS.",
+        ("ASSIGNED", "COMPLETED"): "Must go through IN_PROGRESS.",
+    }
+    return hints.get((old_status, new_status))
+
+
+def _validate_status_invariants(new_status, ticket, actor_role, payload):
+    if new_status == "ASSIGNED" and not ticket.assigned_master_id:
+        return (
+            False,
+            "INVALID_STATUS_TRANSITION",
+            "Cannot set status ASSIGNED without assigned_master_id.",
+        )
+    if new_status == "IN_PROGRESS" and not ticket.assigned_master_id:
+        return (
+            False,
+            "INVALID_STATUS_TRANSITION",
+            "Cannot set status IN_PROGRESS without assigned_master_id.",
+        )
+    if new_status == "COMPLETED":
+        if not ticket.completed_at:
+            return (
+                False,
+                "INVALID_STATUS_TRANSITION",
+                "Cannot set status COMPLETED without completed_at.",
+            )
+        if not ticket.close_reason:
+            return (
+                False,
+                "INVALID_STATUS_TRANSITION",
+                "Cannot set status COMPLETED without close_reason.",
+            )
+    if new_status == "CANCELLED":
+        if actor_role not in {"admin", "dispatcher"}:
+            return (
+                False,
+                "FORBIDDEN",
+                "Only admin/dispatcher can cancel tickets.",
+            )
+        cancel_reason = (payload or {}).get("cancel_reason")
+        if not cancel_reason:
+            return (
+                False,
+                "INVALID_STATUS_TRANSITION",
+                "Cancel reason is required to cancel a ticket.",
+            )
+    return True, "", ""
