@@ -450,19 +450,53 @@ def assign_ticket(ticket_id, master_id):
         return jsonify({"message": "Assigned", "assigned_master_id": t.assigned_master_id, "assigned_master_name": m.name})
 
 
-@bp.delete("/api/tickets/<int:ticket_id>")
+@bp.post("/api/tickets/<int:ticket_id>/archive")
 @login_required
 @role_required("admin", "dispatcher")
-def delete_ticket(ticket_id):
+def archive_ticket(ticket_id):
+    with SessionLocal() as db:
+        t = db.get(Ticket, ticket_id)
+        if not t:
+            return jsonify({"error": "Ticket not found"}), 404
+        if not t.archived_at:
+            now = datetime.now(timezone.utc)
+            t.archived_at = now
+            t.updated_at = now
+            db.commit()
+        archived_at = to_utc(t.archived_at).isoformat() if t.archived_at else None
+        return jsonify({"ok": True, "archived_at": archived_at})
+
+
+@bp.post("/api/tickets/<int:ticket_id>/unarchive")
+@login_required
+@role_required("admin", "dispatcher")
+def unarchive_ticket(ticket_id):
     with SessionLocal() as db:
         t = db.get(Ticket, ticket_id)
         if not t:
             return jsonify({"error": "Ticket not found"}), 404
         if t.archived_at:
-            return jsonify({"error": "Ticket already archived"}), 400
-        t.archived_at = datetime.now(timezone.utc)
-        db.commit()
-        return jsonify({"message": "Deleted", "archived_at": t.archived_at.isoformat()})
+            now = datetime.now(timezone.utc)
+            t.archived_at = None
+            t.updated_at = now
+            db.commit()
+        return jsonify({"ok": True, "archived_at": None})
+
+
+@bp.delete("/api/tickets/<int:ticket_id>")
+@login_required
+def delete_ticket(ticket_id):
+    return (
+        jsonify(
+            {
+                "error": {
+                    "code": 405,
+                    "message": "DELETE /api/tickets/<id> is deprecated. Use POST /api/tickets/<id>/archive.",
+                }
+            }
+        ),
+        405,
+    )
 
 
 @bp.get("/api/metrics")
