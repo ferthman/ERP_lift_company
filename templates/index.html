@@ -430,7 +430,7 @@
             <button data-admin-only class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" onclick="showReassign(${t.id})">Переназначить</button>
           </div>
           <button data-admin-only class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" onclick="cancelTicket(${t.id})">Отменить</button>
-          <button data-admin-only class="px-2 py-1 text-xs rounded-lg bg-red-50 ring-1 ring-red-200 text-red-700" onclick="deleteTicket(${t.id})">Удалить</button>
+          <button data-admin-only class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" onclick="archiveTicket(${t.id})">В архив</button>
         </div></td></tr>`;
       }
       html+='</tbody></table>'; tableHolder.innerHTML=html; renderAuth();
@@ -551,11 +551,11 @@
       container.appendChild(ok);
     };
 
-    // Delete a ticket permanently. Prompts for confirmation and then calls the
-    // DELETE API. On success, reloads the tickets and kanban views.
-    window.deleteTicket = async (id) => {
-      if (!confirm('Точно удалить заявку?')) return;
-      const res = await fetch(`/api/tickets/${id}`, { method: 'DELETE' });
+    // Archive a ticket. Prompts for confirmation and then calls the archive API.
+    // On success, reloads the tickets and kanban views.
+    window.archiveTicket = async (id) => {
+      if (!confirm('Отправить заявку в архив?')) return;
+      const res = await fetch(`/api/tickets/${id}/archive`, { method: 'POST' });
       const data = await res.json();
       if (!res.ok) return alert(data.error || 'Ошибка');
       await loadTickets(); await loadKanban();
