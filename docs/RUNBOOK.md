@@ -78,8 +78,9 @@
 - Ошибки API возвращаются как JSON: `{"error": {"code": <int>, "message": "<string>"}}` для всех 4xx/5xx; для не-API маршрутов остаётся стандартное HTML-поведение. Ошибки логируются с путём и методом.【F:liftcrm/__init__.py†L35-L63】
 
 ## Лимитирование логина
-- `/api/login` ограничен: 10 попыток за 10 минут на пару `(IP + username)`. Счётчик учитывает все попытки (успешные и неуспешные). При превышении возвращается `429` с JSON-ошибкой `{"error": {"code": "RATE_LIMITED", "message": "Too many login attempts. Try again later."}}` и заголовком `Retry-After`.【F:liftcrm/auth/routes.py†L17-L59】
-- Реализация in-memory: состояние хранится в памяти процесса и сбрасывается при перезапуске, а также не разделяется между воркерами/инстансами. Для продакшена за reverse-proxy важно доверять заголовку `X-Forwarded-For`.【F:liftcrm/utils/rate_limit.py†L1-L40】
+- `/api/login` ограничен: 10 попыток за 10 минут на пару `(IP + username)`. Счётчик учитывает все попытки (успешные и неуспешные). При превышении возвращается `429` с JSON-ошибкой `{"error": {"code": "RATE_LIMITED", "message": "Too many login attempts. Try again later."}}` и заголовком `Retry-After`.【F:liftcrm/auth/routes.py†L21-L59】
+- Реализация in-memory: состояние хранится в памяти процесса и сбрасывается при перезапуске, а также не разделяется между воркерами/инстансами.【F:liftcrm/utils/rate_limit.py†L1-L34】
+- По умолчанию заголовки прокси не доверяются. Если приложение развёрнуто **только** за доверенным reverse-proxy (Nginx/Cloudflare) и недоступно напрямую, включите `TRUST_PROXY_HEADERS=true` (и при необходимости `PROXY_FIX_X_FOR=1`), чтобы `ProxyFix` корректно использовал `X-Forwarded-For`. Иначе оставляйте выключенным, чтобы предотвратить подмену IP.【F:liftcrm/config.py†L7-L20】【F:liftcrm/__init__.py†L23-L38】
 
 ## После рефакторинга: что куда переехало
 - Вход: `app.py` вызывает `liftcrm.create_app()`.【F:app.py†L1-L5】

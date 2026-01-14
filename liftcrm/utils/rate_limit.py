@@ -32,7 +32,4 @@ def clear_rate_limits() -> None:
 
 
 def get_client_ip(request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.remote_addr or ""
+    return request.remote_addr or "unknown"

@@ -13,6 +13,8 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 DISPATCHER_USERNAME = os.environ.get("DISPATCHER_USERNAME", "dispatcher")
 DISPATCHER_PASSWORD = os.environ.get("DISPATCHER_PASSWORD", "disp123")
 MASTER_PASSWORD = os.environ.get("MASTER_PASSWORD", "m123456")
+TRUST_PROXY_HEADERS = os.environ.get("TRUST_PROXY_HEADERS", "false").lower() in ("1", "true", "yes")
+PROXY_FIX_X_FOR = int(os.environ.get("PROXY_FIX_X_FOR", 1))
 
 # SLA
 SLA_RESPONSE_MINUTES = int(os.environ.get("SLA_RESPONSE_MINUTES", 30))
