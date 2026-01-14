@@ -37,6 +37,15 @@ def _transition_error(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message}}), status
 
 
+def _unique_master_username(db, base):
+    candidate = base
+    counter = 1
+    while db.query(User).filter(User.username == candidate).first():
+        candidate = f"{base}-{counter}"
+        counter += 1
+    return candidate
+
+
 @bp.get("/api/masters")
 @login_required
 def list_masters():
@@ -56,6 +65,7 @@ def list_masters():
 def create_master():
     data = request.get_json() or {}
     name = (data.get("name") or "").strip()
+    use_default_password = bool(data.get("use_default_password"))
     if not name:
         return jsonify({"error": "Name is required"}), 400
     use_default_password = bool(data.get("use_default_password"))

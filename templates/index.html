@@ -162,7 +162,7 @@
     <section id="view-tech" class="hidden space-y-4">
       <div class="bg-white rounded-2xl shadow p-4">
         <h2 class="text-lg font-semibold mb-3">Приложение мастера</h2>
-        <p class="text-sm text-slate-600 mb-2">Войдите под пользователем masterN (пароль: m123456). Кнопки работают только в радиусе 500 м.</p>
+        <p class="text-sm text-slate-600 mb-2">Войдите под пользователем мастерского аккаунта (пароль выдаёт администратор). Кнопки работают только в радиусе 500 м.</p>
         <div id="tech-tickets" class="space-y-3"></div>
       </div>
     </section>
@@ -301,6 +301,30 @@
           <button id="temp-password-copy" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-xs">Скопировать пароль</button>
           <span id="temp-password-copy-msg" class="text-xs text-slate-500"></span>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="temp-password-modal" class="modal">
+    <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-md">
+      <div class="flex items-center justify-between">
+        <h3 id="temp-password-title" class="font-semibold">Пароль мастера</h3>
+        <button id="temp-password-close" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-sm">Закрыть</button>
+      </div>
+      <p class="text-sm text-slate-600 mt-2">Пароль показывается один раз. Передайте мастеру безопасным каналом.</p>
+      <div class="mt-4 space-y-3 text-sm">
+        <div>
+          <label class="block text-xs text-slate-500">Логин</label>
+          <input id="temp-password-username" readonly class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200 font-mono">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-500">Временный пароль</label>
+          <input id="temp-password-value" readonly class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200 font-mono">
+        </div>
+      </div>
+      <div class="mt-4 flex items-center gap-2">
+        <button id="temp-password-copy" class="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm">Скопировать</button>
+        <span id="temp-password-copy-msg" class="text-xs text-slate-500"></span>
       </div>
     </div>
   </div>
@@ -454,7 +478,7 @@
     const btnLogout = document.getElementById('btn-logout');
     btnLogin.onclick = async () => {
       const username = prompt('Логин (admin/dispatcher/master1..):','admin'); if (!username) return;
-      const password = prompt('Пароль (admin123 / disp123 / m123456):','admin123'); if (!password) return;
+      const password = prompt('Пароль (admin123 / disp123 / выданный администратором):','admin123'); if (!password) return;
       const res = await fetch('/api/login',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username,password})});
       const data = await res.json(); if (!res.ok) return alert(data.error||'Ошибка входа');
       await refreshMe(); await loadAssetsCatalog(); await loadTicketFilters(); await loadTickets(); await loadKanban(); await loadMyTickets(); loadMastersList(); loadDashboard(); loadMetrics();
@@ -1122,13 +1146,15 @@
       const ul=document.getElementById('masters-list'); ul.innerHTML='';
       for(const m of ms){
         const li=document.createElement('li'); li.className='flex items-center justify-between gap-2';
-        li.innerHTML=`<span>${m.id}. ${m.name} — логин: master${m.id} ${m.is_active?'':'<span class="ml-2 text-xs px-2 py-0.5 rounded bg-slate-100 ring-1 ring-slate-200">неактивен</span>'}</span>
+        li.innerHTML=`<span>${m.id}. ${m.name} — логин: ${m.username ?? '—'} ${m.is_active?'':'<span class="ml-2 text-xs px-2 py-0.5 rounded bg-slate-100 ring-1 ring-slate-200">неактивен</span>'}</span>
                       <div class='flex gap-2'>
+                        <button class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white" data-reset="${m.id}">Сбросить пароль</button>
                         <button class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" data-toggle="${m.id}">${m.is_active?'Деактивировать':'Активировать'}</button>
                         <button class="px-2 py-1 text-xs rounded-lg bg-red-50 ring-1 ring-red-200 text-red-700" data-del="${m.id}">Удалить</button>
                       </div>`;
         ul.appendChild(li);
       }
+      ul.querySelectorAll('[data-reset]').forEach(btn=>{ btn.onclick=async()=>{ const id=btn.getAttribute('data-reset'); if(!confirm('Сбросить пароль мастера #' + id + '?')) return; const res=await fetch(`/api/masters/${id}/reset_password`,{method:'POST'}); const data=await res.json(); if(!res.ok){ alert(data.error||'Ошибка'); return; } openTempPasswordModal('Новый пароль мастера', data.username, data.temp_password); loadMastersList(); }; });
       ul.querySelectorAll('[data-del]').forEach(btn=>{ btn.onclick=async()=>{ const id=btn.getAttribute('data-del'); if(!confirm('Удалить мастера #' + id + ' и перераспределить его открытые заявки?')) return; const res=await fetch(`/api/masters/${id}`,{method:'DELETE'}); const data=await res.json(); if(!res.ok){ alert(data.error||'Ошибка удаления'); return; } loadMastersList(); loadTickets(); loadKanban(); loadDashboard(); loadMetrics(); }; });
       ul.querySelectorAll('[data-toggle]').forEach(btn=>{ btn.onclick=async()=>{ const id=btn.getAttribute('data-toggle'); const res=await fetch(`/api/masters/${id}/toggle_active`,{method:'PATCH'}); const data=await res.json(); if(!res.ok){ alert(data.error||'Ошибка'); return; } loadMastersList(); loadTickets(); loadKanban(); loadDashboard(); loadMetrics(); }; });
     }
