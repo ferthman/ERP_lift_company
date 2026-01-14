@@ -100,7 +100,10 @@ class TicketStatusTransitionTest(unittest.TestCase):
         self.logout()
 
         self.login("master1", config.MASTER_PASSWORD)
-        res = self.client.post(f"/api/tickets/{ticket_id}/cancel", json={"cancel_reason": "Nope"})
+        res = self.client.post(
+            f"/api/tickets/{ticket_id}/cancel",
+            json={"close_reason": "OTHER", "close_comment": "No access"},
+        )
         self.assertIn(res.status_code, (401, 403))
         self.logout()
 
@@ -164,7 +167,6 @@ class TicketStatusTransitionTest(unittest.TestCase):
         self.login(config.ADMIN_USERNAME, config.ADMIN_PASSWORD)
         cancel = self.client.post(
             f"/api/tickets/{ticket_id}/cancel",
-            json={"cancel_reason": "Archive test"},
+            json={"close_reason": "OTHER", "close_comment": "Archive test"},
         )
         self.assertEqual(cancel.status_code, 400)
-

@@ -49,7 +49,10 @@ class AuditLogApiTest(unittest.TestCase):
         self.assertEqual(archive.status_code, 200)
 
         ticket_id_cancel = self.create_ticket(object_name="Audit Cancel Ticket")
-        cancel = self.client.post(f"/api/tickets/{ticket_id_cancel}/cancel", json={"cancel_reason": "Nope"})
+        cancel = self.client.post(
+            f"/api/tickets/{ticket_id_cancel}/cancel",
+            json={"close_reason": "OTHER", "close_comment": "Nope nope"},
+        )
         self.assertEqual(cancel.status_code, 200)
         self.logout()
 

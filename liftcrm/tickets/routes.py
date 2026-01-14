@@ -50,7 +50,7 @@ def _ticket_snapshot(t):
         "completed_at": t.completed_at.isoformat() if t.completed_at else None,
         "archived_at": t.archived_at.isoformat() if t.archived_at else None,
         "close_reason": t.close_reason,
-        "cancel_reason": t.cancel_reason,
+        "close_comment": t.close_comment,
         "custom_sla_response_minutes": t.custom_sla_response_minutes,
         "custom_sla_completion_minutes": t.custom_sla_completion_minutes,
     }
@@ -479,8 +479,10 @@ def cancel_ticket(ticket_id):
         if t.archived_at:
             return jsonify({"error": "Ticket archived"}), 400
         old_status = t.status
-        old_cancel = t.cancel_reason
-        t.cancel_reason = data.get("cancel_reason")
+        old_close_reason = t.close_reason
+        old_close_comment = t.close_comment
+        t.close_reason = data.get("close_reason")
+        t.close_comment = data.get("close_comment")
         t.status = "CANCELLED"
         ok, code, message = validate_status_transition(
             old_status,
@@ -498,8 +500,8 @@ def cancel_ticket(ticket_id):
             t.id,
             "CANCEL",
             current_user,
-            old={"status": old_status, "cancel_reason": old_cancel},
-            new={"status": t.status, "cancel_reason": t.cancel_reason},
+            old={"status": old_status, "close_reason": old_close_reason, "close_comment": old_close_comment},
+            new={"status": t.status, "close_reason": t.close_reason, "close_comment": t.close_comment},
         )
         return jsonify({"message": "Cancelled"})
 
