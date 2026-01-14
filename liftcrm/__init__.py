@@ -100,7 +100,12 @@ def create_app():
 
     @app.get("/")
     def index():
-        return render_template("index.html")
+        from .tickets.service import CancelReason
+
+        return render_template(
+            "index.html",
+            cancel_reasons=[reason.value for reason in CancelReason],
+        )
 
     from .auth.routes import bp as auth_bp
     from .tickets.routes import bp as tickets_bp
