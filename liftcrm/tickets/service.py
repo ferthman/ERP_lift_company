@@ -10,6 +10,13 @@ from ..db import Master, Ticket
 from ..utils.time import to_utc
 from .. import config
 
+CANCEL_REASONS = {
+    "CLIENT_REQUEST",
+    "DUPLICATE",
+    "NO_ACCESS",
+    "OUT_OF_SCOPE",
+    "OTHER",
+}
 
 def haversine_m(lat1, lon1, lat2, lon2):
     R = 6371000.0
@@ -239,6 +246,12 @@ def _validate_status_invariants(new_status, ticket, actor_role, payload):
                 False,
                 "INVALID_STATUS_TRANSITION",
                 "Close reason is required to cancel a ticket.",
+            )
+        if close_reason not in CANCEL_REASONS:
+            return (
+                False,
+                "INVALID_STATUS_TRANSITION",
+                "Invalid close_reason for cancellation.",
             )
         if not close_comment or len(str(close_comment).strip()) < 5:
             return (

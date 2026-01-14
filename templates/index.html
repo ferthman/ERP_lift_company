@@ -675,7 +675,7 @@
           <div id="reassign-select-${t.id}" class="flex gap-2">
             <button data-admin-only class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" onclick="showReassign(${t.id})">Переназначить</button>
           </div>
-          <button class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" onclick="openHistory(${t.id})">История</button>
+          <button data-admin-only class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" onclick="openHistory(${t.id})">История</button>
           <button data-admin-only class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" onclick="openCancelModal(${t.id})">Отменить</button>
           <button data-admin-only class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" onclick="archiveTicket(${t.id})">В архив</button>
         </div></td></tr>`;

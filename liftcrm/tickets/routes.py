@@ -481,19 +481,23 @@ def cancel_ticket(ticket_id):
         old_status = t.status
         old_close_reason = t.close_reason
         old_close_comment = t.close_comment
-        t.close_reason = data.get("close_reason")
-        t.close_comment = data.get("close_comment")
-        t.status = "CANCELLED"
+        close_reason = data.get("close_reason")
+        close_comment_raw = data.get("close_comment")
+        close_comment = str(close_comment_raw).strip() if close_comment_raw is not None else None
+        payload = {"close_reason": close_reason, "close_comment": close_comment}
         ok, code, message = validate_status_transition(
             old_status,
-            t.status,
+            "CANCELLED",
             t,
             current_user.role,
-            data,
+            payload,
         )
         if not ok:
             status = 403 if code == "FORBIDDEN" else 400
             return _transition_error(code, message, status=status)
+        t.status = "CANCELLED"
+        t.close_reason = close_reason
+        t.close_comment = close_comment
         db.commit()
         log_audit(
             "ticket",

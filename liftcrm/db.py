@@ -168,6 +168,15 @@ def ensure_migrations():
         if "close_comment" not in tcols:
             cur.execute("ALTER TABLE tickets ADD COLUMN close_comment TEXT")
             conn.commit()
+        if "cancel_reason" in tcols and "close_reason" in tcols:
+            cur.execute(
+                """
+                UPDATE tickets
+                SET close_reason = cancel_reason
+                WHERE close_reason IS NULL AND cancel_reason IS NOT NULL
+                """
+            )
+            conn.commit()
         if "custom_sla_response_minutes" not in tcols:
             cur.execute("ALTER TABLE tickets ADD COLUMN custom_sla_response_minutes INTEGER")
             conn.commit()
