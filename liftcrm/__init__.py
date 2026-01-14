@@ -6,7 +6,6 @@ from flask_cors import CORS
 
 from . import config
 from .utils.logging import setup_logging
-from .objects.service import ensure_objects_workbook
 
 # ---------------------------------------------------------------------------
 # Vendor path configuration (openpyxl fallback)
@@ -49,26 +48,6 @@ def create_app():
         init_db()
         ensure_migrations()
         os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
-
-        os.makedirs(config.OBJECTS_DIR, exist_ok=True)
-        json_path = os.path.join(config.OBJECTS_DIR, "objects.json")
-        sample_object = {
-            "object_name": "Central Almaty",
-            "address": "ул. Кабанбай Батыра 123",
-            "lat": 43.238949,
-            "lon": 76.889709,
-        }
-        try:
-            try:
-                ensure_objects_workbook()
-            except Exception as e:
-                print("Failed to create objects.xlsx:", e)
-            if not os.path.exists(json_path):
-                import json
-                with open(json_path, "w", encoding="utf-8") as jf:
-                    json.dump([sample_object], jf, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print("Failed to initialize objects files:", e)
 
         archive_path = config.ARCHIVE_PATH
         try:
@@ -114,11 +93,13 @@ def create_app():
 
     from .auth.routes import bp as auth_bp
     from .tickets.routes import bp as tickets_bp
+    from .assets.routes import bp as assets_bp
     from .objects.routes import bp as objects_bp
     from .utils.health import bp as health_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(tickets_bp)
+    app.register_blueprint(assets_bp)
     app.register_blueprint(objects_bp)
     app.register_blueprint(health_bp)
 

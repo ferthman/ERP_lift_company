@@ -9,8 +9,8 @@ from werkzeug.security import generate_password_hash
 
 from .service import auto_assign_master, haversine_m, send_report, validate_status_transition
 from . import repository
-from ..db import SessionLocal, Master, Ticket, Attachment, User, AuditLog
-from ..objects.service import upsert_object_from_ticket
+from ..db import SessionLocal, Master, Ticket, Attachment, User, AuditLog, Asset
+from ..assets.service import upsert_asset_from_ticket, rounded_coords
 from ..utils.security import role_required, generate_temp_password
 from ..utils.time import to_utc
 from ..utils.audit import log_audit, changed_fields
@@ -247,9 +247,14 @@ def list_tickets():
 @role_required("admin", "dispatcher")
 def create_ticket():
     data = request.get_json() or {}
-    for k in ("object_name", "lat", "lon"):
-        if k not in data:
-            return jsonify({"error": f"Missing field: {k}"}), 400
+    asset_id = data.get("asset_id")
+    if asset_id is not None:
+        try:
+            asset_id = int(asset_id)
+        except Exception:
+            return jsonify({"error": "Invalid asset_id"}), 400
+    if "object_name" not in data and not asset_id:
+        return jsonify({"error": "Missing field: object_name"}), 400
     priority = (data.get("priority") or "MEDIUM").upper()
     if priority not in PRIORITY_VALUES:
         return jsonify({"error": "Invalid priority"}), 400
@@ -270,18 +275,45 @@ def create_ticket():
     if custom_resp == "INVALID" or custom_comp == "INVALID":
         return jsonify({"error": "custom SLA minutes must be positive integers"}), 400
     with SessionLocal() as db:
+        asset = None
+        if asset_id is not None:
+            asset = db.get(Asset, asset_id)
+            if not asset:
+                return jsonify({"error": "Asset not found"}), 404
+        object_name = (data.get("object_name") or "").strip()
+        if not object_name and asset:
+            object_name = (asset.lift_label or asset.serial_no or asset.address or "Лифт")
+        address = data.get("address")
+        if not address and asset:
+            address = asset.address
+        lat = data.get("lat")
+        lon = data.get("lon")
+        if (lat is None or lon is None) and asset and asset.lat is not None and asset.lon is not None:
+            lat, lon = asset.lat, asset.lon
+        if lat is None or lon is None:
+            return jsonify({"error": "Missing field: lat/lon"}), 400
+        lat = float(lat)
+        lon = float(lon)
+        if asset and (asset.lat is None or asset.lon is None) and rounded_coords(lat, lon)[0] is not None:
+            asset.lat = asset.lat if asset.lat is not None else lat
+            asset.lon = asset.lon if asset.lon is not None else lon
         t = Ticket(
-            object_name=data["object_name"],
-            address=data.get("address"),
-            lat=float(data["lat"]),
-            lon=float(data["lon"]),
+            object_name=object_name,
+            address=address,
+            lat=lat,
+            lon=lon,
             description=data.get("description"),
             priority=priority,
             email=data.get("email"),
             status="NEW",
             custom_sla_response_minutes=custom_resp,
             custom_sla_completion_minutes=custom_comp,
+            asset_id=asset.id if asset else None,
         )
+        if not asset and address:
+            asset = upsert_asset_from_ticket(db, object_name, address, lat, lon)
+            if asset:
+                t.asset_id = asset.id
         m = auto_assign_master(db)
         if m:
             t.assigned_master_id, t.status = m.id, "ASSIGNED"
@@ -312,10 +344,6 @@ def create_ticket():
         )
         db.commit()
         db.refresh(t)
-    try:
-        upsert_object_from_ticket(t.object_name, t.address, t.lat, t.lon, ticket_id=t.id)
-    except Exception:
-        logger.warning("objects upsert failed", extra={"ticket_id": t.id}, exc_info=True)
     return jsonify({"id": t.id, "assigned_master_id": t.assigned_master_id, "status": t.status}), 201
 
 

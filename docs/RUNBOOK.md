@@ -10,7 +10,7 @@
 
 ## Что создаётся автоматически
 - База `lift_crm.db` (SQLite) и таблицы при первом запросе (hook `before_request`).【F:app.py†L124-L180】
-- Каталог `uploads/` для файлов вложений и `objects/objects.{xlsx,json}` с примером объекта.【F:app.py†L124-L175】
+- Каталог `uploads/` для файлов вложений и таблица `assets` в SQLite (создаётся миграцией при первом запросе).【F:liftcrm/db.py†L95-L142】
 - Файл `archive.xlsx` (пустой с заголовками, включая колонку priority) для скачивания архива заявок.【F:liftcrm/__init__.py†L68-L104】
 
 ## Приоритеты заявок
@@ -33,6 +33,11 @@
 - Экспорт `GET /api/archive` выгружает все заявки (активные + архив) и отдельные столбцы `archived_at` и `close_reason` в XLSX.【F:liftcrm/tickets/routes.py†L390-L433】
 - При запуске выполняется миграция SQLite: колонка `archived_at` добавляется автоматически, если её ещё нет.【F:liftcrm/db.py†L107-L125】
 
+## Реестр лифтов (Assets)
+- CRUD доступен для admin/dispatcher: `GET/POST/PATCH /api/assets`.【F:liftcrm/assets/routes.py†L1-L129】
+- Экспорт реестра: `GET /api/assets/export.xlsx` и `GET /api/assets/export.csv`.【F:liftcrm/assets/routes.py†L132-L176】
+- Разовый сид из Excel: `python scripts/seed_assets_from_objects_xlsx.py` (читает `objects/objects.xlsx`, идемпотентно создаёт/обновляет assets и по возможности связывает существующие тикеты).【F:scripts/seed_assets_from_objects_xlsx.py†L1-L104】
+
 ## Типовой флоу проверки
 1. Запустить сервер.  
 2. Войти как admin.  
@@ -40,7 +45,7 @@
 4. Проверить автоназначение мастера и отображение в таблице/канбане.  
 5. Скачать архив через кнопку «Скачать архив».
 6. Переключиться на masterN и отметить «Приехал» / «Завершить» (нужна геолокация в браузере; при завершении выбрать обязательную причину закрытия из списка перед подтверждением).
-7. Открыть вкладку «Объекты» и убедиться, что точки отображаются с `objects.xlsx`.
+7. Открыть вкладку «Объекты» и убедиться, что точки отображаются из SQL-реестра лифтов, а переключатель «Показывать заявки» показывает открытые тикеты.
 
 ## Частые ошибки и решения
 - **`Missing dependency: openpyxl` при скачивании архива.**  
@@ -67,7 +72,7 @@
 - Файлы и данные:
   - БД: `lift_crm.db` в корне.
   - Архив: `archive.xlsx` и копии `archive_N.xlsx` в корне.
-  - Объекты: `objects/objects.xlsx|json`.
+- Реестр лифтов: таблица `assets` в `lift_crm.db` (экспорт в CSV/XLSX).
   - Вложения: `uploads/` в корне.
 
 ## Мониторинг/здоровье
@@ -85,8 +90,8 @@
 ## После рефакторинга: что куда переехало
 - Вход: `app.py` вызывает `liftcrm.create_app()`.【F:app.py†L1-L5】
 - Конфиги путей: `liftcrm/config.py` (архив, uploads, objects).【F:liftcrm/config.py†L1-L4】
-- БД и модели: `liftcrm/db.py` (Master/User/Ticket/Attachment).【F:liftcrm/db.py†L1-L96】
-- Роуты: `liftcrm/auth/routes.py`, `liftcrm/tickets/routes.py`, `liftcrm/objects/routes.py`.【F:liftcrm/auth/routes.py†L1-L35】【F:liftcrm/tickets/routes.py†L1-L424】【F:liftcrm/objects/routes.py†L1-L48】
+- БД и модели: `liftcrm/db.py` (Master/User/Ticket/Attachment/Asset).【F:liftcrm/db.py†L1-L122】
+- Роуты: `liftcrm/auth/routes.py`, `liftcrm/tickets/routes.py`, `liftcrm/assets/routes.py`, `liftcrm/objects/routes.py`.【F:liftcrm/auth/routes.py†L1-L35】【F:liftcrm/tickets/routes.py†L1-L424】【F:liftcrm/assets/routes.py†L1-L176】【F:liftcrm/objects/routes.py†L1-L21】
 - Логика тикетов: `liftcrm/tickets/service.py` (назначение, геозона, архив, email).【F:liftcrm/tickets/service.py†L1-L103】
 - Утилиты: `liftcrm/utils/security.py`, `liftcrm/utils/time.py`, `liftcrm/utils/health.py`.【F:liftcrm/utils/security.py†L1-L14】【F:liftcrm/utils/time.py†L1-L5】【F:liftcrm/utils/health.py†L1-L6】
 
@@ -99,7 +104,7 @@
 6. Назначение мастера вручную (`POST /api/tickets/{id}/assign/{mid}`) — мастер обновлён.
 7. Метрики (`GET /api/metrics`) отвечают корректно под admin/dispatcher; блок «Итоги» показывает распределение по приоритетам.
 8. Скачивание архива (`GET /api/archive`) отдаёт `archive.xlsx` с колонкой priority.
-9. Вкладка «Объекты» грузит точки с `objects.xlsx` (`GET /api/objects`).
+9. Вкладка «Объекты» грузит точки из SQL-реестра (`GET /api/assets`), `/api/objects` остаётся алиасом.
 10. SLA отображается: создание тикета, ожидание > SLA (или ручная правка времени) → флаги «overdue» в таблице/канбане/дашборде и рост счётчиков в `/api/metrics`.
 
 ### Важно: не менять правила автоназначения/перераспределения без решения продукта
