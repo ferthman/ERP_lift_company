@@ -30,6 +30,11 @@ def create_app():
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     app.config["SESSION_COOKIE_SECURE"] = False
 
+    if config.TRUST_PROXY_HEADERS:
+        from werkzeug.middleware.proxy_fix import ProxyFix
+
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=config.PROXY_FIX_X_FOR)
+
     CORS(app, supports_credentials=True)
     login_manager.init_app(app)
     login_manager.login_view = "index"
