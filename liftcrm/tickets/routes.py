@@ -320,19 +320,25 @@ def cancel_ticket(ticket_id):
             return jsonify({"error": "Ticket not found"}), 404
         if t.archived_at:
             return jsonify({"error": "Ticket archived"}), 400
+        if t.status == "CANCELLED":
+            return jsonify({"message": "Already cancelled"}), 200
         old_status = t.status
-        t.cancel_reason = data.get("cancel_reason")
+        close_reason = data.get("close_reason") or data.get("cancel_reason")
+        close_comment = data.get("close_comment")
         t.status = "CANCELLED"
+        payload = {"close_reason": close_reason, "close_comment": close_comment}
         ok, code, message = validate_status_transition(
             old_status,
             t.status,
             t,
             current_user.role,
-            data,
+            payload,
         )
         if not ok:
             status = 403 if code == "FORBIDDEN" else 400
             return _transition_error(code, message, status=status)
+        t.close_reason = close_reason
+        t.close_comment = str(close_comment).strip()
         db.commit()
         return jsonify({"message": "Cancelled"})
 
@@ -667,6 +673,7 @@ def download_archive():
             "email",
             "status",
             "close_reason",
+            "close_comment",
             "assigned_master_id",
             "assigned_master_name",
             "created_at",
@@ -696,6 +703,7 @@ def download_archive():
                     t.email,
                     t.status,
                     t.close_reason,
+                    t.close_comment,
                     t.assigned_master_id,
                     t.assigned_master.name if t.assigned_master else None,
                     t.created_at.isoformat() if t.created_at else None,

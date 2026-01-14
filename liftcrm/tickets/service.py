@@ -82,6 +82,14 @@ def send_report(ticket: Ticket):
     except Exception as e:
         print("Failed to send completion report:", e)
 
+CANCEL_CLOSE_REASONS = {
+    "DUPLICATE",
+    "FALSE_CALL",
+    "NO_ACCESS",
+    "CUSTOMER_CANCELLED",
+    "OTHER",
+}
+
 
 def archive_ticket(ticket: Ticket, archive_path: str):
     header = [
@@ -95,7 +103,7 @@ def archive_ticket(ticket: Ticket, archive_path: str):
         "email",
         "status",
         "close_reason",
-        "cancel_reason",
+        "close_comment",
         "assigned_master_id",
         "assigned_master_name",
         "created_at",
@@ -130,7 +138,7 @@ def archive_ticket(ticket: Ticket, archive_path: str):
             ticket.email,
             ticket.status,
             ticket.close_reason,
-            ticket.cancel_reason,
+            ticket.close_comment,
             ticket.assigned_master_id,
             ticket.assigned_master.name if ticket.assigned_master else None,
             ticket.created_at.isoformat() if ticket.created_at else None,
@@ -232,11 +240,24 @@ def _validate_status_invariants(new_status, ticket, actor_role, payload):
                 "FORBIDDEN",
                 "Only admin/dispatcher can cancel tickets.",
             )
-        cancel_reason = (payload or {}).get("cancel_reason")
-        if not cancel_reason:
+        close_reason = (payload or {}).get("close_reason") or (payload or {}).get("cancel_reason")
+        close_comment = (payload or {}).get("close_comment")
+        if not close_reason:
             return (
                 False,
-                "INVALID_STATUS_TRANSITION",
-                "Cancel reason is required to cancel a ticket.",
+                "VALIDATION_ERROR",
+                "close_reason is required to cancel a ticket.",
+            )
+        if close_reason not in CANCEL_CLOSE_REASONS:
+            return (
+                False,
+                "VALIDATION_ERROR",
+                "Invalid close_reason for cancellation.",
+            )
+        if close_comment is None or len(str(close_comment).strip()) < 5:
+            return (
+                False,
+                "VALIDATION_ERROR",
+                "close_comment must be at least 5 characters.",
             )
     return True, "", ""

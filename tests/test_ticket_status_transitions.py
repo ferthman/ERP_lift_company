@@ -94,13 +94,16 @@ class TicketStatusTransitionTest(unittest.TestCase):
         self.assertEqual(code, "INVALID_STATUS_TRANSITION")
         self.assertIn("completed_at", message)
 
-    def test_cancel_permissions_and_reason(self):
+    def test_cancel_permissions_and_validation(self):
         self.login(config.ADMIN_USERNAME, config.ADMIN_PASSWORD)
         ticket_id = self.create_ticket()
         self.logout()
 
         self.login("master1", config.MASTER_PASSWORD)
-        res = self.client.post(f"/api/tickets/{ticket_id}/cancel", json={"cancel_reason": "Nope"})
+        res = self.client.post(
+            f"/api/tickets/{ticket_id}/cancel",
+            json={"close_reason": "DUPLICATE", "close_comment": "Нет доступа"},
+        )
         self.assertIn(res.status_code, (401, 403))
         self.logout()
 
@@ -110,6 +113,35 @@ class TicketStatusTransitionTest(unittest.TestCase):
         data = res.get_json()
         self.assertIn("error", data)
         self.assertIn("code", data["error"])
+        self.assertEqual(data["error"]["code"], "VALIDATION_ERROR")
+
+        res = self.client.post(
+            f"/api/tickets/{ticket_id}/cancel",
+            json={"close_reason": "INVALID", "close_comment": "Нет доступа"},
+        )
+        self.assertEqual(res.status_code, 400)
+        data = res.get_json()
+        self.assertEqual(data["error"]["code"], "VALIDATION_ERROR")
+
+        res = self.client.post(
+            f"/api/tickets/{ticket_id}/cancel",
+            json={"close_reason": "NO_ACCESS", "close_comment": "мало"},
+        )
+        self.assertEqual(res.status_code, 400)
+        data = res.get_json()
+        self.assertEqual(data["error"]["code"], "VALIDATION_ERROR")
+
+        res = self.client.post(
+            f"/api/tickets/{ticket_id}/cancel",
+            json={"close_reason": "NO_ACCESS", "close_comment": "Нет доступа к объекту"},
+        )
+        self.assertEqual(res.status_code, 200)
+
+        res = self.client.get(f"/api/tickets/{ticket_id}")
+        data = res.get_json()
+        self.assertEqual(data["status"], "CANCELLED")
+        self.assertEqual(data["close_reason"], "NO_ACCESS")
+        self.assertEqual(data["close_comment"], "Нет доступа к объекту")
 
     def test_happy_path_assign_arrive_complete(self):
         self.login(config.ADMIN_USERNAME, config.ADMIN_PASSWORD)
@@ -164,7 +196,6 @@ class TicketStatusTransitionTest(unittest.TestCase):
         self.login(config.ADMIN_USERNAME, config.ADMIN_PASSWORD)
         cancel = self.client.post(
             f"/api/tickets/{ticket_id}/cancel",
-            json={"cancel_reason": "Archive test"},
+            json={"close_reason": "OTHER", "close_comment": "Archive test reason"},
         )
         self.assertEqual(cancel.status_code, 400)
-

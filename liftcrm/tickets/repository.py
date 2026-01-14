@@ -71,7 +71,7 @@ def serialize_ticket(t: Ticket):
         "completed_at": (to_utc(t.completed_at).isoformat() if t.completed_at else None),
         "archived_at": (to_utc(t.archived_at).isoformat() if t.archived_at else None),
         "close_reason": t.close_reason,
-        "cancel_reason": t.cancel_reason,
+        "close_comment": t.close_comment,
         "attachments": [
             {"id": a.id, "url": f"/uploads/{a.filename}", "name": a.orig_name} for a in t.attachments
         ],

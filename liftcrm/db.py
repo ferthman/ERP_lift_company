@@ -60,7 +60,7 @@ class Ticket(Base):
     completion_lat = Column(Float, nullable=True)
     completion_lon = Column(Float, nullable=True)
     close_reason = Column(String, nullable=True)
-    cancel_reason = Column(String, nullable=True)
+    close_comment = Column(String, nullable=True)
     custom_sla_response_minutes = Column(Integer, nullable=True)
     custom_sla_completion_minutes = Column(Integer, nullable=True)
     assigned_master = relationship("Master", back_populates="tickets")
@@ -134,8 +134,14 @@ def ensure_migrations():
         if "close_reason" not in tcols:
             cur.execute("ALTER TABLE tickets ADD COLUMN close_reason TEXT")
             conn.commit()
-        if "cancel_reason" not in tcols:
-            cur.execute("ALTER TABLE tickets ADD COLUMN cancel_reason TEXT")
+        if "close_comment" not in tcols:
+            cur.execute("ALTER TABLE tickets ADD COLUMN close_comment TEXT")
+            conn.commit()
+        if "cancel_reason" in tcols and "close_reason" in tcols:
+            cur.execute(
+                "UPDATE tickets SET close_reason = cancel_reason "
+                "WHERE close_reason IS NULL AND cancel_reason IS NOT NULL"
+            )
             conn.commit()
         if "custom_sla_response_minutes" not in tcols:
             cur.execute("ALTER TABLE tickets ADD COLUMN custom_sla_response_minutes INTEGER")
