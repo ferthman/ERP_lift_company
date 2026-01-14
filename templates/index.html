@@ -291,12 +291,16 @@
   <div id="temp-password-modal" class="modal">
     <div class="modal-content">
       <div class="flex items-center justify-between">
-        <h3 class="font-semibold">Пароль мастера</h3>
+        <h3 id="temp-password-title" class="font-semibold">Пароль мастера</h3>
         <button id="temp-password-close" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-sm">Закрыть</button>
       </div>
-      <div class="mt-3 text-sm text-slate-700">
+      <div class="mt-3 text-sm text-slate-700 space-y-2">
         <div>Логин: <span id="temp-password-username" class="font-semibold"></span></div>
         <div>Пароль: <span id="temp-password-value" class="font-semibold"></span></div>
+        <div class="flex items-center gap-2">
+          <button id="temp-password-copy" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-xs">Скопировать пароль</button>
+          <span id="temp-password-copy-msg" class="text-xs text-slate-500"></span>
+        </div>
       </div>
     </div>
   </div>
@@ -404,9 +408,12 @@
     const ticketModalBody = document.getElementById('ticket-modal-body');
     const ticketModalClose = document.getElementById('ticket-modal-close');
     const tempPasswordModal = document.getElementById('temp-password-modal');
-    const tempPasswordClose = document.getElementById('temp-password-close');
+    const tempPasswordTitle = document.getElementById('temp-password-title');
     const tempPasswordUsername = document.getElementById('temp-password-username');
     const tempPasswordValue = document.getElementById('temp-password-value');
+    const tempPasswordCopy = document.getElementById('temp-password-copy');
+    const tempPasswordCopyMsg = document.getElementById('temp-password-copy-msg');
+    const tempPasswordClose = document.getElementById('temp-password-close');
     const assetSearchInput = document.getElementById('asset-search');
     const assetSelect = document.getElementById('asset-select');
     const assetAddressInput = document.querySelector('#form-create input[name="address"]');
@@ -548,6 +555,19 @@
     if(tempPasswordClose){
       tempPasswordClose.onclick = () => tempPasswordModal?.classList.remove('open');
     }
+    if(tempPasswordCopy){
+      tempPasswordCopy.onclick = async () => {
+        if(!tempPasswordValue) return;
+        const value = tempPasswordValue.textContent || '';
+        if(!value) return;
+        try{
+          await navigator.clipboard.writeText(value);
+          if(tempPasswordCopyMsg) tempPasswordCopyMsg.textContent = 'Скопировано';
+        }catch(err){
+          if(tempPasswordCopyMsg) tempPasswordCopyMsg.textContent = 'Не удалось скопировать';
+        }
+      };
+    }
 
     function openTicketModal(ticket) {
       if (!ticket) return;
@@ -573,6 +593,15 @@
       `;
       loadTicketHistory(ticket.id);
       ticketModal.classList.add('open');
+    }
+
+    function openTempPasswordModal(title, username, tempPassword) {
+      if(!tempPasswordModal) return;
+      if(tempPasswordTitle) tempPasswordTitle.textContent = title || 'Пароль мастера';
+      if(tempPasswordUsername) tempPasswordUsername.textContent = username || '';
+      if(tempPasswordValue) tempPasswordValue.textContent = tempPassword || '';
+      if(tempPasswordCopyMsg) tempPasswordCopyMsg.textContent = '';
+      tempPasswordModal.classList.add('open');
     }
 
     function formatHistoryValue(value){
@@ -1111,9 +1140,7 @@
       const res=await fetch('/api/masters',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); const data=await res.json();
       if(!res.ok){ masterMsg.textContent=data.error||'Ошибка'; return; }
       if(tempPasswordModal && tempPasswordUsername && tempPasswordValue){
-        tempPasswordUsername.textContent = data.username || '';
-        tempPasswordValue.textContent = data.temp_password || '';
-        tempPasswordModal.classList.add('open');
+        openTempPasswordModal('Пароль мастера', data.username, data.temp_password);
         masterMsg.textContent = '';
       } else {
         masterMsg.textContent=`Создан: ${data.name}. Логин: ${data.username}, пароль: ${data.temp_password}`;

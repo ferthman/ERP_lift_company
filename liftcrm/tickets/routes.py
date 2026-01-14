@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, jsonify, request, send_from_directory
 from flask_login import login_required, current_user
 from sqlalchemy import func
+from werkzeug.security import generate_password_hash
 
 from .service import auto_assign_master, haversine_m, send_report, validate_status_transition
 from . import repository
@@ -63,8 +64,6 @@ def create_master():
         db.add(m)
         db.commit()
         db.refresh(m)
-        from werkzeug.security import generate_password_hash
-
         def _unique_username(base: str) -> str:
             if not db.query(User).filter(User.username == base).first():
                 return base

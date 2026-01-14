@@ -5,6 +5,9 @@ import string
 from flask import jsonify
 from flask_login import current_user
 
+from .. import config
+
+_TEMP_PASSWORD_ALPHABET = string.ascii_letters + string.digits
 
 
 def role_required(*roles):
@@ -22,6 +25,7 @@ def role_required(*roles):
     return decorator
 
 
-def generate_temp_password(length: int = 10) -> str:
-    alphabet = string.ascii_letters + string.digits
-    return "".join(secrets.choice(alphabet) for _ in range(max(8, length)))
+def generate_temp_password(length: int = 12, preset: str | None = None) -> str:
+    if preset is not None and preset.strip() != "":
+        return preset.strip()
+    return "".join(secrets.choice(_TEMP_PASSWORD_ALPHABET) for _ in range(max(8, length)))
