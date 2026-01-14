@@ -111,6 +111,31 @@
               <button id="btn-download-archive" data-admin-only class="px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Скачать архив</button>
             </div>
           </div>
+          <div id="tickets-filters" class="mb-3 flex flex-wrap items-end gap-3 text-sm">
+            <label class="flex items-center gap-2 text-slate-600">
+              <input id="filter-overdue" type="checkbox" class="h-4 w-4 rounded border-slate-300">
+              Просроченные SLA
+            </label>
+            <label class="flex items-center gap-2 text-slate-600">
+              <input id="filter-unassigned" type="checkbox" class="h-4 w-4 rounded border-slate-300">
+              Без мастера
+            </label>
+            <div class="flex flex-col">
+              <span class="text-xs text-slate-500">Мастер</span>
+              <select id="filter-master" class="px-2 py-1 rounded-lg ring-1 ring-slate-200 bg-white text-sm min-w-[180px]">
+                <option value="">Все</option>
+              </select>
+            </div>
+            <div class="flex flex-col">
+              <span class="text-xs text-slate-500">Приоритет</span>
+              <select id="filter-priority" class="px-2 py-1 rounded-lg ring-1 ring-slate-200 bg-white text-sm min-w-[160px]">
+                <option value="">Все</option>
+                <option value="HIGH">HIGH</option>
+                <option value="MEDIUM">MEDIUM</option>
+                <option value="LOW">LOW</option>
+              </select>
+            </div>
+          </div>
           <div id="tickets-table" class="overflow-x-auto"></div>
         </div>
       </div>
@@ -245,6 +270,17 @@
     </div>
   </div>
 
+  <!-- Ticket Details Modal -->
+  <div id="ticket-modal" class="modal">
+    <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-2xl">
+      <div class="flex items-center justify-between">
+        <h3 class="font-semibold">Заявка</h3>
+        <button id="ticket-modal-close" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-sm">Закрыть</button>
+      </div>
+      <div id="ticket-modal-body" class="mt-4 space-y-2 text-sm text-slate-700"></div>
+    </div>
+  </div>
+
   <script>
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/static/sw.js");
   </script>
@@ -322,7 +358,21 @@
     const cancelCommentInput = document.getElementById('cancel-comment');
     const cancelError = document.getElementById('cancel-error');
     const cancelConfirmButton = document.getElementById('cancel-modal-confirm');
+    const ticketModal = document.getElementById('ticket-modal');
+    const ticketModalBody = document.getElementById('ticket-modal-body');
+    const ticketModalClose = document.getElementById('ticket-modal-close');
+    const filterOverdue = document.getElementById('filter-overdue');
+    const filterUnassigned = document.getElementById('filter-unassigned');
+    const filterMaster = document.getElementById('filter-master');
+    const filterPriority = document.getElementById('filter-priority');
     let cancelTicketId = null;
+    const ticketFilters = {
+      overdue: false,
+      unassigned: false,
+      masterId: '',
+      priority: '',
+    };
+    let ticketTimerInterval = null;
 
     function setTab(which) {
       for (const btn of [tabAdmin, tabOps, tabTech, tabObjects, tabSuper]) btn.classList.remove('bg-slate-900','text-white');
@@ -350,7 +400,7 @@
       const password = prompt('Пароль (admin123 / disp123 / m123456):','admin123'); if (!password) return;
       const res = await fetch('/api/login',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username,password})});
       const data = await res.json(); if (!res.ok) return alert(data.error||'Ошибка входа');
-      await refreshMe(); await loadTickets(); await loadKanban(); await loadMyTickets(); loadMastersList(); loadDashboard(); loadMetrics();
+      await refreshMe(); await loadTicketFilters(); await loadTickets(); await loadKanban(); await loadMyTickets(); loadMastersList(); loadDashboard(); loadMetrics();
     };
     btnLogout.onclick = async () => { await fetch('/api/logout',{method:'POST'}); me = null; renderAuth(); };
     async function refreshMe(){ const res=await fetch('/api/me'); me=await res.json(); renderAuth(); }
@@ -415,6 +465,39 @@
     cancelReasonSelect.onchange = updateCancelButton;
     cancelCommentInput.oninput = updateCancelButton;
     populateCancelReasons();
+    ticketModalClose.onclick = () => ticketModal.classList.remove('open');
+
+    function openTicketModal(ticket) {
+      if (!ticket) return;
+      const parts = [
+        `<div class="text-lg font-semibold">#${ticket.id} — ${ticket.object_name ?? ''}</div>`,
+        `<div><span class="text-slate-500">Статус:</span> ${ticket.status}</div>`,
+        `<div><span class="text-slate-500">Мастер:</span> ${ticket.assigned_master_name ?? '—'}</div>`,
+        `<div><span class="text-slate-500">Адрес:</span> ${ticket.address ?? '—'}</div>`,
+        `<div><span class="text-slate-500">Описание:</span> ${ticket.description ?? '—'}</div>`,
+        `<div><span class="text-slate-500">Приоритет:</span> ${ticket.priority ?? 'MEDIUM'}</div>`,
+        `<div><span class="text-slate-500">SLA:</span> ${renderSla(ticket)}</div>`,
+      ];
+      ticketModalBody.innerHTML = parts.join('');
+      ticketModal.classList.add('open');
+    }
+
+    async function loadTicketFilters() {
+      const res = await fetch('/api/masters', { cache: 'no-store' });
+      if (!res.ok) return;
+      const masters = await res.json();
+      filterMaster.innerHTML = '<option value="">Все</option>';
+      masters.forEach(m => {
+        if (!m.is_active) return;
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.name;
+        filterMaster.appendChild(opt);
+      });
+      if (ticketFilters.masterId) {
+        filterMaster.value = ticketFilters.masterId;
+      }
+    }
 
     // Create ticket
     const formCreate=document.getElementById('form-create'); const createMsg=document.getElementById('create-msg');
@@ -436,6 +519,10 @@
 
     // Tickets table
     const tableHolder=document.getElementById('tickets-table'); document.getElementById('btn-refresh').onclick=loadTickets;
+    filterOverdue.onchange = () => { ticketFilters.overdue = filterOverdue.checked; loadTickets(); };
+    filterUnassigned.onchange = () => { ticketFilters.unassigned = filterUnassigned.checked; loadTickets(); };
+    filterMaster.onchange = () => { ticketFilters.masterId = filterMaster.value; loadTickets(); };
+    filterPriority.onchange = () => { ticketFilters.priority = filterPriority.value; loadTickets(); };
     function formatSlaLine(label, minutesLeft, breached){
       if(minutesLeft===null || minutesLeft===undefined) return '';
       const mins=Math.round(minutesLeft);
@@ -455,14 +542,68 @@
       if(!code) return '—';
       return CLOSE_REASON_LABELS[code] || code;
     }
+    function formatDuration(totalMs){
+      if(!Number.isFinite(totalMs) || totalMs < 0) return '—';
+      const totalMinutes = Math.floor(totalMs / 60000);
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
+      return `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}`;
+    }
+    function buildTicketsQuery(){
+      const params = new URLSearchParams();
+      if (ticketFilters.overdue) params.set('overdue', '1');
+      if (ticketFilters.unassigned) params.set('unassigned', '1');
+      if (ticketFilters.masterId) params.set('master_id', ticketFilters.masterId);
+      if (ticketFilters.priority) params.set('priority', ticketFilters.priority);
+      const query = params.toString();
+      return query ? `?${query}` : '';
+    }
+    function updateUnassignedTimers(){
+      document.querySelectorAll('[data-unassigned-timer]').forEach(el => {
+        const createdAt = el.getAttribute('data-created-at');
+        const assignedAt = el.getAttribute('data-assigned-at');
+        const updatedAt = el.getAttribute('data-updated-at');
+        const isAssigned = el.getAttribute('data-assigned') === '1';
+        const createdDate = createdAt ? new Date(createdAt) : null;
+        if (!createdDate || Number.isNaN(createdDate.getTime())) {
+          el.textContent = '—';
+          return;
+        }
+        let endDate = null;
+        if (isAssigned) {
+          if (assignedAt) {
+            endDate = new Date(assignedAt);
+          } else if (updatedAt) {
+            endDate = new Date(updatedAt);
+          }
+        } else {
+          endDate = new Date();
+        }
+        if (!endDate || Number.isNaN(endDate.getTime())) {
+          el.textContent = '—';
+          return;
+        }
+        el.textContent = formatDuration(endDate.getTime() - createdDate.getTime());
+      });
+    }
+    function renderSlaOverdueBadge(t){
+      if (t.sla_response_breached || t.sla_completion_breached){
+        return '<span class="px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-700">SLA overdue</span>';
+      }
+      return '—';
+    }
     async function loadTickets(){
-      const res=await fetch('/api/tickets',{cache:'no-store'}); if(!res.ok){ tableHolder.innerHTML='<div class="text-sm text-slate-500">Требуется вход.</div>'; return; }
+      filterOverdue.checked = ticketFilters.overdue;
+      filterUnassigned.checked = ticketFilters.unassigned;
+      filterMaster.value = ticketFilters.masterId;
+      filterPriority.value = ticketFilters.priority;
+      const res=await fetch(`/api/tickets${buildTicketsQuery()}`,{cache:'no-store'}); if(!res.ok){ tableHolder.innerHTML='<div class="text-sm text-slate-500">Требуется вход.</div>'; return; }
       const data=await res.json();
       const canEditPriority = me && ['admin','dispatcher'].includes(me.role);
       const showSlaOverrides = canEditPriority;
       const slaOverrideHeader = showSlaOverrides ? '<th class="py-2 px-2">Кастом SLA (мин)</th>' : '';
       let html=`<table class="min-w-full text-sm"><thead><tr class="text-left border-b">
-      <th class="py-2 px-2">№</th><th class="py-2 px-2">Объект</th><th class="py-2 px-2">Адрес</th><th class="py-2 px-2">Координаты</th><th class="py-2 px-2">Мастер</th><th class="py-2 px-2">Статус</th><th class="py-2 px-2">Приоритет</th><th class="py-2 px-2">Причина закрытия</th>${slaOverrideHeader}<th class="py-2 px-2">SLA</th><th class="py-2 px-2">Файлы</th><th class="py-2 px-2">Действия</th>
+      <th class="py-2 px-2">№</th><th class="py-2 px-2">Объект</th><th class="py-2 px-2">Адрес</th><th class="py-2 px-2">Координаты</th><th class="py-2 px-2">Мастер</th><th class="py-2 px-2">Статус</th><th class="py-2 px-2">Без мастера</th><th class="py-2 px-2">SLA overdue</th><th class="py-2 px-2">Приоритет</th><th class="py-2 px-2">Причина закрытия</th>${slaOverrideHeader}<th class="py-2 px-2">SLA</th><th class="py-2 px-2">Файлы</th><th class="py-2 px-2">Действия</th>
       </tr></thead><tbody>`;
       for(const t of data){
         const coords=`${t.lat.toFixed(6)}, ${t.lon.toFixed(6)}`;
@@ -474,6 +615,9 @@
         const priorityBadge = renderPriorityBadge(t.priority);
         const prioritySelect = canEditPriority ? `<select data-edit-priority="${t.id}" class="px-2 py-1 text-xs rounded-lg ring-1 ring-slate-200 bg-white">${renderPriorityOptions(t.priority)}</select>` : '';
         const priorityCell = canEditPriority ? `<div class="flex items-center gap-2">${priorityBadge}${prioritySelect}</div>` : priorityBadge;
+        const unassignedTimer = `<span class="font-mono text-xs" data-unassigned-timer data-created-at="${t.created_at ?? ''}" data-assigned-at="${t.assigned_at ?? ''}" data-updated-at="${t.updated_at ?? ''}" data-assigned="${t.assigned_master_id ? '1' : '0'}">—</span>`;
+        const slaOverdueBadge = renderSlaOverdueBadge(t);
+        const openPayload = encodeURIComponent(JSON.stringify(t));
         const overrideCell = showSlaOverrides ? `<div class="space-y-1">
           <div class="text-[11px] text-slate-600">Ответ</div>
           <input type="number" min="1" data-sla-response="${t.id}" value="${t.custom_sla_response_minutes ?? ''}" placeholder="—" class="w-full px-2 py-1 text-xs rounded-lg ring-1 ring-slate-200">
@@ -486,16 +630,19 @@
         <td class="py-2 px-2">${t.object_name ?? ''}<div class="text-xs text-slate-500">${t.description ?? ''}</div></td>
         <td class="py-2 px-2">${t.address ?? ''}</td><td class="py-2 px-2"><button class="underline" onclick="openMap(${t.lat},${t.lon})">${coords}</button>${mapButton}</td>
         <td class="py-2 px-2">${t.assigned_master_name ?? '—'}</td><td class="py-2 px-2"><span class="px-2 py-1 rounded-lg ring-1 ring-slate-200">${t.status}</span></td>
+        <td class="py-2 px-2">${unassignedTimer}</td>
+        <td class="py-2 px-2">${slaOverdueBadge}</td>
         <td class="py-2 px-2">${priorityCell}</td>
         <td class="py-2 px-2">${formatCloseReason(t.close_reason)}</td>
         ${showSlaOverrides?`<td class="py-2 px-2 align-top">${overrideCell}</td>`:''}
         <td class="py-2 px-2">${renderSla(t)}</td>
         <td class="py-2 px-2">${files}</td>
         <td class="py-2 px-2"><div class="flex gap-2 items-center">
-          <div id="reassign-select-${t.id}" class="flex gap-2">
-            <button data-admin-only class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" onclick="showReassign(${t.id})">Переназначить</button>
+          <div id="assign-controls-${t.id}" class="flex gap-2">
+            <button data-admin-only class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" onclick="showAssign(${t.id})">Назначить</button>
           </div>
           <button data-admin-only class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" onclick="openCancelModal(${t.id})">Отменить</button>
+          <button class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white" data-open-ticket="${openPayload}">Открыть</button>
           <button data-admin-only class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" onclick="archiveTicket(${t.id})">В архив</button>
         </div></td></tr>`;
       }
@@ -568,9 +715,19 @@
           };
         });
       }
+      tableHolder.querySelectorAll('button[data-open-ticket]').forEach(btn => {
+        btn.onclick = () => {
+          const payload = btn.getAttribute('data-open-ticket');
+          if (!payload) return;
+          openTicketModal(JSON.parse(decodeURIComponent(payload)));
+        };
+      });
+      updateUnassignedTimers();
+      if (ticketTimerInterval) clearInterval(ticketTimerInterval);
+      ticketTimerInterval = setInterval(updateUnassignedTimers, 60000);
     }
     // The old reassign function is no longer used. Instead, admins/dispatchers
-    // can choose a specific master from a drop-down list via showReassign().
+    // can choose a specific master from a drop-down list via showAssign().
     window.reassign = async (id) => {
       const res = await fetch(`/api/tickets/${id}/reassign`, { method: 'POST' });
       const data = await res.json();
@@ -607,8 +764,8 @@
     };
 
     // Show a drop-down list of active masters to reassign a ticket manually.
-    window.showReassign = async (id) => {
-      const container = document.getElementById(`reassign-select-${id}`);
+    window.showAssign = async (id) => {
+      const container = document.getElementById(`assign-controls-${id}`);
       // If the container already contains a select element, do nothing
       if (!container) return;
       // Fetch list of masters to populate the drop-down
@@ -1091,7 +1248,7 @@
 
     // Init
     initCreateMap();
-    refreshMe().then(()=>{ loadTickets(); });
+    refreshMe().then(()=>{ loadTicketFilters(); loadTickets(); });
     setInterval(()=>{ if(!viewOps.classList.contains('hidden')) loadKanban(); }, 5000);
   </script>
 </body>

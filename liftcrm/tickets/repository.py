@@ -66,6 +66,7 @@ def serialize_ticket(t: Ticket):
         "assigned_master_id": t.assigned_master_id,
         "assigned_master_name": t.assigned_master.name if t.assigned_master else None,
         "created_at": (to_utc(t.created_at).isoformat() if t.created_at else None),
+        "assigned_at": (to_utc(t.assigned_at).isoformat() if t.assigned_at else None),
         "updated_at": (to_utc(t.updated_at).isoformat() if t.updated_at else None),
         "arrived_at": (to_utc(t.arrived_at).isoformat() if t.arrived_at else None),
         "completed_at": (to_utc(t.completed_at).isoformat() if t.completed_at else None),
