@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request, send_from_directory
 from flask_login import login_required, current_user
+from sqlalchemy import func
 
 from .service import auto_assign_master, haversine_m, send_report, validate_status_transition
 from . import repository
@@ -234,6 +235,22 @@ def create_ticket():
     custom_comp = _parse_custom(data.get("custom_sla_completion_minutes"))
     if custom_resp == "INVALID" or custom_comp == "INVALID":
         return jsonify({"error": "custom SLA minutes must be positive integers"}), 400
+    def _safe_float(value):
+        if value in (None, ""):
+            return None
+        try:
+            return float(value)
+        except Exception:
+            return None
+
+    def _normalize_address(value):
+        return " ".join((value or "").lower().split())
+
+    def _round_coord(value):
+        if value is None:
+            return None
+        return round(value, 5)
+
     with SessionLocal() as db:
         asset = None
         if asset_id not in (None, ""):
@@ -250,15 +267,58 @@ def create_ticket():
         if not object_name:
             return jsonify({"error": "Missing field: object_name"}), 400
         address = data.get("address")
-        lat = data.get("lat")
-        lon = data.get("lon")
+        lat = _safe_float(data.get("lat"))
+        lon = _safe_float(data.get("lon"))
         if asset:
             address = asset.address
             if asset.lat is not None and asset.lon is not None:
                 lat = asset.lat
                 lon = asset.lon
+            elif lat is not None and lon is not None:
+                try:
+                    asset.lat = lat
+                    asset.lon = lon
+                    asset.updated_at = datetime.now(timezone.utc)
+                    db.flush()
+                except Exception:
+                    logger.warning("asset coords backfill failed", extra={"asset_id": asset.id}, exc_info=True)
         if lat is None or lon is None:
             return jsonify({"error": "Missing field: lat/lon"}), 400
+        if asset is None:
+            try:
+                address_clean = (address or "").strip()
+                if address_clean and lat is not None and lon is not None:
+                    addr_norm = _normalize_address(address_clean)
+                    lat_key = _round_coord(lat)
+                    lon_key = _round_coord(lon)
+                    existing = (
+                        db.query(Asset)
+                        .filter(Asset.lat.isnot(None))
+                        .filter(Asset.lon.isnot(None))
+                        .filter(func.round(Asset.lat, 5) == lat_key)
+                        .filter(func.round(Asset.lon, 5) == lon_key)
+                        .filter(func.lower(func.trim(Asset.address)) == addr_norm)
+                        .first()
+                    )
+                    if existing:
+                        asset = existing
+                    else:
+                        asset = Asset(
+                            address=address_clean,
+                            entrance=None,
+                            lift_label=object_name or None,
+                            serial_no=None,
+                            customer_id=None,
+                            lat=lat,
+                            lon=lon,
+                            status="ACTIVE",
+                            created_at=datetime.now(timezone.utc),
+                            updated_at=datetime.now(timezone.utc),
+                        )
+                        db.add(asset)
+                        db.flush()
+            except Exception:
+                logger.warning("asset auto-create failed", extra={"ticket_object": object_name}, exc_info=True)
         t = Ticket(
             object_name=object_name,
             address=address,

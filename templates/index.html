@@ -1145,6 +1145,16 @@
       if(parts.length) return parts.join(' / ');
       return asset.address || 'Лифт';
     }
+    function buildAssetSuggestionTitle(asset){
+      const serial = asset.serial_no || '(нет серийника)';
+      const label = asset.lift_label || '(нет метки)';
+      return `${serial} / ${label}`;
+    }
+    function buildAssetSuggestionSubtitle(asset){
+      const entrance = asset.entrance ? `подъезд ${asset.entrance}` : '';
+      const parts = [asset.address, entrance].filter(Boolean);
+      return parts.join(' • ');
+    }
     function buildAssetSelectLabel(asset){
       const serial = asset.serial_no || 'без серийника';
       const label = asset.lift_label || 'без метки';
@@ -1299,7 +1309,7 @@
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'objects-suggestion-item w-full text-left px-3 py-2 flex flex-col gap-0.5';
-        btn.innerHTML = `<div class="font-semibold">${entry.data.label || '—'}</div><div class="text-xs text-slate-600">${entry.data.address || ''}</div>`;
+        btn.innerHTML = `<div class="font-semibold">${buildAssetSuggestionTitle(entry.data)}</div><div class="text-xs text-slate-600">${buildAssetSuggestionSubtitle(entry.data)}</div>`;
         btn.onclick = () => {
           focusObjectMarker(entry);
           objectsSuggestions.classList.add('hidden');

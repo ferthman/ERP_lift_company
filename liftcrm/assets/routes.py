@@ -65,12 +65,17 @@ def list_assets():
         query = db.query(Asset)
         if search:
             term = f"%{search.lower()}%"
+            raw_term = f"%{search}%"
             query = query.filter(
                 or_(
                     func.lower(Asset.address).like(term),
                     func.lower(Asset.serial_no).like(term),
                     func.lower(Asset.lift_label).like(term),
                     func.lower(Asset.entrance).like(term),
+                    Asset.address.like(raw_term),
+                    Asset.serial_no.like(raw_term),
+                    Asset.lift_label.like(raw_term),
+                    Asset.entrance.like(raw_term),
                 )
             )
         assets = query.order_by(Asset.id).all()
