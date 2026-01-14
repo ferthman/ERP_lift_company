@@ -306,6 +306,28 @@
       LOW: 'bg-slate-50 text-slate-500 ring-1 ring-slate-200'
     };
     const PRIORITY_DOTS = { HIGH: 'bg-red-500', MEDIUM: 'bg-slate-400', LOW: 'bg-slate-300' };
+    const HISTORY_ACTION_LABELS = {
+      CREATE: 'Создание',
+      ASSIGN: 'Назначение',
+      STATUS_CHANGE: 'Изменение статуса',
+      EDIT: 'Редактирование',
+      ARCHIVE: 'Архивирование',
+      UNARCHIVE: 'Возврат из архива',
+      CANCEL: 'Отмена',
+    };
+    const HISTORY_FIELD_LABELS = {
+      status: 'Статус',
+      assigned_master_id: 'Мастер',
+      priority: 'Приоритет',
+      description: 'Описание',
+      custom_sla_response_minutes: 'SLA ответа (мин)',
+      custom_sla_completion_minutes: 'SLA завершения (мин)',
+      arrived_at: 'Время прибытия',
+      completed_at: 'Время завершения',
+      archived_at: 'Архив',
+      close_reason: 'Причина закрытия',
+      close_comment: 'Комментарий',
+    };
 
     function normalizePriority(p){ return (p || 'MEDIUM').toString().toUpperCase(); }
     function renderPriorityBadge(priority){
@@ -357,6 +379,7 @@
     const ticketModal = document.getElementById('ticket-modal');
     const ticketModalBody = document.getElementById('ticket-modal-body');
     const ticketModalClose = document.getElementById('ticket-modal-close');
+    let activeHistoryTicketId = null;
     const filterOverdue = document.getElementById('filter-overdue');
     const filterMaster = document.getElementById('filter-master');
     const filterPriority = document.getElementById('filter-priority');
@@ -472,8 +495,89 @@
         `<div><span class="text-slate-500">Приоритет:</span> ${ticket.priority ?? 'MEDIUM'}</div>`,
         `<div><span class="text-slate-500">SLA:</span> ${renderSla(ticket)}</div>`,
       ];
-      ticketModalBody.innerHTML = parts.join('');
+      ticketModalBody.innerHTML = `
+        <div class="space-y-2">${parts.join('')}</div>
+        <div class="mt-4 border-t border-slate-200 pt-3">
+          <div class="flex items-center justify-between">
+            <h4 class="text-sm font-semibold">История</h4>
+            <span id="ticket-history-status" class="text-xs text-slate-500">Загрузка...</span>
+          </div>
+          <div id="ticket-history-list" class="mt-3 space-y-2 text-xs text-slate-600"></div>
+        </div>
+      `;
+      loadTicketHistory(ticket.id);
       ticketModal.classList.add('open');
+    }
+
+    function formatHistoryValue(value){
+      if (value === null || value === undefined || value === '') return '—';
+      if (typeof value === 'string' && value.includes('T')) {
+        const dt = new Date(value);
+        if (!Number.isNaN(dt.getTime())) return dt.toLocaleString('ru-RU');
+      }
+      return value;
+    }
+
+    function renderHistoryDiff(diff){
+      if (!diff || typeof diff !== 'object') return '';
+      const changes = [];
+      const oldData = diff.old || {};
+      const newData = diff.new || {};
+      const fields = new Set([...Object.keys(oldData), ...Object.keys(newData)]);
+      fields.forEach((field) => {
+        const label = HISTORY_FIELD_LABELS[field] || field;
+        const oldVal = formatHistoryValue(oldData[field]);
+        const newVal = formatHistoryValue(newData[field]);
+        if (oldData[field] === undefined) {
+          changes.push(`<div><span class="text-slate-400">${label}:</span> ${newVal}</div>`);
+        } else {
+          changes.push(`<div><span class="text-slate-400">${label}:</span> ${oldVal} → ${newVal}</div>`);
+        }
+      });
+      return changes.join('');
+    }
+
+    async function loadTicketHistory(ticketId){
+      activeHistoryTicketId = ticketId;
+      const statusEl = document.getElementById('ticket-history-status');
+      const listEl = document.getElementById('ticket-history-list');
+      if (!statusEl || !listEl) return;
+      statusEl.textContent = 'Загрузка...';
+      listEl.innerHTML = '';
+      try {
+        const res = await fetch(`/api/tickets/${ticketId}/history?limit=50`, { cache: 'no-store' });
+        const data = await res.json();
+        if (ticketId !== activeHistoryTicketId) return;
+        if (!res.ok) {
+          const msg = extractErrorMessage(data, 'Ошибка загрузки истории');
+          statusEl.textContent = msg;
+          return;
+        }
+        if (!Array.isArray(data) || data.length === 0) {
+          statusEl.textContent = 'История пуста';
+          return;
+        }
+        statusEl.textContent = '';
+        listEl.innerHTML = data.map(item => {
+          const actionLabel = HISTORY_ACTION_LABELS[item.action] || item.action;
+          const actor = item.actor_username || (item.actor_user_id ? `user#${item.actor_user_id}` : 'Система');
+          const timeLabel = item.created_at ? new Date(item.created_at).toLocaleString('ru-RU') : '';
+          const diffHtml = renderHistoryDiff(item.diff || {});
+          return `
+            <div class="rounded-lg border border-slate-200 bg-slate-50 p-2">
+              <div class="flex items-center justify-between text-slate-500">
+                <span>${timeLabel}</span>
+                <span>${actor}</span>
+              </div>
+              <div class="mt-1 font-semibold text-slate-700">${actionLabel}</div>
+              <div class="mt-1 space-y-1">${diffHtml}</div>
+            </div>
+          `;
+        }).join('');
+      } catch (err) {
+        if (ticketId !== activeHistoryTicketId) return;
+        statusEl.textContent = 'Ошибка загрузки истории';
+      }
     }
 
     async function loadTicketFilters() {

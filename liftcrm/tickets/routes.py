@@ -1,5 +1,6 @@
 import logging
 import os
+import json
 from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request, send_from_directory
@@ -7,10 +8,11 @@ from flask_login import login_required, current_user
 
 from .service import auto_assign_master, haversine_m, send_report, validate_status_transition
 from . import repository
-from ..db import SessionLocal, Master, Ticket, Attachment, User
+from ..db import SessionLocal, Master, Ticket, Attachment, User, AuditLog
 from ..objects.service import upsert_object_from_ticket
 from ..utils.security import role_required
 from ..utils.time import to_utc
+from ..utils.audit import log_audit, changed_fields
 from .. import config
 
 bp = Blueprint("tickets", __name__)
@@ -252,6 +254,29 @@ def create_ticket():
             t.assigned_master_id, t.status = m.id, "ASSIGNED"
             t.assigned_at = datetime.now(timezone.utc)
         db.add(t)
+        db.flush()
+        snapshot_fields = [
+            "object_name",
+            "address",
+            "lat",
+            "lon",
+            "priority",
+            "custom_sla_response_minutes",
+            "custom_sla_completion_minutes",
+            "description",
+            "assigned_master_id",
+            "status",
+        ]
+        new = {field: getattr(t, field, None) for field in snapshot_fields}
+        log_audit(
+            db,
+            entity_type="ticket",
+            entity_id=t.id,
+            action="CREATE",
+            actor_user_id=current_user.id,
+            old={},
+            new=new,
+        )
         db.commit()
         db.refresh(t)
     try:
@@ -289,7 +314,8 @@ def update_ticket(ticket_id):
     if custom_resp == "INVALID" or custom_comp == "INVALID":
         return jsonify({"error": "custom SLA minutes must be positive integers"}), 400
 
-    if priority is None and custom_resp is None and custom_comp is None:
+    description = data.get("description") if "description" in data else None
+    if priority is None and custom_resp is None and custom_comp is None and description is None:
         return jsonify({"error": "No fields to update"}), 400
     with SessionLocal() as db:
         t = db.get(Ticket, ticket_id)
@@ -297,12 +323,40 @@ def update_ticket(ticket_id):
             return jsonify({"error": "Ticket not found"}), 404
         if t.archived_at:
             return jsonify({"error": "Ticket archived"}), 400
+        old_snapshot = {
+            "priority": t.priority,
+            "custom_sla_response_minutes": t.custom_sla_response_minutes,
+            "custom_sla_completion_minutes": t.custom_sla_completion_minutes,
+            "description": t.description,
+        }
         if priority is not None:
             t.priority = priority
         if custom_resp is not None:
             t.custom_sla_response_minutes = custom_resp
         if custom_comp is not None:
             t.custom_sla_completion_minutes = custom_comp
+        if description is not None:
+            t.description = description
+        old, new = changed_fields(
+            old_snapshot,
+            t,
+            [
+                "priority",
+                "custom_sla_response_minutes",
+                "custom_sla_completion_minutes",
+                "description",
+            ],
+        )
+        if old or new:
+            log_audit(
+                db,
+                entity_type="ticket",
+                entity_id=t.id,
+                action="EDIT",
+                actor_user_id=current_user.id,
+                old=old,
+                new=new,
+            )
         db.commit()
         db.refresh(t)
         return jsonify(repository.serialize_ticket(t))
@@ -322,6 +376,7 @@ def reassign_ticket(ticket_id):
         if not m:
             return jsonify({"error": "No active masters available"}), 400
         old_status = t.status
+        old_assigned = t.assigned_master_id
         t.assigned_master_id = m.id
         t.assigned_at = datetime.now(timezone.utc)
         if t.status in ["NEW", "ASSIGNED"]:
@@ -335,6 +390,15 @@ def reassign_ticket(ticket_id):
             )
             if not ok:
                 return _transition_error(code, message)
+        log_audit(
+            db,
+            entity_type="ticket",
+            entity_id=t.id,
+            action="ASSIGN",
+            actor_user_id=current_user.id,
+            old={"assigned_master_id": old_assigned, "status": old_status},
+            new={"assigned_master_id": t.assigned_master_id, "status": t.status},
+        )
         db.commit()
         return jsonify({"message": "Reassigned", "assigned_master_id": t.assigned_master_id})
 
@@ -353,6 +417,8 @@ def cancel_ticket(ticket_id):
         if t.status == "CANCELLED":
             return jsonify({"message": "Already cancelled"}), 200
         old_status = t.status
+        old_reason = t.close_reason
+        old_comment = t.close_comment
         close_reason = data.get("close_reason")
         close_comment = data.get("close_comment")
         t.status = "CANCELLED"
@@ -369,6 +435,21 @@ def cancel_ticket(ticket_id):
             return _transition_error(code, message, status=status)
         t.close_reason = close_reason
         t.close_comment = str(close_comment).strip()
+        old, new = changed_fields(
+            {"status": old_status, "close_reason": old_reason, "close_comment": old_comment},
+            t,
+            ["status", "close_reason", "close_comment"],
+        )
+        if old or new:
+            log_audit(
+                db,
+                entity_type="ticket",
+                entity_id=t.id,
+                action="CANCEL",
+                actor_user_id=current_user.id,
+                old=old,
+                new=new,
+            )
         db.commit()
         return jsonify({"message": "Cancelled"})
 
@@ -414,6 +495,7 @@ def arrive_ticket(ticket_id):
         if dist > 500:
             return jsonify({"error": f"Outside geofence ({int(dist)} m > 500 m)"}), 403
         old_status = t.status
+        old_arrived = t.arrived_at
         t.status = "IN_PROGRESS"
         t.arrived_at = datetime.now(timezone.utc)
         t.arrival_lat = float(lat)
@@ -427,6 +509,21 @@ def arrive_ticket(ticket_id):
         )
         if not ok:
             return _transition_error(code, message)
+        old, new = changed_fields(
+            {"status": old_status, "arrived_at": old_arrived},
+            t,
+            ["status", "arrived_at"],
+        )
+        if old or new:
+            log_audit(
+                db,
+                entity_type="ticket",
+                entity_id=t.id,
+                action="STATUS_CHANGE",
+                actor_user_id=current_user.id,
+                old=old,
+                new=new,
+            )
         db.commit()
         return jsonify({"message": "Arrived", "distance_m": int(dist), "status": t.status})
 
@@ -467,6 +564,8 @@ def complete_ticket(ticket_id):
         if dist > 500:
             return jsonify({"error": f"Outside geofence ({int(dist)} m > 500 m)"}), 403
         old_status = t.status
+        old_completed = t.completed_at
+        old_reason = t.close_reason
         t.status = "COMPLETED"
         t.completed_at = datetime.now(timezone.utc)
         t.completion_lat = float(lat)
@@ -481,6 +580,21 @@ def complete_ticket(ticket_id):
         )
         if not ok:
             return _transition_error(code, message)
+        old, new = changed_fields(
+            {"status": old_status, "completed_at": old_completed, "close_reason": old_reason},
+            t,
+            ["status", "completed_at", "close_reason"],
+        )
+        if old or new:
+            log_audit(
+                db,
+                entity_type="ticket",
+                entity_id=t.id,
+                action="STATUS_CHANGE",
+                actor_user_id=current_user.id,
+                old=old,
+                new=new,
+            )
         db.commit()
         try:
             send_report(t)
@@ -516,6 +630,16 @@ def upload_file(ticket_id):
     with SessionLocal() as db:
         a = Attachment(ticket_id=ticket_id, filename=unique, orig_name=fname)
         db.add(a)
+        db.flush()
+        log_audit(
+            db,
+            entity_type="attachment",
+            entity_id=a.id,
+            action="CREATE",
+            actor_user_id=current_user.id,
+            old={},
+            new={"ticket_id": ticket_id, "filename": unique, "orig_name": fname},
+        )
         db.commit()
     return jsonify({"ok": True, "url": f"/uploads/{unique}", "name": fname})
 
@@ -543,6 +667,7 @@ def assign_ticket(ticket_id, master_id):
         if int(getattr(m, "is_active", 1)) != 1:
             return jsonify({"error": "Мастер неактивен"}), 400
         old_status = t.status
+        old_assigned = t.assigned_master_id
         t.assigned_master_id = m.id
         t.assigned_at = datetime.now(timezone.utc)
         if t.status in ["NEW", "ASSIGNED"]:
@@ -556,6 +681,15 @@ def assign_ticket(ticket_id, master_id):
             )
             if not ok:
                 return _transition_error(code, message)
+        log_audit(
+            db,
+            entity_type="ticket",
+            entity_id=t.id,
+            action="ASSIGN",
+            actor_user_id=current_user.id,
+            old={"assigned_master_id": old_assigned, "status": old_status},
+            new={"assigned_master_id": t.assigned_master_id, "status": t.status},
+        )
         db.commit()
         return jsonify({"message": "Assigned", "assigned_master_id": t.assigned_master_id, "assigned_master_name": m.name})
 
@@ -570,8 +704,24 @@ def archive_ticket(ticket_id):
             return jsonify({"error": "Ticket not found"}), 404
         if not t.archived_at:
             now = datetime.now(timezone.utc)
+            old_archived = t.archived_at
             t.archived_at = now
             t.updated_at = now
+            old, new = changed_fields(
+                {"archived_at": old_archived},
+                t,
+                ["archived_at"],
+            )
+            if old or new:
+                log_audit(
+                    db,
+                    entity_type="ticket",
+                    entity_id=t.id,
+                    action="ARCHIVE",
+                    actor_user_id=current_user.id,
+                    old=old,
+                    new=new,
+                )
             db.commit()
         archived_at = to_utc(t.archived_at).isoformat() if t.archived_at else None
         return jsonify({"ok": True, "archived_at": archived_at})
@@ -587,10 +737,78 @@ def unarchive_ticket(ticket_id):
             return jsonify({"error": "Ticket not found"}), 404
         if t.archived_at:
             now = datetime.now(timezone.utc)
+            old_archived = t.archived_at
             t.archived_at = None
             t.updated_at = now
+            old, new = changed_fields(
+                {"archived_at": old_archived},
+                t,
+                ["archived_at"],
+            )
+            if old or new:
+                log_audit(
+                    db,
+                    entity_type="ticket",
+                    entity_id=t.id,
+                    action="UNARCHIVE",
+                    actor_user_id=current_user.id,
+                    old=old,
+                    new=new,
+                )
             db.commit()
         return jsonify({"ok": True, "archived_at": None})
+
+
+@bp.get("/api/tickets/<int:ticket_id>/history")
+@login_required
+def ticket_history(ticket_id):
+    limit = request.args.get("limit", 50)
+    offset = request.args.get("offset", 0)
+    try:
+        limit = int(limit)
+        offset = int(offset)
+    except ValueError:
+        return jsonify({"error": "Invalid pagination"}), 400
+    if limit < 1:
+        limit = 1
+    if limit > 200:
+        limit = 200
+    if offset < 0:
+        offset = 0
+    with SessionLocal() as db:
+        t = db.get(Ticket, ticket_id)
+        if not t:
+            return jsonify({"error": "Ticket not found"}), 404
+        if current_user.role == "master":
+            if t.assigned_master_id != current_user.master_id:
+                return jsonify({"error": "Forbidden"}), 403
+        elif current_user.role not in {"admin", "dispatcher"}:
+            return jsonify({"error": "Forbidden"}), 403
+        rows = (
+            db.query(AuditLog, User.username)
+            .outerjoin(User, User.id == AuditLog.actor_user_id)
+            .filter(AuditLog.entity_type == "ticket", AuditLog.entity_id == ticket_id)
+            .order_by(AuditLog.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+            .all()
+        )
+        items = []
+        for log_entry, username in rows:
+            try:
+                diff = json.loads(log_entry.diff_json) if log_entry.diff_json else {}
+            except json.JSONDecodeError:
+                diff = {"raw": log_entry.diff_json}
+            items.append(
+                {
+                    "action": log_entry.action,
+                    "created_at": log_entry.created_at,
+                    "actor_user_id": log_entry.actor_user_id,
+                    "actor_username": username,
+                    "diff": diff,
+                }
+            )
+        return jsonify(items)
 
 
 @bp.delete("/api/tickets/<int:ticket_id>")
