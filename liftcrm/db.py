@@ -46,6 +46,7 @@ class Ticket(Base):
     status = Column(String, default="NEW")
     priority = Column(String, default="MEDIUM")
     assigned_master_id = Column(Integer, ForeignKey("masters.id"), nullable=True)
+    assigned_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(
         DateTime,
@@ -148,6 +149,9 @@ def ensure_migrations():
             conn.commit()
         if "custom_sla_completion_minutes" not in tcols:
             cur.execute("ALTER TABLE tickets ADD COLUMN custom_sla_completion_minutes INTEGER")
+            conn.commit()
+        if "assigned_at" not in tcols:
+            cur.execute("ALTER TABLE tickets ADD COLUMN assigned_at DATETIME")
             conn.commit()
         conn.close()
     except Exception as e:

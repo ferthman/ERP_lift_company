@@ -109,6 +109,7 @@ def delete_master(master_id):
         for t in open_tickets:
             new_id = min(counts, key=lambda k: (counts[k], k))
             t.assigned_master_id = new_id
+            t.assigned_at = datetime.now(timezone.utc)
             if t.status in ["NEW", "ASSIGNED"]:
                 t.status = "ASSIGNED"
             counts[new_id] += 1
@@ -159,6 +160,7 @@ def toggle_master_active(master_id):
             for t in open_tickets:
                 new_id = min(counts, key=lambda k: (counts[k], k))
                 t.assigned_master_id = new_id
+                t.assigned_at = datetime.now(timezone.utc)
                 if t.status in ["NEW", "ASSIGNED"]:
                     t.status = "ASSIGNED"
                 counts[new_id] += 1
@@ -171,11 +173,37 @@ def toggle_master_active(master_id):
 @login_required
 def list_tickets():
     include_archived = request.args.get("include_archived") in {"1", "true", "True"}
+    unassigned_only = request.args.get("unassigned") in {"1", "true", "True"}
+    overdue_only = request.args.get("overdue") in {"1", "true", "True"}
+    master_id = request.args.get("master_id")
+    priority = request.args.get("priority")
+    if priority:
+        priority = str(priority).upper()
+        if priority not in PRIORITY_VALUES:
+            return jsonify({"error": "Invalid priority"}), 400
+    if master_id:
+        try:
+            master_id = int(master_id)
+        except ValueError:
+            return jsonify({"error": "Invalid master_id"}), 400
     with SessionLocal() as db:
         query = db.query(Ticket).order_by(Ticket.created_at.desc())
         if not include_archived:
             query = query.filter(Ticket.archived_at.is_(None))
+        if unassigned_only:
+            query = query.filter(Ticket.assigned_master_id.is_(None))
+        if master_id:
+            query = query.filter(Ticket.assigned_master_id == master_id)
+        if priority:
+            query = query.filter(Ticket.priority == priority)
         tickets = query.all()
+        if overdue_only:
+            filtered = []
+            for t in tickets:
+                sla = repository.compute_sla_fields(t)
+                if sla["sla_response_breached"] or sla["sla_completion_breached"]:
+                    filtered.append(t)
+            tickets = filtered
         return jsonify([repository.serialize_ticket(t) for t in tickets])
 
 
@@ -222,6 +250,7 @@ def create_ticket():
         m = auto_assign_master(db)
         if m:
             t.assigned_master_id, t.status = m.id, "ASSIGNED"
+            t.assigned_at = datetime.now(timezone.utc)
         db.add(t)
         db.commit()
         db.refresh(t)
@@ -294,6 +323,7 @@ def reassign_ticket(ticket_id):
             return jsonify({"error": "No active masters available"}), 400
         old_status = t.status
         t.assigned_master_id = m.id
+        t.assigned_at = datetime.now(timezone.utc)
         if t.status in ["NEW", "ASSIGNED"]:
             t.status = "ASSIGNED"
             ok, code, message = validate_status_transition(
@@ -514,6 +544,7 @@ def assign_ticket(ticket_id, master_id):
             return jsonify({"error": "Мастер неактивен"}), 400
         old_status = t.status
         t.assigned_master_id = m.id
+        t.assigned_at = datetime.now(timezone.utc)
         if t.status in ["NEW", "ASSIGNED"]:
             t.status = "ASSIGNED"
             ok, code, message = validate_status_transition(
