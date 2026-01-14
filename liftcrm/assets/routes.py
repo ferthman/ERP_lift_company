@@ -51,7 +51,7 @@ def list_assets():
                 filtered = []
                 for asset in assets:
                     haystack = normalize_text(
-                        f"{asset.address or ''} {asset.serial_no or ''} {asset.lift_label or ''} {asset.entrance or ''}"
+                        f"{asset.address_norm or asset.address or ''} {asset.serial_no or ''} {asset.lift_label or ''} {asset.entrance or ''}"
                     )
                     if term in haystack:
                         filtered.append(asset)
@@ -73,6 +73,7 @@ def create_asset():
             return jsonify({"error": "serial_no must be unique"}), 400
         asset = Asset(
             address=address,
+            address_norm=normalize_text(address),
             entrance=(data.get("entrance") or "").strip() or None,
             lift_label=(data.get("lift_label") or "").strip() or None,
             serial_no=serial_no,
@@ -113,6 +114,7 @@ def update_asset(asset_id):
             if not address:
                 return jsonify({"error": "Address is required"}), 400
             asset.address = address
+            asset.address_norm = normalize_text(address)
         if "entrance" in data:
             asset.entrance = (data.get("entrance") or "").strip() or None
         if "lift_label" in data:

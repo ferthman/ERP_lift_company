@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from liftcrm import create_app, config
 from liftcrm.db import SessionLocal, Asset, Ticket
+from liftcrm.utils.rate_limit import clear_rate_limits
 
 
 class AssetsApiTest(unittest.TestCase):
@@ -13,6 +14,7 @@ class AssetsApiTest(unittest.TestCase):
         cls.app = app
 
     def setUp(self):
+        clear_rate_limits()
         self.client = self.app.test_client()
         self.login(config.ADMIN_USERNAME, config.ADMIN_PASSWORD)
 
@@ -103,3 +105,36 @@ class AssetsApiTest(unittest.TestCase):
         csv_res = self.client.get("/api/assets/export.csv")
         self.assertEqual(csv_res.status_code, 200)
         self.assertIn("text/csv", csv_res.content_type)
+
+    def test_address_normalization_prevents_duplicates(self):
+        token = uuid4().hex[:6]
+        messy_address = f"ул.  Кабанбай   батыра  10 кв {token}"
+        normalized_address = f"ул Кабанбай батыра 10 кв {token}"
+        serial_no = f"SN-{uuid4().hex[:8]}"
+        lat_base = 10 + (int(token[:2], 16) / 1000)
+        lon_base = 20 + (int(token[2:4], 16) / 1000)
+        create_res = self.client.post(
+            "/api/assets",
+            json={"address": messy_address, "serial_no": serial_no, "lat": lat_base, "lon": lon_base},
+        )
+        self.assertEqual(create_res.status_code, 201)
+        asset_id = create_res.get_json()["id"]
+        with SessionLocal() as db:
+            before_count = db.query(Asset).count()
+
+        ticket_res = self.client.post(
+            "/api/tickets",
+            json={
+                "object_name": "Тест нормализации",
+                "address": normalized_address,
+                "lat": lat_base + 0.01,
+                "lon": lon_base + 0.01,
+            },
+        )
+        self.assertEqual(ticket_res.status_code, 201)
+        ticket_id = ticket_res.get_json()["id"]
+        with SessionLocal() as db:
+            after_count = db.query(Asset).count()
+            ticket = db.get(Ticket, ticket_id)
+            self.assertEqual(ticket.asset_id, asset_id)
+        self.assertEqual(before_count, after_count)

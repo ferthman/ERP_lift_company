@@ -79,6 +79,9 @@ def seed_assets():
                 if not asset.address:
                     asset.address = address
                     changed = True
+                if asset.address and not asset.address_norm:
+                    asset.address_norm = normalize_text(asset.address)
+                    changed = True
                 if not asset.lift_label and row.get("object_name"):
                     asset.lift_label = str(row.get("object_name")).strip()
                     changed = True
@@ -90,6 +93,7 @@ def seed_assets():
                 continue
             asset = Asset(
                 address=address,
+                address_norm=normalize_text(address),
                 entrance=None,
                 lift_label=str(row.get("object_name")).strip() if row.get("object_name") else None,
                 serial_no=None,

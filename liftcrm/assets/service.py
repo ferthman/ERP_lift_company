@@ -9,7 +9,10 @@ from ..db import Asset
 def normalize_text(value: Optional[str]) -> str:
     if not value:
         return ""
-    return " ".join(str(value).lower().split())
+    text = str(value).lower()
+    for ch in ".,;:()[]'\"-":
+        text = text.replace(ch, " ")
+    return " ".join(text.split())
 
 
 def rounded_coords(lat: Optional[float], lon: Optional[float]) -> Tuple[Optional[float], Optional[float]]:
@@ -37,7 +40,7 @@ def find_asset_by_address(db, address: Optional[str]) -> Optional[Asset]:
     normalized = normalize_text(address)
     if not normalized:
         return None
-    return db.query(Asset).filter(func.lower(Asset.address) == normalized).first()
+    return db.query(Asset).filter(Asset.address_norm == normalized).first()
 
 
 def upsert_asset_from_ticket(db, object_name, address, lat, lon) -> Optional[Asset]:
@@ -63,11 +66,15 @@ def upsert_asset_from_ticket(db, object_name, address, lat, lon) -> Optional[Ass
         if not asset.lift_label and object_name:
             asset.lift_label = object_name
             updated = True
+        if asset.address and not asset.address_norm:
+            asset.address_norm = normalize_text(asset.address)
+            updated = True
         if updated:
             asset.updated_at = datetime.now(timezone.utc)
         return asset
     asset = Asset(
         address=address,
+        address_norm=normalize_text(address),
         entrance=None,
         lift_label=(object_name or None),
         serial_no=None,
@@ -78,4 +85,3 @@ def upsert_asset_from_ticket(db, object_name, address, lat, lon) -> Optional[Ass
     db.add(asset)
     db.flush()
     return asset
-
