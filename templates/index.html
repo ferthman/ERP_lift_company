@@ -175,6 +175,10 @@
           <form id="form-master" class="space-y-3">
             <div><label class="block text-sm">Имя мастера *</label>
               <input name="name" required class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200" placeholder="Иван Петров"></div>
+            <label class="flex items-center gap-2 text-xs text-slate-600">
+              <input type="checkbox" name="use_default_password" class="h-4 w-4 rounded border-slate-300">
+              Использовать пароль по умолчанию для мастеров
+            </label>
             <button class="px-4 py-2 rounded-xl bg-slate-900 text-white font-semibold">Добавить</button>
             <p id="master-msg" class="text-xs text-slate-500"></p>
           </form>
@@ -284,6 +288,18 @@
       <div id="ticket-modal-body" class="mt-4 space-y-2 text-sm text-slate-700"></div>
     </div>
   </div>
+  <div id="temp-password-modal" class="modal">
+    <div class="modal-content">
+      <div class="flex items-center justify-between">
+        <h3 class="font-semibold">Пароль мастера</h3>
+        <button id="temp-password-close" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-sm">Закрыть</button>
+      </div>
+      <div class="mt-3 text-sm text-slate-700">
+        <div>Логин: <span id="temp-password-username" class="font-semibold"></span></div>
+        <div>Пароль: <span id="temp-password-value" class="font-semibold"></span></div>
+      </div>
+    </div>
+  </div>
 
   <script>
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/static/sw.js");
@@ -387,6 +403,10 @@
     const ticketModal = document.getElementById('ticket-modal');
     const ticketModalBody = document.getElementById('ticket-modal-body');
     const ticketModalClose = document.getElementById('ticket-modal-close');
+    const tempPasswordModal = document.getElementById('temp-password-modal');
+    const tempPasswordClose = document.getElementById('temp-password-close');
+    const tempPasswordUsername = document.getElementById('temp-password-username');
+    const tempPasswordValue = document.getElementById('temp-password-value');
     const assetSearchInput = document.getElementById('asset-search');
     const assetSelect = document.getElementById('asset-select');
     const assetAddressInput = document.querySelector('#form-create input[name="address"]');
@@ -525,6 +545,9 @@
     cancelCommentInput.oninput = updateCancelButton;
     populateCancelReasons();
     ticketModalClose.onclick = () => ticketModal.classList.remove('open');
+    if(tempPasswordClose){
+      tempPasswordClose.onclick = () => tempPasswordModal?.classList.remove('open');
+    }
 
     function openTicketModal(ticket) {
       if (!ticket) return;
@@ -1082,9 +1105,20 @@
     }
     if(formMaster){ formMaster.addEventListener('submit', async (e)=>{
       e.preventDefault(); const fd=new FormData(formMaster); const body=Object.fromEntries(fd.entries()); masterMsg.textContent='Добавляю...';
+      if(body.use_default_password !== undefined){
+        body.use_default_password = body.use_default_password === 'on';
+      }
       const res=await fetch('/api/masters',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); const data=await res.json();
       if(!res.ok){ masterMsg.textContent=data.error||'Ошибка'; return; }
-      masterMsg.textContent=`Создан: ${data.name}. Логин: ${data.username}, пароль: ${data.temp_password}`; formMaster.reset(); loadMastersList();
+      if(tempPasswordModal && tempPasswordUsername && tempPasswordValue){
+        tempPasswordUsername.textContent = data.username || '';
+        tempPasswordValue.textContent = data.temp_password || '';
+        tempPasswordModal.classList.add('open');
+        masterMsg.textContent = '';
+      } else {
+        masterMsg.textContent=`Создан: ${data.name}. Логин: ${data.username}, пароль: ${data.temp_password}`;
+      }
+      formMaster.reset(); loadMastersList();
     });}
 
     function statusProgress(s){ if(s==='NEW') return 10; if(s==='ASSIGNED') return 35; if(s==='IN_PROGRESS') return 70; if(s==='COMPLETED') return 100; if(s==='CANCELLED') return 100; return 0; }
@@ -1425,7 +1459,7 @@
       // Remove existing markers
       objectsMarkers.forEach(m => objectsMap.removeLayer(m.marker));
       objectsMarkers = [];
-      const res = await fetch('/api/assets',{cache:'no-store'});
+      const res = await fetch('/api/assets/map',{cache:'no-store'});
       if(!res.ok){
         objectsData = [];
         applyObjectsSearch();
@@ -1446,7 +1480,8 @@
           fillOpacity: 0.8
         }).addTo(objectsMap);
         circle.bindPopup(`<b>${label}</b><br>${obj.address ?? ''}`);
-        const normalizedText = normalizeSearchText(`${label ?? ''} ${obj.address ?? ''} ${obj.serial_no ?? ''} ${obj.lift_label ?? ''} ${obj.entrance ?? ''}`);
+        const displayText = `${obj.serial_no ?? ''} ${obj.lift_label ?? ''} ${obj.address ?? ''} ${obj.entrance ?? ''}`;
+        const normalizedText = normalizeSearchText(displayText);
         objectsMarkers.push({ marker: circle, data: entryData, normalizedText, isVisible: true });
       });
       // Fit bounds to markers if any

@@ -57,6 +57,7 @@ def create_master():
     name = (data.get("name") or "").strip()
     if not name:
         return jsonify({"error": "Name is required"}), 400
+    use_default_password = bool(data.get("use_default_password"))
     with SessionLocal() as db:
         m = Master(name=name, is_active=1)
         db.add(m)
@@ -64,9 +65,21 @@ def create_master():
         db.refresh(m)
         from werkzeug.security import generate_password_hash
 
-        temp_password = generate_temp_password()
+        def _unique_username(base: str) -> str:
+            if not db.query(User).filter(User.username == base).first():
+                return base
+            idx = 2
+            while db.query(User).filter(User.username == f"{base}-{idx}").first():
+                idx += 1
+            return f"{base}-{idx}"
+
+        if use_default_password and (config.MASTER_PASSWORD or "").strip():
+            temp_password = config.MASTER_PASSWORD
+        else:
+            temp_password = generate_temp_password()
+        username = _unique_username(f"master{m.id}")
         u = User(
-            username=f"master{m.id}",
+            username=username,
             password_hash=generate_password_hash(temp_password),
             role="master",
             master_id=m.id,

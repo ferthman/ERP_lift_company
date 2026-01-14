@@ -58,6 +58,7 @@ def _export_payload(asset):
 
 @bp.get("/api/assets")
 @login_required
+@role_required("admin", "dispatcher")
 def list_assets():
     search = (request.args.get("search") or "").strip()
     with SessionLocal() as db:
@@ -79,6 +80,45 @@ def list_assets():
             )
         assets = query.order_by(Asset.id).all()
         return jsonify([serialize_asset(a) for a in assets])
+
+
+@bp.get("/api/assets/map")
+@login_required
+def list_assets_map():
+    search = (request.args.get("search") or "").strip()
+    with SessionLocal() as db:
+        query = db.query(Asset).filter(Asset.lat.isnot(None)).filter(Asset.lon.isnot(None))
+        if search:
+            term = f"%{search.lower()}%"
+            raw_term = f"%{search}%"
+            query = query.filter(
+                or_(
+                    func.lower(Asset.address).like(term),
+                    func.lower(Asset.serial_no).like(term),
+                    func.lower(Asset.lift_label).like(term),
+                    func.lower(Asset.entrance).like(term),
+                    Asset.address.like(raw_term),
+                    Asset.serial_no.like(raw_term),
+                    Asset.lift_label.like(raw_term),
+                    Asset.entrance.like(raw_term),
+                )
+            )
+        assets = query.order_by(Asset.id).all()
+        return jsonify(
+            [
+                {
+                    "id": asset.id,
+                    "address": asset.address,
+                    "entrance": asset.entrance,
+                    "lift_label": asset.lift_label,
+                    "serial_no": asset.serial_no,
+                    "lat": asset.lat,
+                    "lon": asset.lon,
+                    "status": asset.status,
+                }
+                for asset in assets
+            ]
+        )
 
 
 @bp.post("/api/assets")

@@ -71,7 +71,7 @@ class AssetsApiTest(unittest.TestCase):
         )
         self.client.post("/api/logout")
         self.login_master()
-        list_res = self.client.get("/api/assets")
+        list_res = self.client.get("/api/assets/map")
         self.assertEqual(list_res.status_code, 200)
 
     def test_ticket_create_with_asset(self):
