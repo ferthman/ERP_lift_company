@@ -1,8 +1,11 @@
 import unittest
 
+from werkzeug.security import generate_password_hash
+
 from liftcrm import create_app, config
-from liftcrm.db import SessionLocal, Ticket, Master
+from liftcrm.db import SessionLocal, Ticket, Master, User
 from liftcrm.tickets.service import validate_status_transition
+from liftcrm.utils.rate_limit import clear_rate_limits
 
 
 class TicketStatusTransitionTest(unittest.TestCase):
@@ -13,7 +16,17 @@ class TicketStatusTransitionTest(unittest.TestCase):
         cls.app = app
 
     def setUp(self):
+        clear_rate_limits()
         self.client = self.app.test_client()
+        self.master_password = "test-master-pass"
+        self._set_password("master1", self.master_password)
+
+    def _set_password(self, username, password):
+        with SessionLocal() as db:
+            user = db.query(User).filter(User.username == username).first()
+            if user:
+                user.password_hash = generate_password_hash(password)
+                db.commit()
 
     def login(self, username, password):
         res = self.client.post("/api/login", json={"username": username, "password": password})
@@ -50,7 +63,7 @@ class TicketStatusTransitionTest(unittest.TestCase):
             db.commit()
         self.logout()
 
-        self.login("master1", config.MASTER_PASSWORD)
+        self.login("master1", self.master_password)
         res = self.client.post(
             f"/api/tickets/{ticket_id}/complete",
             json={"lat": 43.238949, "lon": 76.889709, "close_reason": "OTHER"},
@@ -77,7 +90,7 @@ class TicketStatusTransitionTest(unittest.TestCase):
             db.commit()
         self.logout()
 
-        self.login("master1", config.MASTER_PASSWORD)
+        self.login("master1", self.master_password)
         res = self.client.post(
             f"/api/tickets/{ticket_id}/arrive",
             json={"lat": 43.238949, "lon": 76.889709},
@@ -99,7 +112,7 @@ class TicketStatusTransitionTest(unittest.TestCase):
         ticket_id = self.create_ticket()
         self.logout()
 
-        self.login("master1", config.MASTER_PASSWORD)
+        self.login("master1", self.master_password)
         res = self.client.post(
             f"/api/tickets/{ticket_id}/cancel",
             json={"close_reason": "DUPLICATE", "close_comment": "Нет доступа"},
@@ -151,7 +164,7 @@ class TicketStatusTransitionTest(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.logout()
 
-        self.login("master1", config.MASTER_PASSWORD)
+        self.login("master1", self.master_password)
         arrive = self.client.post(
             f"/api/tickets/{ticket_id}/arrive",
             json={"lat": 43.238949, "lon": 76.889709},
@@ -180,7 +193,7 @@ class TicketStatusTransitionTest(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.logout()
 
-        self.login("master1", config.MASTER_PASSWORD)
+        self.login("master1", self.master_password)
         arrive = self.client.post(
             f"/api/tickets/{ticket_id}/arrive",
             json={"lat": 43.238949, "lon": 76.889709},

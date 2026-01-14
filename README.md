@@ -143,7 +143,7 @@ password: disp123
 
 Masters  
 - login: master1 … master10  
-- password: m123456  
+- password: уникальный временный (выдаётся администратором при создании или через сброс пароля)
 
 ---
 
