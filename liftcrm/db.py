@@ -68,6 +68,29 @@ class Ticket(Base):
     assigned_master = relationship("Master", back_populates="tickets")
     attachments = relationship("Attachment", back_populates="ticket", cascade="all, delete-orphan")
     email = Column(String, nullable=True)
+    asset_id = Column(Integer, ForeignKey("assets.id"), nullable=True)
+    asset = relationship("Asset", back_populates="tickets")
+
+
+class Asset(Base):
+    __tablename__ = "assets"
+    id = Column(Integer, primary_key=True)
+    address = Column(Text, nullable=False)
+    address_norm = Column(Text, nullable=True)
+    entrance = Column(String, nullable=True)
+    lift_label = Column(String, nullable=True)
+    serial_no = Column(String, nullable=True, unique=True)
+    customer_id = Column(Integer, nullable=True)
+    lat = Column(Float, nullable=True)
+    lon = Column(Float, nullable=True)
+    status = Column(String, nullable=False, default="ACTIVE")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    tickets = relationship("Ticket", back_populates="asset")
 
 
 class Attachment(Base):
@@ -92,6 +115,10 @@ class AuditLog(Base):
 
 
 Index("idx_audit_log_entity_created", AuditLog.entity_type, AuditLog.entity_id, AuditLog.created_at)
+Index("idx_assets_serial_no", Asset.serial_no)
+Index("idx_assets_address", Asset.address)
+Index("idx_assets_address_norm", Asset.address_norm)
+Index("idx_assets_lat_lon", Asset.lat, Asset.lon)
 
 
 def init_db():
@@ -189,6 +216,55 @@ def ensure_migrations():
         if "assigned_at" not in tcols:
             cur.execute("ALTER TABLE tickets ADD COLUMN assigned_at DATETIME")
             conn.commit()
+        if "asset_id" not in tcols:
+            cur.execute("ALTER TABLE tickets ADD COLUMN asset_id INTEGER")
+            conn.commit()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='assets'")
+        if not cur.fetchone():
+            cur.execute(
+                """
+                CREATE TABLE assets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    address TEXT NOT NULL,
+                    address_norm TEXT NULL,
+                    entrance TEXT NULL,
+                    lift_label TEXT NULL,
+                    serial_no TEXT NULL UNIQUE,
+                    customer_id INTEGER NULL,
+                    lat REAL NULL,
+                    lon REAL NULL,
+                    status TEXT NOT NULL DEFAULT 'ACTIVE',
+                    created_at DATETIME,
+                    updated_at DATETIME
+                )
+                """
+            )
+            conn.commit()
+        cur.execute("PRAGMA table_info(assets)")
+        acols = [r[1] for r in cur.fetchall()]
+        if "address_norm" not in acols:
+            cur.execute("ALTER TABLE assets ADD COLUMN address_norm TEXT")
+            conn.commit()
+        try:
+            from .assets.service import normalize_text
+
+            cur.execute("SELECT id, address, address_norm FROM assets")
+            rows = cur.fetchall()
+            for asset_id, address, address_norm in rows:
+                if address_norm and str(address_norm).strip():
+                    continue
+                normalized = normalize_text(address)
+                cur.execute(
+                    "UPDATE assets SET address_norm = ? WHERE id = ?",
+                    (normalized, asset_id),
+                )
+            conn.commit()
+        except Exception as e:
+            print("Failed to backfill assets.address_norm:", e)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_assets_serial_no ON assets (serial_no)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_assets_address ON assets (address)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_assets_address_norm ON assets (address_norm)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_assets_lat_lon ON assets (lat, lon)")
         conn.close()
     except Exception as e:
         print("Migration check failed:", e)
