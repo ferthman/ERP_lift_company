@@ -451,18 +451,41 @@
 
     // Map
     let mapCreate, markerCreate, circleCreate;
+    let createMarkerActive = true;
     function initCreateMap(){
       mapCreate = L.map('map-create').setView([43.238949,76.889709], 12);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ attribution:'&copy; OpenStreetMap' }).addTo(mapCreate);
       markerCreate = L.marker([43.238949,76.889709],{draggable:true}).addTo(mapCreate);
       circleCreate = L.circle([43.238949,76.889709],{radius:500}).addTo(mapCreate);
+      function ensureCreateMarker(){
+        if(!mapCreate || !markerCreate || !circleCreate) return;
+        if(!createMarkerActive){
+          markerCreate.addTo(mapCreate);
+          circleCreate.addTo(mapCreate);
+          createMarkerActive = true;
+        }
+      }
+      function clearCreateMarker(){
+        if(!mapCreate || !markerCreate || !circleCreate) return;
+        if(createMarkerActive){
+          mapCreate.removeLayer(markerCreate);
+          mapCreate.removeLayer(circleCreate);
+          createMarkerActive = false;
+        }
+      }
       function sync(lat,lon){
+        ensureCreateMarker();
         document.getElementById('lat').value=lat.toFixed(6);
         document.getElementById('lon').value=lon.toFixed(6);
         markerCreate.setLatLng([lat,lon]);
         circleCreate.setLatLng([lat,lon]);
       }
       window.syncCreateMap = sync;
+      window.clearCreateMap = () => {
+        document.getElementById('lat').value='';
+        document.getElementById('lon').value='';
+        clearCreateMarker();
+      };
       mapCreate.on('click',e=>sync(e.latlng.lat,e.latlng.lng)); markerCreate.on('drag',e=>sync(e.target.getLatLng().lat,e.target.getLatLng().lng));
     }
 
@@ -1189,6 +1212,10 @@
           window.syncCreateMap(asset.lat, asset.lon);
         }
         if(mapCreate) mapCreate.setView([asset.lat, asset.lon], 15);
+      } else {
+        if(typeof window.clearCreateMap === 'function'){
+          window.clearCreateMap();
+        }
       }
     }
     async function loadAssetsCatalog(){

@@ -58,7 +58,6 @@ def _export_payload(asset):
 
 @bp.get("/api/assets")
 @login_required
-@role_required("admin", "dispatcher")
 def list_assets():
     search = (request.args.get("search") or "").strip()
     with SessionLocal() as db:

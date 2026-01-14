@@ -20,6 +20,9 @@ class AssetsApiTest(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         return res
 
+    def login_master(self):
+        return self.login("master1", config.MASTER_PASSWORD)
+
     def create_asset(self, payload):
         res = self.client.post("/api/assets", json=payload)
         self.assertEqual(res.status_code, 201)
@@ -66,6 +69,10 @@ class AssetsApiTest(unittest.TestCase):
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             xlsx_res.headers.get("Content-Type", ""),
         )
+        self.client.post("/api/logout")
+        self.login_master()
+        list_res = self.client.get("/api/assets")
+        self.assertEqual(list_res.status_code, 200)
 
     def test_ticket_create_with_asset(self):
         asset = self.create_asset(
