@@ -6,7 +6,7 @@
 3) Аккаунты для входа:
    - admin / `admin123`
    - dispatcher / `disp123`
-   - master1 … master10 / `m123456` (создаются при первом запуске).【F:app.py†L92-L118】
+   - master1 … master10 / уникальные временные пароли (создаются при первом запуске, выдаются через сброс пароля).【F:app.py†L92-L118】
 
 ## Что создаётся автоматически
 - База `lift_crm.db` (SQLite) и таблицы при первом запросе (hook `before_request`).【F:app.py†L124-L180】
@@ -60,7 +60,7 @@
   - `SECRET_KEY` — ключ сессий Flask (dev по умолчанию `dev-secret`, обязательно переопределить в проде).【F:liftcrm/config.py†L7-L18】【F:liftcrm/__init__.py†L12-L33】
   - `ADMIN_USERNAME` / `ADMIN_PASSWORD` — креды админа (dev: `admin` / `admin123`).【F:liftcrm/config.py†L7-L18】【F:liftcrm/db.py†L58-L73】
   - `DISPATCHER_USERNAME` / `DISPATCHER_PASSWORD` — креды диспетчера (dev: `dispatcher` / `disp123`).【F:liftcrm/config.py†L7-L18】【F:liftcrm/db.py†L58-L73】
-  - `MASTER_PASSWORD` — пароль для всех мастеров при сидировании (dev: `m123456`).【F:liftcrm/config.py†L7-L18】【F:liftcrm/db.py†L58-L73】
+  - `MASTER_PASSWORD` — **deprecated**, используется только при явном запросе "use_default_password" при создании мастера (dev-only).【F:liftcrm/config.py†L7-L18】【F:liftcrm/tickets/routes.py†L45-L102】
   - `SLA_RESPONSE_MINUTES`, `SLA_COMPLETION_MINUTES` — опциональные, задают лимиты SLA в минутах (30/120 по умолчанию).【F:liftcrm/config.py†L7-L23】
 - Опционально:
   - `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` — для email-отправки отчёта при завершении; если пусто, отправка пропускается.【F:liftcrm/config.py†L20-L23】【F:liftcrm/tickets/service.py†L43-L77】

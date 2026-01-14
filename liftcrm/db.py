@@ -5,6 +5,7 @@ from flask_login import UserMixin
 from werkzeug.security import generate_password_hash
 
 from . import config
+from .utils.security import generate_temp_password
 
 engine = create_engine(f"sqlite:///{config.DB_PATH}", echo=False, future=True)
 SessionLocal = scoped_session(
@@ -114,9 +115,10 @@ def init_db():
             db.add_all([admin, disp])
             db.commit()
             for m in db.query(Master).order_by(Master.id).all():
+                temp_password = generate_temp_password()
                 u = User(
                     username=f"master{m.id}",
-                    password_hash=generate_password_hash(config.MASTER_PASSWORD),
+                    password_hash=generate_password_hash(temp_password),
                     role="master",
                     master_id=m.id,
                 )

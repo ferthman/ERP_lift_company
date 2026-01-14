@@ -5,12 +5,13 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request, send_from_directory
 from flask_login import login_required, current_user
+from werkzeug.security import generate_password_hash
 
 from .service import auto_assign_master, haversine_m, send_report, validate_status_transition
 from . import repository
 from ..db import SessionLocal, Master, Ticket, Attachment, User, AuditLog
 from ..objects.service import upsert_object_from_ticket
-from ..utils.security import role_required
+from ..utils.security import role_required, generate_temp_password
 from ..utils.time import to_utc
 from ..utils.audit import log_audit, changed_fields
 from .. import config
@@ -35,6 +36,15 @@ def _transition_error(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message}}), status
 
 
+def _unique_master_username(db, base):
+    candidate = base
+    counter = 1
+    while db.query(User).filter(User.username == candidate).first():
+        candidate = f"{base}-{counter}"
+        counter += 1
+    return candidate
+
+
 @bp.get("/api/masters")
 @login_required
 def list_masters():
@@ -54,6 +64,7 @@ def list_masters():
 def create_master():
     data = request.get_json() or {}
     name = (data.get("name") or "").strip()
+    use_default_password = bool(data.get("use_default_password"))
     if not name:
         return jsonify({"error": "Name is required"}), 400
     with SessionLocal() as db:
@@ -61,17 +72,39 @@ def create_master():
         db.add(m)
         db.commit()
         db.refresh(m)
-        from werkzeug.security import generate_password_hash
-
+        temp_password = config.MASTER_PASSWORD if use_default_password and config.MASTER_PASSWORD else generate_temp_password()
         u = User(
-            username=f"master{m.id}",
-            password_hash=generate_password_hash(config.MASTER_PASSWORD),
+            username=_unique_master_username(db, f"master{m.id}"),
+            password_hash=generate_password_hash(temp_password),
             role="master",
             master_id=m.id,
         )
         db.add(u)
         db.commit()
-        return jsonify({"id": m.id, "name": m.name, "username": u.username, "temp_password": config.MASTER_PASSWORD}), 201
+        return jsonify({"id": m.id, "name": m.name, "username": u.username, "temp_password": temp_password}), 201
+
+
+@bp.post("/api/masters/<int:master_id>/reset_password")
+@login_required
+@role_required("admin")
+def reset_master_password(master_id):
+    with SessionLocal() as db:
+        m = db.get(Master, master_id)
+        if not m:
+            return jsonify({"error": "Master not found"}), 404
+        user = db.query(User).filter(User.master_id == master_id, User.role == "master").first()
+        if not user:
+            user = User(
+                username=_unique_master_username(db, f"master{master_id}"),
+                password_hash="",
+                role="master",
+                master_id=master_id,
+            )
+            db.add(user)
+        temp_password = generate_temp_password()
+        user.password_hash = generate_password_hash(temp_password)
+        db.commit()
+        return jsonify({"ok": True, "username": user.username, "temp_password": temp_password})
 
 
 @bp.delete("/api/masters/<int:master_id>")
