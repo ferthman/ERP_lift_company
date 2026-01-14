@@ -218,6 +218,33 @@
     </div>
   </div>
 
+  <!-- Cancel Modal -->
+  <div id="cancel-modal" class="modal">
+    <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-2xl">
+      <div class="flex items-center justify-between">
+        <h3 class="font-semibold">Отменить заявку</h3>
+        <button id="cancel-modal-close" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-sm">Закрыть</button>
+      </div>
+      <div class="mt-4 space-y-4">
+        <div>
+          <label for="cancel-reason" class="text-sm text-slate-600">Причина отмены</label>
+          <select id="cancel-reason" class="mt-1 w-full px-2 py-2 text-sm rounded-lg ring-1 ring-slate-200 bg-white">
+            <option value="">Выберите причину</option>
+          </select>
+        </div>
+        <div>
+          <label for="cancel-comment" class="text-sm text-slate-600">Комментарий</label>
+          <textarea id="cancel-comment" rows="3" class="mt-1 w-full px-2 py-2 text-sm rounded-lg ring-1 ring-slate-200" placeholder="Опишите причину отмены"></textarea>
+          <div class="text-xs text-slate-500 mt-1">Минимум 5 символов</div>
+        </div>
+        <div id="cancel-error" class="text-sm text-red-600"></div>
+        <div class="flex justify-end gap-2">
+          <button id="cancel-modal-confirm" class="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm disabled:opacity-60" disabled>Отменить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/static/sw.js");
   </script>
@@ -226,12 +253,16 @@
     const API = location.origin;
     let me = null;
     const CLOSE_REASONS = ["EQUIPMENT_FAILURE", "PASSENGER_TRAPPED", "FALSE_CALL", "POWER_ISSUE", "EXTERNAL_REASON", "OTHER"];
+    const CANCEL_REASONS = ["DUPLICATE", "FALSE_CALL", "NO_ACCESS", "CUSTOMER_CANCELLED", "OTHER"];
     const CLOSE_REASON_LABELS = {
       EQUIPMENT_FAILURE: 'Неисправность оборудования',
       PASSENGER_TRAPPED: 'Застрявший пассажир',
       FALSE_CALL: 'Ложный вызов',
       POWER_ISSUE: 'Проблема с питанием',
       EXTERNAL_REASON: 'Внешняя причина',
+      DUPLICATE: 'Дубликат',
+      NO_ACCESS: 'Нет доступа',
+      CUSTOMER_CANCELLED: 'Отмена клиентом',
       OTHER: 'Другое',
       UNSPECIFIED: 'Не указана',
     };
@@ -285,6 +316,13 @@
     const objectsSearchInput = document.getElementById('objects-search');
     const objectsSearchClear = document.getElementById('objects-search-clear');
     const objectsSuggestions = document.getElementById('objects-suggestions');
+    const cancelModal = document.getElementById('cancel-modal');
+    const cancelModalClose = document.getElementById('cancel-modal-close');
+    const cancelReasonSelect = document.getElementById('cancel-reason');
+    const cancelCommentInput = document.getElementById('cancel-comment');
+    const cancelError = document.getElementById('cancel-error');
+    const cancelConfirmButton = document.getElementById('cancel-modal-confirm');
+    let cancelTicketId = null;
 
     function setTab(which) {
       for (const btn of [tabAdmin, tabOps, tabTech, tabObjects, tabSuper]) btn.classList.remove('bg-slate-900','text-white');
@@ -349,6 +387,34 @@
     function openMap(lat,lon){ modal.classList.add('open'); setTimeout(()=>{ if(modalMap){modalMap.remove(); modalMap=null;} modalMap=L.map('modal-map').setView([lat,lon],16);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ attribution:'&copy; OpenStreetMap' }).addTo(modalMap);
       L.marker([lat,lon]).addTo(modalMap); L.circle([lat,lon],{radius:500}).addTo(modalMap); },50); }
+
+    function populateCancelReasons() {
+      cancelReasonSelect.innerHTML = '<option value="">Выберите причину</option>' +
+        CANCEL_REASONS.map(r=>`<option value="${r}">${formatCloseReason(r)}</option>`).join('');
+    }
+    function isCancelFormValid() {
+      const reason = cancelReasonSelect.value;
+      const comment = (cancelCommentInput.value || '').trim();
+      return Boolean(reason) && comment.length >= 5;
+    }
+    function updateCancelButton() {
+      cancelConfirmButton.disabled = !isCancelFormValid();
+    }
+    function openCancelModal(id) {
+      cancelTicketId = id;
+      cancelReasonSelect.value = '';
+      cancelCommentInput.value = '';
+      cancelError.textContent = '';
+      updateCancelButton();
+      cancelModal.classList.add('open');
+    }
+    function closeCancelModal() {
+      cancelModal.classList.remove('open');
+    }
+    cancelModalClose.onclick = closeCancelModal;
+    cancelReasonSelect.onchange = updateCancelButton;
+    cancelCommentInput.oninput = updateCancelButton;
+    populateCancelReasons();
 
     // Create ticket
     const formCreate=document.getElementById('form-create'); const createMsg=document.getElementById('create-msg');
@@ -429,7 +495,7 @@
           <div id="reassign-select-${t.id}" class="flex gap-2">
             <button data-admin-only class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" onclick="showReassign(${t.id})">Переназначить</button>
           </div>
-          <button data-admin-only class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" onclick="cancelTicket(${t.id})">Отменить</button>
+          <button data-admin-only class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" onclick="openCancelModal(${t.id})">Отменить</button>
           <button data-admin-only class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" onclick="archiveTicket(${t.id})">В архив</button>
         </div></td></tr>`;
       }
@@ -511,12 +577,33 @@
       if (!res.ok) return alert(data.error || 'Ошибка');
       await loadTickets(); await loadKanban();
     };
-    window.cancelTicket = async (id) => {
-      if (!confirm('Точно отменяем заявку?')) return;
-      const res = await fetch(`/api/tickets/${id}/cancel`, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) return alert(data.error || 'Ошибка');
-      await loadTickets(); await loadKanban();
+    window.openCancelModal = openCancelModal;
+    cancelConfirmButton.onclick = async () => {
+      if (!isCancelFormValid() || !cancelTicketId) return;
+      cancelConfirmButton.disabled = true;
+      cancelError.textContent = '';
+      const payload = {
+        close_reason: cancelReasonSelect.value,
+        close_comment: cancelCommentInput.value.trim(),
+      };
+      try {
+        const res = await fetch(`/api/tickets/${cancelTicketId}/cancel`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          cancelError.textContent = extractErrorMessage(data, 'Ошибка отмены');
+          return;
+        }
+        closeCancelModal();
+        await loadTickets(); await loadKanban();
+      } catch (err) {
+        cancelError.textContent = 'Ошибка: ' + (err?.message || 'не удалось отменить заявку');
+      } finally {
+        updateCancelButton();
+      }
     };
 
     // Show a drop-down list of active masters to reassign a ticket manually.
