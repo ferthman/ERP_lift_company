@@ -116,10 +116,6 @@
               <input id="filter-overdue" type="checkbox" class="h-4 w-4 rounded border-slate-300">
               Просроченные SLA
             </label>
-            <label class="flex items-center gap-2 text-slate-600">
-              <input id="filter-unassigned" type="checkbox" class="h-4 w-4 rounded border-slate-300">
-              Без мастера
-            </label>
             <div class="flex flex-col">
               <span class="text-xs text-slate-500">Мастер</span>
               <select id="filter-master" class="px-2 py-1 rounded-lg ring-1 ring-slate-200 bg-white text-sm min-w-[180px]">
@@ -362,13 +358,11 @@
     const ticketModalBody = document.getElementById('ticket-modal-body');
     const ticketModalClose = document.getElementById('ticket-modal-close');
     const filterOverdue = document.getElementById('filter-overdue');
-    const filterUnassigned = document.getElementById('filter-unassigned');
     const filterMaster = document.getElementById('filter-master');
     const filterPriority = document.getElementById('filter-priority');
     let cancelTicketId = null;
     const ticketFilters = {
       overdue: false,
-      unassigned: false,
       masterId: '',
       priority: '',
     };
@@ -520,7 +514,6 @@
     // Tickets table
     const tableHolder=document.getElementById('tickets-table'); document.getElementById('btn-refresh').onclick=loadTickets;
     filterOverdue.onchange = () => { ticketFilters.overdue = filterOverdue.checked; loadTickets(); };
-    filterUnassigned.onchange = () => { ticketFilters.unassigned = filterUnassigned.checked; loadTickets(); };
     filterMaster.onchange = () => { ticketFilters.masterId = filterMaster.value; loadTickets(); };
     filterPriority.onchange = () => { ticketFilters.priority = filterPriority.value; loadTickets(); };
     function formatSlaLine(label, minutesLeft, breached){
@@ -552,7 +545,6 @@
     function buildTicketsQuery(){
       const params = new URLSearchParams();
       if (ticketFilters.overdue) params.set('overdue', '1');
-      if (ticketFilters.unassigned) params.set('unassigned', '1');
       if (ticketFilters.masterId) params.set('master_id', ticketFilters.masterId);
       if (ticketFilters.priority) params.set('priority', ticketFilters.priority);
       const query = params.toString();
@@ -594,7 +586,6 @@
     }
     async function loadTickets(){
       filterOverdue.checked = ticketFilters.overdue;
-      filterUnassigned.checked = ticketFilters.unassigned;
       filterMaster.value = ticketFilters.masterId;
       filterPriority.value = ticketFilters.priority;
       const res=await fetch(`/api/tickets${buildTicketsQuery()}`,{cache:'no-store'}); if(!res.ok){ tableHolder.innerHTML='<div class="text-sm text-slate-500">Требуется вход.</div>'; return; }
