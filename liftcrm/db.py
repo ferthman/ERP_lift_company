@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, func
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, func, Index
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship, scoped_session
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash
@@ -78,6 +78,21 @@ class Attachment(Base):
     ticket = relationship("Ticket", back_populates="attachments")
 
 
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+    id = Column(Integer, primary_key=True)
+    entity_type = Column(String, nullable=False)
+    entity_id = Column(Integer, nullable=False)
+    action = Column(String, nullable=False)
+    actor_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    diff_json = Column(String, nullable=True)
+
+
+Index("idx_audit_entity", AuditLog.entity_type, AuditLog.entity_id)
+Index("idx_audit_created_at", AuditLog.created_at)
+
+
 def init_db():
     Base.metadata.create_all(engine)
     with SessionLocal() as db:
@@ -115,6 +130,22 @@ def ensure_migrations():
 
         conn = sqlite3.connect(config.DB_PATH)
         cur = conn.cursor()
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_type TEXT NOT NULL,
+                entity_id INTEGER NOT NULL,
+                action TEXT NOT NULL,
+                actor_user_id INTEGER,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                diff_json TEXT,
+                FOREIGN KEY(actor_user_id) REFERENCES users(id)
+            )
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity_type, entity_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_log(created_at)")
         cur.execute("PRAGMA table_info(masters)")
         cols = [r[1] for r in cur.fetchall()]
         if "is_active" not in cols:

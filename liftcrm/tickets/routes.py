@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from datetime import datetime, timezone
@@ -7,8 +8,9 @@ from flask_login import login_required, current_user
 
 from .service import auto_assign_master, haversine_m, send_report, validate_status_transition
 from . import repository
-from ..db import SessionLocal, Master, Ticket, Attachment, User
+from ..db import SessionLocal, Master, Ticket, Attachment, User, AuditLog
 from ..objects.service import upsert_object_from_ticket
+from ..utils.audit import log_audit
 from ..utils.security import role_required
 from ..utils.time import to_utc
 from .. import config
@@ -31,6 +33,36 @@ PRIORITY_VALUES = ["HIGH", "MEDIUM", "LOW"]
 
 def _transition_error(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message}}), status
+
+
+def _ticket_snapshot(t):
+    return {
+        "object_name": t.object_name,
+        "address": t.address,
+        "lat": t.lat,
+        "lon": t.lon,
+        "description": t.description,
+        "priority": t.priority,
+        "email": t.email,
+        "status": t.status,
+        "assigned_master_id": t.assigned_master_id,
+        "arrived_at": t.arrived_at.isoformat() if t.arrived_at else None,
+        "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+        "archived_at": t.archived_at.isoformat() if t.archived_at else None,
+        "close_reason": t.close_reason,
+        "cancel_reason": t.cancel_reason,
+        "custom_sla_response_minutes": t.custom_sla_response_minutes,
+        "custom_sla_completion_minutes": t.custom_sla_completion_minutes,
+    }
+
+
+def _parse_diff(diff_json):
+    if not diff_json:
+        return None
+    try:
+        return json.loads(diff_json)
+    except Exception:
+        return None
 
 
 @bp.get("/api/masters")
@@ -69,6 +101,13 @@ def create_master():
         )
         db.add(u)
         db.commit()
+        log_audit(
+            "master",
+            m.id,
+            "CREATE",
+            current_user,
+            new={"name": m.name, "is_active": bool(m.is_active), "user_id": u.id},
+        )
         return jsonify({"id": m.id, "name": m.name, "username": u.username, "temp_password": config.MASTER_PASSWORD}), 201
 
 
@@ -94,6 +133,7 @@ def delete_master(master_id):
             .all()
         )
         counts = {x.id: 0 for x in others}
+        ticket_reassignments = []
         rows = (
             db.query(Ticket.assigned_master_id, repository.func.count(Ticket.id))
             .filter(
@@ -108,14 +148,50 @@ def delete_master(master_id):
             counts[mid] = cnt
         for t in open_tickets:
             new_id = min(counts, key=lambda k: (counts[k], k))
+            old_master_id = t.assigned_master_id
+            old_status = t.status
             t.assigned_master_id = new_id
             if t.status in ["NEW", "ASSIGNED"]:
                 t.status = "ASSIGNED"
             counts[new_id] += 1
+            ticket_reassignments.append(
+                {
+                    "ticket_id": t.id,
+                    "old_master_id": old_master_id,
+                    "new_master_id": new_id,
+                    "old_status": old_status,
+                    "new_status": t.status,
+                }
+            )
         for u in db.query(User).filter(User.master_id == master_id).all():
             db.delete(u)
         db.delete(m)
         db.commit()
+        for change in ticket_reassignments:
+            log_audit(
+                "ticket",
+                change["ticket_id"],
+                "ASSIGN",
+                current_user,
+                old={"assigned_master_id": change["old_master_id"]},
+                new={"assigned_master_id": change["new_master_id"]},
+            )
+            if change["old_status"] != change["new_status"]:
+                log_audit(
+                    "ticket",
+                    change["ticket_id"],
+                    "STATUS_CHANGE",
+                    current_user,
+                    old={"status": change["old_status"]},
+                    new={"status": change["new_status"]},
+                )
+        log_audit(
+            "master",
+            master_id,
+            "EDIT",
+            current_user,
+            meta={"deleted": True, "name": m.name},
+        )
         return jsonify({"ok": True, "reassigned": len(open_tickets)})
 
 
@@ -127,6 +203,7 @@ def toggle_master_active(master_id):
         m = db.get(Master, master_id)
         if not m:
             return jsonify({"error": "Master not found"}), 404
+        old_active = bool(m.is_active)
         m.is_active = 0 if m.is_active else 1
         reassigned = 0
         if m.is_active == 0:
@@ -144,6 +221,7 @@ def toggle_master_active(master_id):
                 .all()
             )
             counts = {x.id: 0 for x in others}
+            ticket_reassignments = []
             rows = (
                 db.query(Ticket.assigned_master_id, repository.func.count(Ticket.id))
                 .filter(
@@ -158,12 +236,50 @@ def toggle_master_active(master_id):
                 counts[mid] = cnt
             for t in open_tickets:
                 new_id = min(counts, key=lambda k: (counts[k], k))
+                old_master_id = t.assigned_master_id
+                old_status = t.status
                 t.assigned_master_id = new_id
                 if t.status in ["NEW", "ASSIGNED"]:
                     t.status = "ASSIGNED"
                 counts[new_id] += 1
+                ticket_reassignments.append(
+                    {
+                        "ticket_id": t.id,
+                        "old_master_id": old_master_id,
+                        "new_master_id": new_id,
+                        "old_status": old_status,
+                        "new_status": t.status,
+                    }
+                )
             reassigned = len(open_tickets)
         db.commit()
+        if m.is_active == 0:
+            for change in ticket_reassignments:
+                log_audit(
+                    "ticket",
+                    change["ticket_id"],
+                    "ASSIGN",
+                    current_user,
+                    old={"assigned_master_id": change["old_master_id"]},
+                    new={"assigned_master_id": change["new_master_id"]},
+                )
+                if change["old_status"] != change["new_status"]:
+                    log_audit(
+                        "ticket",
+                        change["ticket_id"],
+                        "STATUS_CHANGE",
+                        current_user,
+                        old={"status": change["old_status"]},
+                        new={"status": change["new_status"]},
+                    )
+        log_audit(
+            "master",
+            master_id,
+            "EDIT",
+            current_user,
+            old={"is_active": old_active},
+            new={"is_active": bool(m.is_active)},
+        )
         return jsonify({"ok": True, "is_active": bool(m.is_active), "reassigned": reassigned})
 
 
@@ -225,6 +341,16 @@ def create_ticket():
         db.add(t)
         db.commit()
         db.refresh(t)
+        log_audit("ticket", t.id, "CREATE", current_user, new=_ticket_snapshot(t))
+        if t.assigned_master_id:
+            log_audit(
+                "ticket",
+                t.id,
+                "ASSIGN",
+                current_user,
+                old={"assigned_master_id": None},
+                new={"assigned_master_id": t.assigned_master_id},
+            )
     try:
         upsert_object_from_ticket(t.object_name, t.address, t.lat, t.lon, ticket_id=t.id)
     except Exception:
@@ -268,14 +394,27 @@ def update_ticket(ticket_id):
             return jsonify({"error": "Ticket not found"}), 404
         if t.archived_at:
             return jsonify({"error": "Ticket archived"}), 400
+        changes_old = {}
+        changes_new = {}
         if priority is not None:
+            if t.priority != priority:
+                changes_old["priority"] = t.priority
+                changes_new["priority"] = priority
             t.priority = priority
         if custom_resp is not None:
+            if t.custom_sla_response_minutes != custom_resp:
+                changes_old["custom_sla_response_minutes"] = t.custom_sla_response_minutes
+                changes_new["custom_sla_response_minutes"] = custom_resp
             t.custom_sla_response_minutes = custom_resp
         if custom_comp is not None:
+            if t.custom_sla_completion_minutes != custom_comp:
+                changes_old["custom_sla_completion_minutes"] = t.custom_sla_completion_minutes
+                changes_new["custom_sla_completion_minutes"] = custom_comp
             t.custom_sla_completion_minutes = custom_comp
         db.commit()
         db.refresh(t)
+        if changes_old or changes_new:
+            log_audit("ticket", t.id, "EDIT", current_user, old=changes_old, new=changes_new)
         return jsonify(repository.serialize_ticket(t))
 
 
@@ -292,6 +431,7 @@ def reassign_ticket(ticket_id):
         m = auto_assign_master(db)
         if not m:
             return jsonify({"error": "No active masters available"}), 400
+        old_master_id = t.assigned_master_id
         old_status = t.status
         t.assigned_master_id = m.id
         if t.status in ["NEW", "ASSIGNED"]:
@@ -306,6 +446,24 @@ def reassign_ticket(ticket_id):
             if not ok:
                 return _transition_error(code, message)
         db.commit()
+        if old_master_id != t.assigned_master_id:
+            log_audit(
+                "ticket",
+                t.id,
+                "ASSIGN",
+                current_user,
+                old={"assigned_master_id": old_master_id},
+                new={"assigned_master_id": t.assigned_master_id},
+            )
+        if old_status != t.status:
+            log_audit(
+                "ticket",
+                t.id,
+                "STATUS_CHANGE",
+                current_user,
+                old={"status": old_status},
+                new={"status": t.status},
+            )
         return jsonify({"message": "Reassigned", "assigned_master_id": t.assigned_master_id})
 
 
@@ -321,6 +479,7 @@ def cancel_ticket(ticket_id):
         if t.archived_at:
             return jsonify({"error": "Ticket archived"}), 400
         old_status = t.status
+        old_cancel = t.cancel_reason
         t.cancel_reason = data.get("cancel_reason")
         t.status = "CANCELLED"
         ok, code, message = validate_status_transition(
@@ -334,6 +493,14 @@ def cancel_ticket(ticket_id):
             status = 403 if code == "FORBIDDEN" else 400
             return _transition_error(code, message, status=status)
         db.commit()
+        log_audit(
+            "ticket",
+            t.id,
+            "CANCEL",
+            current_user,
+            old={"status": old_status, "cancel_reason": old_cancel},
+            new={"status": t.status, "cancel_reason": t.cancel_reason},
+        )
         return jsonify({"message": "Cancelled"})
 
 
@@ -345,6 +512,49 @@ def get_ticket(ticket_id):
         if not t:
             return jsonify({"error": "Ticket not found"}), 404
         return jsonify(repository.serialize_ticket(t))
+
+
+@bp.get("/api/tickets/<int:ticket_id>/history")
+@login_required
+def ticket_history(ticket_id):
+    with SessionLocal() as db:
+        t = db.get(Ticket, ticket_id)
+        if not t:
+            return jsonify({"error": "Ticket not found"}), 404
+        if current_user.role == "master" and t.assigned_master_id != current_user.master_id:
+            return jsonify({"error": "Forbidden"}), 403
+        rows = (
+            db.query(AuditLog)
+            .filter(AuditLog.entity_type == "ticket", AuditLog.entity_id == ticket_id)
+            .order_by(AuditLog.created_at.desc())
+            .all()
+        )
+        actor_ids = {row.actor_user_id for row in rows if row.actor_user_id}
+        actors = {}
+        if actor_ids:
+            for user in db.query(User).filter(User.id.in_(actor_ids)).all():
+                actors[user.id] = user
+        payload = []
+        for row in rows:
+            actor = actors.get(row.actor_user_id)
+            payload.append(
+                {
+                    "id": row.id,
+                    "action": row.action,
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                    "actor": (
+                        {
+                            "id": actor.id,
+                            "username": actor.username,
+                            "role": actor.role,
+                        }
+                        if actor
+                        else None
+                    ),
+                    "diff": _parse_diff(row.diff_json),
+                }
+            )
+        return jsonify(payload)
 
 
 @bp.post("/api/tickets/<int:ticket_id>/arrive")
@@ -378,6 +588,7 @@ def arrive_ticket(ticket_id):
         if dist > 500:
             return jsonify({"error": f"Outside geofence ({int(dist)} m > 500 m)"}), 403
         old_status = t.status
+        old_arrived_at = t.arrived_at
         t.status = "IN_PROGRESS"
         t.arrived_at = datetime.now(timezone.utc)
         t.arrival_lat = float(lat)
@@ -392,6 +603,14 @@ def arrive_ticket(ticket_id):
         if not ok:
             return _transition_error(code, message)
         db.commit()
+        log_audit(
+            "ticket",
+            t.id,
+            "STATUS_CHANGE",
+            current_user,
+            old={"status": old_status, "arrived_at": old_arrived_at.isoformat() if old_arrived_at else None},
+            new={"status": t.status, "arrived_at": t.arrived_at.isoformat() if t.arrived_at else None},
+        )
         return jsonify({"message": "Arrived", "distance_m": int(dist), "status": t.status})
 
 
@@ -431,6 +650,8 @@ def complete_ticket(ticket_id):
         if dist > 500:
             return jsonify({"error": f"Outside geofence ({int(dist)} m > 500 m)"}), 403
         old_status = t.status
+        old_completed_at = t.completed_at
+        old_close_reason = t.close_reason
         t.status = "COMPLETED"
         t.completed_at = datetime.now(timezone.utc)
         t.completion_lat = float(lat)
@@ -446,6 +667,22 @@ def complete_ticket(ticket_id):
         if not ok:
             return _transition_error(code, message)
         db.commit()
+        log_audit(
+            "ticket",
+            t.id,
+            "STATUS_CHANGE",
+            current_user,
+            old={
+                "status": old_status,
+                "completed_at": old_completed_at.isoformat() if old_completed_at else None,
+                "close_reason": old_close_reason,
+            },
+            new={
+                "status": t.status,
+                "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+                "close_reason": t.close_reason,
+            },
+        )
         try:
             send_report(t)
         except Exception as e:
@@ -481,6 +718,13 @@ def upload_file(ticket_id):
         a = Attachment(ticket_id=ticket_id, filename=unique, orig_name=fname)
         db.add(a)
         db.commit()
+        log_audit(
+            "attachment",
+            a.id,
+            "CREATE",
+            current_user,
+            new={"ticket_id": ticket_id, "filename": unique, "orig_name": fname},
+        )
     return jsonify({"ok": True, "url": f"/uploads/{unique}", "name": fname})
 
 
@@ -506,6 +750,7 @@ def assign_ticket(ticket_id, master_id):
             return jsonify({"error": "Master not found"}), 404
         if int(getattr(m, "is_active", 1)) != 1:
             return jsonify({"error": "Мастер неактивен"}), 400
+        old_master_id = t.assigned_master_id
         old_status = t.status
         t.assigned_master_id = m.id
         if t.status in ["NEW", "ASSIGNED"]:
@@ -520,6 +765,24 @@ def assign_ticket(ticket_id, master_id):
             if not ok:
                 return _transition_error(code, message)
         db.commit()
+        if old_master_id != t.assigned_master_id:
+            log_audit(
+                "ticket",
+                t.id,
+                "ASSIGN",
+                current_user,
+                old={"assigned_master_id": old_master_id},
+                new={"assigned_master_id": t.assigned_master_id},
+            )
+        if old_status != t.status:
+            log_audit(
+                "ticket",
+                t.id,
+                "STATUS_CHANGE",
+                current_user,
+                old={"status": old_status},
+                new={"status": t.status},
+            )
         return jsonify({"message": "Assigned", "assigned_master_id": t.assigned_master_id, "assigned_master_name": m.name})
 
 
@@ -536,6 +799,14 @@ def archive_ticket(ticket_id):
             t.archived_at = now
             t.updated_at = now
             db.commit()
+            log_audit(
+                "ticket",
+                t.id,
+                "ARCHIVE",
+                current_user,
+                old={"archived_at": None},
+                new={"archived_at": now.isoformat()},
+            )
         archived_at = to_utc(t.archived_at).isoformat() if t.archived_at else None
         return jsonify({"ok": True, "archived_at": archived_at})
 
@@ -550,9 +821,19 @@ def unarchive_ticket(ticket_id):
             return jsonify({"error": "Ticket not found"}), 404
         if t.archived_at:
             now = datetime.now(timezone.utc)
+            old_archived_at = t.archived_at
             t.archived_at = None
             t.updated_at = now
             db.commit()
+            log_audit(
+                "ticket",
+                t.id,
+                "EDIT",
+                current_user,
+                old={"archived_at": old_archived_at.isoformat() if old_archived_at else None},
+                new={"archived_at": None},
+                meta={"unarchive": True},
+            )
         return jsonify({"ok": True, "archived_at": None})
 
 
