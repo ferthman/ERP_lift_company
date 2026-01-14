@@ -11,7 +11,7 @@ from .service import auto_assign_master, haversine_m, send_report, validate_stat
 from . import repository
 from ..db import SessionLocal, Master, Ticket, Attachment, User, AuditLog, Asset
 from ..assets.service import asset_display_label
-from ..utils.security import role_required
+from ..utils.security import role_required, generate_temp_password
 from ..utils.time import to_utc
 from ..utils.audit import log_audit, changed_fields
 from .. import config
@@ -64,15 +64,16 @@ def create_master():
         db.refresh(m)
         from werkzeug.security import generate_password_hash
 
+        temp_password = generate_temp_password()
         u = User(
             username=f"master{m.id}",
-            password_hash=generate_password_hash(config.MASTER_PASSWORD),
+            password_hash=generate_password_hash(temp_password),
             role="master",
             master_id=m.id,
         )
         db.add(u)
         db.commit()
-        return jsonify({"id": m.id, "name": m.name, "username": u.username, "temp_password": config.MASTER_PASSWORD}), 201
+        return jsonify({"id": m.id, "name": m.name, "username": u.username, "temp_password": temp_password}), 201
 
 
 @bp.delete("/api/masters/<int:master_id>")
