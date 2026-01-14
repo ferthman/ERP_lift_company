@@ -2,6 +2,7 @@ import os
 import glob
 import re
 import shutil
+from enum import Enum
 from datetime import datetime, timezone
 from math import radians, sin, cos, atan2, sqrt
 
@@ -82,13 +83,15 @@ def send_report(ticket: Ticket):
     except Exception as e:
         print("Failed to send completion report:", e)
 
-CANCEL_CLOSE_REASONS = {
-    "DUPLICATE",
-    "FALSE_CALL",
-    "NO_ACCESS",
-    "CUSTOMER_CANCELLED",
-    "OTHER",
-}
+class CancelReason(str, Enum):
+    DUPLICATE = "DUPLICATE"
+    FALSE_CALL = "FALSE_CALL"
+    NO_ACCESS = "NO_ACCESS"
+    CUSTOMER_CANCELLED = "CUSTOMER_CANCELLED"
+    OTHER = "OTHER"
+
+
+CANCEL_CLOSE_REASONS = {reason.value for reason in CancelReason}
 
 
 def archive_ticket(ticket: Ticket, archive_path: str):
@@ -240,7 +243,7 @@ def _validate_status_invariants(new_status, ticket, actor_role, payload):
                 "FORBIDDEN",
                 "Only admin/dispatcher can cancel tickets.",
             )
-        close_reason = (payload or {}).get("close_reason") or (payload or {}).get("cancel_reason")
+        close_reason = (payload or {}).get("close_reason")
         close_comment = (payload or {}).get("close_comment")
         if not close_reason:
             return (

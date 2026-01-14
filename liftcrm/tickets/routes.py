@@ -323,7 +323,7 @@ def cancel_ticket(ticket_id):
         if t.status == "CANCELLED":
             return jsonify({"message": "Already cancelled"}), 200
         old_status = t.status
-        close_reason = data.get("close_reason") or data.get("cancel_reason")
+        close_reason = data.get("close_reason")
         close_comment = data.get("close_comment")
         t.status = "CANCELLED"
         payload = {"close_reason": close_reason, "close_comment": close_comment}

@@ -253,7 +253,7 @@
     const API = location.origin;
     let me = null;
     const CLOSE_REASONS = ["EQUIPMENT_FAILURE", "PASSENGER_TRAPPED", "FALSE_CALL", "POWER_ISSUE", "EXTERNAL_REASON", "OTHER"];
-    const CANCEL_REASONS = ["DUPLICATE", "FALSE_CALL", "NO_ACCESS", "CUSTOMER_CANCELLED", "OTHER"];
+    const CANCEL_REASONS = {{ cancel_reasons | tojson }};
     const CLOSE_REASON_LABELS = {
       EQUIPMENT_FAILURE: 'Неисправность оборудования',
       PASSENGER_TRAPPED: 'Застрявший пассажир',
