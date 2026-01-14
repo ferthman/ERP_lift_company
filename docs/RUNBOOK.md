@@ -77,6 +77,10 @@
 - Логирование: консоль, формат `%(asctime)s %(levelname)s [%(name)s] %(message)s`, уровень по умолчанию INFO; можно переопределить `LOG_LEVEL`.【F:liftcrm/utils/logging.py†L1-L13】
 - Ошибки API возвращаются как JSON: `{"error": {"code": <int>, "message": "<string>"}}` для всех 4xx/5xx; для не-API маршрутов остаётся стандартное HTML-поведение. Ошибки логируются с путём и методом.【F:liftcrm/__init__.py†L35-L63】
 
+## Лимитирование логина
+- `/api/login` ограничен: 10 попыток за 10 минут на пару `(IP + username)`. Счётчик учитывает все попытки (успешные и неуспешные). При превышении возвращается `429` с JSON-ошибкой `{"error": {"code": "RATE_LIMITED", "message": "Too many login attempts. Try again later."}}` и заголовком `Retry-After`.【F:liftcrm/auth/routes.py†L17-L59】
+- Реализация in-memory: состояние хранится в памяти процесса и сбрасывается при перезапуске, а также не разделяется между воркерами/инстансами. Для продакшена за reverse-proxy важно доверять заголовку `X-Forwarded-For`.【F:liftcrm/utils/rate_limit.py†L1-L40】
+
 ## После рефакторинга: что куда переехало
 - Вход: `app.py` вызывает `liftcrm.create_app()`.【F:app.py†L1-L5】
 - Конфиги путей: `liftcrm/config.py` (архив, uploads, objects).【F:liftcrm/config.py†L1-L4】
