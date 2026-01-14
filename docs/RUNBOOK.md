@@ -9,9 +9,9 @@
    - master1 … master10 / `m123456` (создаются при первом запуске).【F:app.py†L92-L118】
 
 ## Что создаётся автоматически
-- База `lift_crm.db` (SQLite) и таблицы при первом запросе (hook `before_request`).【F:app.py†L124-L180】
-- Каталог `uploads/` для файлов вложений и `objects/objects.{xlsx,json}` с примером объекта.【F:app.py†L124-L175】
-- Файл `archive.xlsx` (пустой с заголовками, включая колонку priority) для скачивания архива заявок.【F:liftcrm/__init__.py†L68-L104】
+- База `lift_crm.db` (SQLite) и таблицы при первом запросе (hook `before_request`).【F:liftcrm/__init__.py†L17-L75】
+- Каталог `uploads/` для файлов вложений.【F:liftcrm/__init__.py†L29-L41】
+- Файл `archive.xlsx` (пустой с заголовками, включая колонку priority) для скачивания архива заявок.【F:liftcrm/__init__.py†L41-L75】
 
 ## Приоритеты заявок
 - Enum: HIGH («Очень важно»), MEDIUM («Нужно сделать», значение по умолчанию), LOW («Не срочно»).【F:liftcrm/tickets/routes.py†L20-L27】【F:liftcrm/db.py†L46-L77】
@@ -40,7 +40,7 @@
 4. Проверить автоназначение мастера и отображение в таблице/канбане.  
 5. Скачать архив через кнопку «Скачать архив».
 6. Переключиться на masterN и отметить «Приехал» / «Завершить» (нужна геолокация в браузере; при завершении выбрать обязательную причину закрытия из списка перед подтверждением).
-7. Открыть вкладку «Объекты» и убедиться, что точки отображаются с `objects.xlsx`.
+7. Открыть вкладку «Объекты» и убедиться, что точки отображаются из SQL-реестра assets (`GET /api/assets`).
 
 ## Частые ошибки и решения
 - **`Missing dependency: openpyxl` при скачивании архива.**  
@@ -67,8 +67,18 @@
 - Файлы и данные:
   - БД: `lift_crm.db` в корне.
   - Архив: `archive.xlsx` и копии `archive_N.xlsx` в корне.
-  - Объекты: `objects/objects.xlsx|json`.
   - Вложения: `uploads/` в корне.
+
+## Реестр лифтов (assets)
+- Источник правды: таблица `assets` в SQLite. Excel/CSV используются только для экспорта/seed.【F:liftcrm/db.py†L33-L121】【F:liftcrm/assets/routes.py†L1-L152】
+- Экспорт:
+  - `GET /api/assets/export.xlsx` → `assets.xlsx`.
+  - `GET /api/assets/export.csv` → `assets.csv`.【F:liftcrm/assets/routes.py†L107-L152】
+- Seed из `objects.xlsx` (если файл есть в `objects/`):
+  ```bash
+  python scripts/seed_assets_from_objects_xlsx.py
+  ```
+  Скрипт идемпотентен и дополнительно пытается привязать тикеты по координатам/адресу.【F:scripts/seed_assets_from_objects_xlsx.py†L1-L116】
 
 ## Мониторинг/здоровье
 - `/api/health` — простой health-check (без auth).【F:liftcrm/utils/health.py†L1-L6】
@@ -99,7 +109,7 @@
 6. Назначение мастера вручную (`POST /api/tickets/{id}/assign/{mid}`) — мастер обновлён.
 7. Метрики (`GET /api/metrics`) отвечают корректно под admin/dispatcher; блок «Итоги» показывает распределение по приоритетам.
 8. Скачивание архива (`GET /api/archive`) отдаёт `archive.xlsx` с колонкой priority.
-9. Вкладка «Объекты» грузит точки с `objects.xlsx` (`GET /api/objects`).
+9. Вкладка «Объекты» грузит точки из `assets` (`GET /api/assets`).
 10. SLA отображается: создание тикета, ожидание > SLA (или ручная правка времени) → флаги «overdue» в таблице/канбане/дашборде и рост счётчиков в `/api/metrics`.
 
 ### Важно: не менять правила автоназначения/перераспределения без решения продукта

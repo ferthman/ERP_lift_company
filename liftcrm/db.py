@@ -35,6 +35,26 @@ class User(UserMixin, Base):
         return str(self.id)
 
 
+class Asset(Base):
+    __tablename__ = "assets"
+    id = Column(Integer, primary_key=True)
+    address = Column(String, nullable=False)
+    entrance = Column(String, nullable=True)
+    lift_label = Column(String, nullable=True)
+    serial_no = Column(String, nullable=True, unique=True)
+    customer_id = Column(Integer, nullable=True)
+    lat = Column(Float, nullable=True)
+    lon = Column(Float, nullable=True)
+    status = Column(String, nullable=False, default="ACTIVE")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    tickets = relationship("Ticket", back_populates="asset")
+
+
 class Ticket(Base):
     __tablename__ = "tickets"
     id = Column(Integer, primary_key=True)
@@ -45,6 +65,7 @@ class Ticket(Base):
     description = Column(String, nullable=True)
     status = Column(String, default="NEW")
     priority = Column(String, default="MEDIUM")
+    asset_id = Column(Integer, ForeignKey("assets.id"), nullable=True)
     assigned_master_id = Column(Integer, ForeignKey("masters.id"), nullable=True)
     assigned_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -65,6 +86,7 @@ class Ticket(Base):
     custom_sla_response_minutes = Column(Integer, nullable=True)
     custom_sla_completion_minutes = Column(Integer, nullable=True)
     assigned_master = relationship("Master", back_populates="tickets")
+    asset = relationship("Asset", back_populates="tickets")
     attachments = relationship("Attachment", back_populates="ticket", cascade="all, delete-orphan")
     email = Column(String, nullable=True)
 
@@ -91,6 +113,8 @@ class AuditLog(Base):
 
 
 Index("idx_audit_log_entity_created", AuditLog.entity_type, AuditLog.entity_id, AuditLog.created_at)
+Index("idx_assets_address", Asset.address)
+Index("idx_assets_lat_lon", Asset.lat, Asset.lon)
 
 
 def init_db():
@@ -157,8 +181,35 @@ def ensure_migrations():
             conn.commit()
         cur.execute("PRAGMA table_info(tickets)")
         tcols = [r[1] for r in cur.fetchall()]
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='assets'")
+        if not cur.fetchone():
+            cur.execute(
+                """
+                CREATE TABLE assets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    address TEXT NOT NULL,
+                    entrance TEXT NULL,
+                    lift_label TEXT NULL,
+                    serial_no TEXT NULL,
+                    customer_id INTEGER NULL,
+                    lat REAL NULL,
+                    lon REAL NULL,
+                    status TEXT NOT NULL DEFAULT 'ACTIVE',
+                    created_at DATETIME,
+                    updated_at DATETIME
+                )
+                """
+            )
+            conn.commit()
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_serial_no ON assets (serial_no)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_assets_address ON assets (address)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_assets_lat_lon ON assets (lat, lon)")
+        conn.commit()
         if "priority" not in tcols:
             cur.execute("ALTER TABLE tickets ADD COLUMN priority TEXT DEFAULT 'MEDIUM'")
+            conn.commit()
+        if "asset_id" not in tcols:
+            cur.execute("ALTER TABLE tickets ADD COLUMN asset_id INTEGER")
             conn.commit()
         if "email" not in tcols:
             cur.execute("ALTER TABLE tickets ADD COLUMN email TEXT")

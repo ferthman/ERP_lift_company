@@ -4,23 +4,24 @@
 - **Backend:** Flask + SQLAlchemy (SQLite, file `lift_crm.db`).【F:app.py†L23-L91】
 - **Frontend:** Single-page HTML (Jinja template), Tailwind CDN, Vanilla JS, Leaflet, сервис-воркер для PWA-манифеста.【F:templates/index.html†L1-L27】【F:templates/index.html†L200-L351】
 - **Auth:** Flask-Login с cookie-сессиями; роли: admin, dispatcher, master.【F:app.py†L1-L91】【F:templates/index.html†L219-L262】
-- **Файлы и данные:** Excel через openpyxl (есть в `vendor/openpyxl`), загрузки в `uploads/`, объекты в `objects/objects.xlsx|json`, архив `archive.xlsx`.【F:app.py†L12-L21】【F:app.py†L131-L175】
+- **Файлы и данные:** Excel через openpyxl (есть в `vendor/openpyxl`) используется для экспорта, загрузки в `uploads/`, реестр лифтов (assets) в SQLite, архив `archive.xlsx`.【F:liftcrm/assets/routes.py†L1-L152】【F:liftcrm/db.py†L33-L121】
 
 ## Карта директорий и ответственности
 - `/app.py` — тонкий вход: создаёт приложение через `liftcrm.create_app()` и запускает сервер.【F:app.py†L1-L5】
 - `/liftcrm/__init__.py` — фабрика приложения, конфиг, регистрация blueprints, инициализация БД/файлов на первом запросе.【F:liftcrm/__init__.py†L1-L129】
 - `/liftcrm/config.py` — корневые пути (архив, объекты, uploads).【F:liftcrm/config.py†L1-L4】
-- `/liftcrm/db.py` — engine/SessionLocal/Base + модели Master/User/Ticket/Attachment и миграции init/ensure.【F:liftcrm/db.py†L1-L96】
+- `/liftcrm/db.py` — engine/SessionLocal/Base + модели Master/User/Asset/Ticket/Attachment и миграции init/ensure.【F:liftcrm/db.py†L1-L121】
 - `/liftcrm/extensions.py` — login manager экземпляр.【F:liftcrm/extensions.py†L1-L2】
 - `/liftcrm/auth/routes.py` — login/logout/me и user_loader для Flask-Login.【F:liftcrm/auth/routes.py†L1-L35】
 - `/liftcrm/tickets/routes.py` — мастера, CRUD заявок, статусы, файлы, архив, метрики, uploads; без изменения путей.【F:liftcrm/tickets/routes.py†L1-L424】
 - `/liftcrm/tickets/service.py` — назначение мастеров, геозона, отправка отчёта, архивирование.【F:liftcrm/tickets/service.py†L1-L103】
 - `/liftcrm/tickets/repository.py` — сериализация заявок (ответ API).【F:liftcrm/tickets/repository.py†L1-L25】
-- `/liftcrm/objects/routes.py` — загрузка объектов из Excel/JSON для карты.【F:liftcrm/objects/routes.py†L1-L48】
+- `/liftcrm/assets/routes.py` — CRUD реестра лифтов, экспорт XLSX/CSV, поиск по адресам/серийному номеру/метке/подъезду.【F:liftcrm/assets/routes.py†L1-L152】
+- `/liftcrm/objects/routes.py` — alias `/api/objects`, возвращает assets для обратной совместимости карты.【F:liftcrm/objects/routes.py†L1-L33】
 - `/liftcrm/utils/` — security (role_required), time (UTC helper), health endpoint, excel helpers.【F:liftcrm/utils/security.py†L1-L14】【F:liftcrm/utils/time.py†L1-L5】【F:liftcrm/utils/health.py†L1-L6】
 - `/templates/index.html` — единственный HTML; UI логика, запросы к API, отрисовка таблиц/канбан/карт, формы, загрузки файлов.【F:templates/index.html†L1-L540】
 - `/static/` — PWA манифест и иконки; сервис-воркер `sw.js`.【F:static/manifest.webmanifest†L1-L19】
-- `/objects/objects.xlsx` / `/objects/objects.json` — источники данных для карты объектов; автогенерация при первом запуске.【F:liftcrm/__init__.py†L46-L93】
+- `/scripts/seed_assets_from_objects_xlsx.py` — одноразовый сид: перенос объектов из `objects.xlsx` в таблицу assets (SQL source-of-truth).【F:scripts/seed_assets_from_objects_xlsx.py†L1-L116】
 - `/archive.xlsx` — итоговый экспорт и накопительный архив удалённых заявок; содержит колонку `priority` для фиксации важности тикетов.【F:liftcrm/tickets/service.py†L39-L97】【F:liftcrm/tickets/routes.py†L390-L421】
 - `/vendor/openpyxl` — встроенная копия openpyxl для оффлайн-окружений (подхватывается через sys.path).【F:liftcrm/__init__.py†L7-L20】
 - `/uploads/` — создаётся при первом запросе; хранение загруженных фото вложений для заявок.【F:liftcrm/__init__.py†L33-L44】【F:liftcrm/tickets/routes.py†L259-L282】
@@ -29,7 +30,8 @@
 ## Основные модели и роли
 - `User`: username, password_hash, role (`admin|dispatcher|master`), связь `master_id`.【F:liftcrm/db.py†L27-L43】
 - `Master`: справочник мастеров, флаг `is_active`.【F:liftcrm/db.py†L11-L24】
-- `Ticket`: заявка со статусами `NEW/ASSIGNED/IN_PROGRESS/COMPLETED/CANCELLED`, координатами, временами прибытия/завершения, e-mail клиента, гео факты прибытия/завершения, вложения, полем **priority** (`HIGH|MEDIUM|LOW`, дефолт MEDIUM), **custom_sla_response_minutes/custom_sla_completion_minutes** (опциональные, только для admin/dispatcher, перекрывают конфиг SLA) и **close_reason** (обязателен при завершении, из фиксированного списка).【F:liftcrm/db.py†L46-L80】【F:liftcrm/tickets/routes.py†L174-L240】
+- `Asset`: реестр лифтов (адрес, подъезд, метка, серийный номер, координаты, статус). SQL — единственный источник правды; Excel только экспорт/seed.【F:liftcrm/db.py†L33-L59】【F:liftcrm/assets/routes.py†L1-L152】
+- `Ticket`: заявка со статусами `NEW/ASSIGNED/IN_PROGRESS/COMPLETED/CANCELLED`, координатами, временами прибытия/завершения, e-mail клиента, ссылкой `asset_id` (опционально), вложениями, полем **priority** (`HIGH|MEDIUM|LOW`, дефолт MEDIUM), **custom_sla_response_minutes/custom_sla_completion_minutes** (опциональные, только для admin/dispatcher, перекрывают конфиг SLA) и **close_reason** (обязателен при завершении, из фиксированного списка).【F:liftcrm/db.py†L61-L95】【F:liftcrm/tickets/routes.py†L174-L244】
 - `Attachment`: файл, связанный с заявкой, лежит в `uploads/`.【F:liftcrm/db.py†L76-L84】
 
 ### Связка Users ↔ Masters
@@ -94,7 +96,7 @@ UI `showReassign()` выбирает master → `POST /api/tickets/{id}/assign/{
 UI кнопка → `GET /api/archive` (admin/dispatcher) → в рантайме создаётся новый `archive.xlsx` со всеми текущими заявками через openpyxl → send_from_directory с attachment.【F:app.py†L667-L693】【F:templates/index.html†L464-L472】
 
 ### 9) Загрузка объектов для карты
-`GET /api/objects` (auth) → приоритет чтения `objects.xlsx` через openpyxl, fallback `objects.json` → фильтрация координат → JSON → фронт строит Leaflet circleMarker и fitBounds.【F:app.py†L695-L771】【F:templates/index.html†L431-L463】
+`GET /api/assets` (auth) → чтение assets из SQLite → фильтрация координат → JSON → фронт строит Leaflet circleMarker и fitBounds. `GET /api/objects` оставлен как alias для обратной совместимости.【F:liftcrm/assets/routes.py†L1-L72】【F:liftcrm/objects/routes.py†L1-L33】【F:templates/index.html†L1048-L1135】
 
 ## Технический долг и риски
 - **Монолитный файл** `app.py` объединяет модели, API, миграции, утилиты; трудно расширять и тестировать по слоям.【F:app.py†L23-L804】

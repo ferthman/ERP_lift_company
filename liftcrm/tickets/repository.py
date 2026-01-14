@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from .. import config
 from ..db import Ticket
+from ..assets.service import build_asset_summary
 from ..utils.time import to_utc
 
 
@@ -59,6 +60,8 @@ def serialize_ticket(t: Ticket):
         "address": t.address,
         "lat": t.lat,
         "lon": t.lon,
+        "asset_id": t.asset_id,
+        "asset_summary": build_asset_summary(t.asset),
         "description": t.description,
         "priority": t.priority or "MEDIUM",
         "email": t.email,

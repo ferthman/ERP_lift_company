@@ -66,6 +66,14 @@
         <div class="bg-white rounded-2xl shadow p-4 md:col-span-1">
           <h2 class="text-lg font-semibold mb-3">Создать заявку</h2>
           <form id="form-create" class="space-y-3">
+            <div class="space-y-2">
+              <label class="block text-sm">Лифт (Asset)</label>
+              <input id="asset-search" type="text" class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200" placeholder="Поиск по адресу, серийному номеру или метке">
+              <select id="asset-select" name="asset_id" class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200">
+                <option value="">— не выбран —</option>
+              </select>
+              <p class="text-xs text-slate-500">Выберите лифт, чтобы автоматически заполнить адрес и координаты.</p>
+            </div>
             <div><label class="block text-sm">Объект *</label>
               <input name="object_name" required class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200" placeholder="БЦ 'Атакент', подъезд 2"></div>
             <div><label class="block text-sm">Адрес</label>
@@ -196,7 +204,7 @@
     <section id="view-objects" class="hidden space-y-4">
       <h2 class="text-lg font-semibold">Объекты</h2>
       <div class="flex flex-col gap-3 mb-3 md:flex-row md:items-center md:justify-between">
-        <p class="text-sm text-slate-600 md:max-w-3xl">На карте отображаются объекты из файла objects.xlsx. Вы можете обновлять файл вручную.</p>
+        <p class="text-sm text-slate-600 md:max-w-3xl">На карте отображаются лифты из SQL-реестра assets.</p>
         <div class="flex items-center gap-2 md:justify-end">
           <button id="btn-objects-fullscreen" class="px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Полный экран</button>
           <button id="btn-objects-refresh" class="px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Обновить</button>
@@ -206,7 +214,7 @@
         <div id="objects-map-shell" class="relative w-full rounded-2xl ring-1 ring-slate-200 overflow-hidden bg-white">
           <div class="objects-search-overlay">
             <div class="relative">
-              <input id="objects-search" placeholder="Поиск объекта или адреса" class="w-full px-3 pr-10 py-2 rounded-xl bg-white/90 ring-1 ring-slate-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm" type="text" autocomplete="off">
+              <input id="objects-search" placeholder="Поиск по адресу, серийному номеру или метке" class="w-full px-3 pr-10 py-2 rounded-xl bg-white/90 ring-1 ring-slate-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm" type="text" autocomplete="off">
               <button id="objects-search-clear" type="button" class="hidden absolute inset-y-1 right-2 px-2 rounded-full text-slate-400 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-400 text-lg leading-none">×</button>
               <div id="objects-suggestions" class="objects-suggestions hidden mt-1 w-full bg-white rounded-xl shadow-lg ring-1 ring-slate-200 overflow-hidden"></div>
             </div>
@@ -379,6 +387,10 @@
     const ticketModal = document.getElementById('ticket-modal');
     const ticketModalBody = document.getElementById('ticket-modal-body');
     const ticketModalClose = document.getElementById('ticket-modal-close');
+    const assetSearchInput = document.getElementById('asset-search');
+    const assetSelect = document.getElementById('asset-select');
+    const assetAddressInput = document.querySelector('#form-create input[name="address"]');
+    const assetObjectNameInput = document.querySelector('#form-create input[name="object_name"]');
     let activeHistoryTicketId = null;
     const filterOverdue = document.getElementById('filter-overdue');
     const filterMaster = document.getElementById('filter-master');
@@ -390,6 +402,7 @@
       priority: '',
     };
     let ticketTimerInterval = null;
+    let assetsData = [];
 
     function setTab(which) {
       for (const btn of [tabAdmin, tabOps, tabTech, tabObjects, tabSuper]) btn.classList.remove('bg-slate-900','text-white');
@@ -417,7 +430,7 @@
       const password = prompt('Пароль (admin123 / disp123 / m123456):','admin123'); if (!password) return;
       const res = await fetch('/api/login',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username,password})});
       const data = await res.json(); if (!res.ok) return alert(data.error||'Ошибка входа');
-      await refreshMe(); await loadTicketFilters(); await loadTickets(); await loadKanban(); await loadMyTickets(); loadMastersList(); loadDashboard(); loadMetrics();
+      await refreshMe(); await loadAssetsCatalog(); await loadTicketFilters(); await loadTickets(); await loadKanban(); await loadMyTickets(); loadMastersList(); loadDashboard(); loadMetrics();
     };
     btnLogout.onclick = async () => { await fetch('/api/logout',{method:'POST'}); me = null; renderAuth(); };
     async function refreshMe(){ const res=await fetch('/api/me'); me=await res.json(); renderAuth(); }
@@ -443,7 +456,13 @@
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ attribution:'&copy; OpenStreetMap' }).addTo(mapCreate);
       markerCreate = L.marker([43.238949,76.889709],{draggable:true}).addTo(mapCreate);
       circleCreate = L.circle([43.238949,76.889709],{radius:500}).addTo(mapCreate);
-      function sync(lat,lon){ document.getElementById('lat').value=lat.toFixed(6); document.getElementById('lon').value=lon.toFixed(6); markerCreate.setLatLng([lat,lon]); circleCreate.setLatLng([lat,lon]); }
+      function sync(lat,lon){
+        document.getElementById('lat').value=lat.toFixed(6);
+        document.getElementById('lon').value=lon.toFixed(6);
+        markerCreate.setLatLng([lat,lon]);
+        circleCreate.setLatLng([lat,lon]);
+      }
+      window.syncCreateMap = sync;
       mapCreate.on('click',e=>sync(e.latlng.lat,e.latlng.lng)); markerCreate.on('drag',e=>sync(e.target.getLatLng().lat,e.target.getLatLng().lng));
     }
 
@@ -491,6 +510,7 @@
         `<div><span class="text-slate-500">Статус:</span> ${ticket.status}</div>`,
         `<div><span class="text-slate-500">Мастер:</span> ${ticket.assigned_master_name ?? '—'}</div>`,
         `<div><span class="text-slate-500">Адрес:</span> ${ticket.address ?? '—'}</div>`,
+        `<div><span class="text-slate-500">${formatAssetSummary(ticket)}</span></div>`,
         `<div><span class="text-slate-500">Описание:</span> ${ticket.description ?? '—'}</div>`,
         `<div><span class="text-slate-500">Приоритет:</span> ${ticket.priority ?? 'MEDIUM'}</div>`,
         `<div><span class="text-slate-500">SLA:</span> ${renderSla(ticket)}</div>`,
@@ -599,15 +619,32 @@
 
     // Create ticket
     const formCreate=document.getElementById('form-create'); const createMsg=document.getElementById('create-msg');
+    if(assetSearchInput){
+      assetSearchInput.addEventListener('input', () => {
+        renderAssetOptions(assetSearchInput.value || '');
+      });
+    }
+    if(assetSelect){
+      assetSelect.addEventListener('change', () => {
+        const selectedId = parseInt(assetSelect.value, 10);
+        const asset = assetsData.find(item => item.id === selectedId);
+        applyAssetSelection(asset);
+      });
+    }
     formCreate.addEventListener('submit', async (e)=>{
       e.preventDefault(); const fd=new FormData(formCreate); const body=Object.fromEntries(fd.entries());
-      body.lat=parseFloat(body.lat); body.lon=parseFloat(body.lon);
+      if(body.asset_id === '') delete body.asset_id; else body.asset_id = parseInt(body.asset_id, 10);
+      if(body.lat === '') delete body.lat; else body.lat = parseFloat(body.lat);
+      if(body.lon === '') delete body.lon; else body.lon = parseFloat(body.lon);
       if(body.custom_sla_response_minutes==='') delete body.custom_sla_response_minutes; else body.custom_sla_response_minutes=parseInt(body.custom_sla_response_minutes,10);
       if(body.custom_sla_completion_minutes==='') delete body.custom_sla_completion_minutes; else body.custom_sla_completion_minutes=parseInt(body.custom_sla_completion_minutes,10);
       createMsg.textContent='Создаю...';
       const res=await fetch('/api/tickets',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); const data=await res.json();
       if(!res.ok){ createMsg.textContent=data.error||'Ошибка'; return; }
-      createMsg.textContent=`Готово! №${data.id} → мастер: ${data.assigned_master_id ?? '—'}, статус: ${data.status}`; formCreate.reset(); await loadTickets(); await loadKanban(); if(!viewObjects.classList.contains('hidden')){ await loadObjects(); }
+      createMsg.textContent=`Готово! №${data.id} → мастер: ${data.assigned_master_id ?? '—'}, статус: ${data.status}`; formCreate.reset();
+      if(assetSearchInput) assetSearchInput.value = '';
+      renderAssetOptions('');
+      await loadTickets(); await loadKanban(); if(!viewObjects.classList.contains('hidden')){ await loadObjects(); }
     });
     document.getElementById('btn-fill-loc').onclick=()=>{ if(!navigator.geolocation) return alert('Геолокация не поддерживается.');
       navigator.geolocation.getCurrentPosition((pos)=>{ const lat=pos.coords.latitude, lon=pos.coords.longitude;
@@ -638,6 +675,16 @@
     function formatCloseReason(code){
       if(!code) return '—';
       return CLOSE_REASON_LABELS[code] || code;
+    }
+    function formatAssetSummary(ticket){
+      if(!ticket || !ticket.asset_summary){
+        return 'Лифт: —';
+      }
+      const asset = ticket.asset_summary;
+      const serial = asset.serial_no || '(нет серийника)';
+      const label = asset.lift_label || '(нет метки)';
+      const entrance = asset.entrance || '—';
+      return `Лифт: ${serial} / ${label} / ${entrance}`;
     }
     function formatDuration(totalMs){
       if(!Number.isFinite(totalMs) || totalMs < 0) return '—';
@@ -712,6 +759,7 @@
         const priorityCell = canEditPriority ? `<div class="flex items-center gap-2">${priorityBadge}${prioritySelect}</div>` : priorityBadge;
         const unassignedTimer = `<span class="font-mono text-xs" data-unassigned-timer data-created-at="${t.created_at ?? ''}" data-assigned-at="${t.assigned_at ?? ''}" data-updated-at="${t.updated_at ?? ''}" data-assigned="${t.assigned_master_id ? '1' : '0'}">—</span>`;
         const slaOverdueBadge = renderSlaOverdueBadge(t);
+        const assetLine = formatAssetSummary(t);
         const openPayload = encodeURIComponent(JSON.stringify(t));
         const overrideCell = showSlaOverrides ? `<div class="space-y-1">
           <div class="text-[11px] text-slate-600">Ответ</div>
@@ -722,7 +770,7 @@
           <p class="text-[10px] text-slate-500">Overrides default SLA if set</p>
         </div>` : '';
         html+=`<tr class="border-b last:border-none"><td class="py-2 px-2 font-mono">${t.id}</td>
-        <td class="py-2 px-2">${t.object_name ?? ''}<div class="text-xs text-slate-500">${t.description ?? ''}</div></td>
+        <td class="py-2 px-2">${t.object_name ?? ''}<div class="text-xs text-slate-500">${t.description ?? ''}</div><div class="text-[11px] text-slate-500 mt-1">${assetLine}</div></td>
         <td class="py-2 px-2">${t.address ?? ''}</td><td class="py-2 px-2"><button class="underline" onclick="openMap(${t.lat},${t.lon})">${coords}</button>${mapButton}</td>
         <td class="py-2 px-2">${t.assigned_master_name ?? '—'}</td><td class="py-2 px-2"><span class="px-2 py-1 rounded-lg ring-1 ring-slate-200">${t.status}</span></td>
         <td class="py-2 px-2">${unassignedTimer}</td>
@@ -912,6 +960,7 @@
         const card=document.createElement('div'); card.className='p-3 rounded-xl ring-1 ring-slate-200 bg-white';
         card.innerHTML=`<div class="flex items-center justify-between"><div class="font-semibold">#${t.id} — ${t.object_name ?? ''}</div><div class="flex items-center gap-2 text-xs">${priorityBadge}${t.assigned_master_name ?? '—'}</div></div>
         <div class="text-xs text-slate-600 mt-1">${t.description ?? ''}</div>
+        <div class="text-[11px] text-slate-500 mt-1">${formatAssetSummary(t)}</div>
         ${reasonLine}${slaBlock}
         <div class="text-[11px] text-slate-500 mt-2"><button class="underline" onclick="openMap(${t.lat},${t.lon})">${t.lat.toFixed(5)}, ${t.lon.toFixed(5)}</button></div>`;
         document.getElementById('col-'+t.status).appendChild(card);
@@ -930,6 +979,7 @@
         const priorityBadge = renderPriorityBadge(t.priority);
         card.innerHTML=`<div class="flex items-center justify-between"><div class="font-semibold">#${t.id} — ${t.object_name}</div><div class="flex items-center gap-2">${priorityBadge}<span class="text-xs px-2 py-1 rounded-lg ring-1 ring-slate-200">${t.status}</span></div></div>
         <div class="text-sm">${t.address ?? ''}</div><div class="text-xs text-slate-600">${t.description ?? ''}</div>
+        <div class="text-[11px] text-slate-500 mt-1">${formatAssetSummary(t)}</div>
         <div class="text-xs text-slate-500 mt-1">Координаты: <button class="underline" onclick="openMap(${t.lat},${t.lon})">${t.lat.toFixed(6)}, ${t.lon.toFixed(6)}</button></div>
         <div class="flex items-center gap-2 mt-3">
           <label for="close-reason-${t.id}" class="text-xs text-slate-600">Причина:</label>
@@ -1037,6 +1087,7 @@
         card.innerHTML=`<div class="flex items-center justify-between"><div class="font-semibold">#${t.id} — ${t.object_name ?? ''}</div>
         <div class="text-xs text-slate-600">${t.assigned_master_name ?? '—'} • ${t.status}${slaBadge}</div></div>
         <div class="text-xs text-slate-500 mt-1">${t.address ?? ''}</div>
+        <div class="text-[11px] text-slate-500 mt-1">${formatAssetSummary(t)}</div>
         <div class="mt-2 w-full h-3 rounded-lg bg-slate-100 overflow-hidden"><div class="${barColor} h-3" style="width:${pct}%;"></div></div>
         <div class="text-xs text-slate-600 mt-1">Прошло: <span data-elapsed="1">${fmtDuration(elapsed)}</span></div>
         ${slaLine ? `<div class="text-[11px] mt-1">${slaLine}</div>` : ''}`;
@@ -1088,6 +1139,60 @@
       const positions = tokens.map(tok => normalizedText.indexOf(tok));
       const positionScore = positions.reduce((acc,pos)=> acc + (pos >= 0 ? pos : 10000), 0);
       return { positionScore, lengthScore: normalizedText.length || Number.MAX_SAFE_INTEGER };
+    }
+    function buildAssetMapLabel(asset){
+      const parts = [asset.serial_no, asset.lift_label, asset.entrance].filter(Boolean);
+      if(parts.length) return parts.join(' / ');
+      return asset.address || 'Лифт';
+    }
+    function buildAssetSelectLabel(asset){
+      const serial = asset.serial_no || 'без серийника';
+      const label = asset.lift_label || 'без метки';
+      const entrance = asset.entrance || '—';
+      const main = `${serial} / ${label} / ${entrance}`;
+      return asset.address ? `${main} — ${asset.address}` : main;
+    }
+    function assetSearchableText(asset){
+      return normalizeSearchText(`${asset.address ?? ''} ${asset.serial_no ?? ''} ${asset.lift_label ?? ''} ${asset.entrance ?? ''}`);
+    }
+    function renderAssetOptions(query = ''){
+      if(!assetSelect) return;
+      const tokens = tokenizeSearchQuery(query);
+      const matches = assetsData.filter(asset => matchesAllTokens(asset.searchText, tokens));
+      assetSelect.innerHTML = '<option value="">— не выбран —</option>';
+      matches.slice(0, 200).forEach(asset => {
+        const opt = document.createElement('option');
+        opt.value = asset.id;
+        opt.textContent = buildAssetSelectLabel(asset);
+        assetSelect.appendChild(opt);
+      });
+    }
+    function applyAssetSelection(asset){
+      if(!asset) return;
+      if(assetAddressInput) assetAddressInput.value = asset.address || '';
+      if(assetObjectNameInput && !assetObjectNameInput.value){
+        const fallbackName = [asset.lift_label, asset.serial_no, asset.entrance].filter(Boolean).join(' / ');
+        if(fallbackName) assetObjectNameInput.value = fallbackName;
+      }
+      if(asset.lat !== null && asset.lat !== undefined && asset.lon !== null && asset.lon !== undefined){
+        if(typeof window.syncCreateMap === 'function'){
+          window.syncCreateMap(asset.lat, asset.lon);
+        }
+        if(mapCreate) mapCreate.setView([asset.lat, asset.lon], 15);
+      }
+    }
+    async function loadAssetsCatalog(){
+      if(!assetSelect) return;
+      try{
+        const res = await fetch('/api/assets', { cache: 'no-store' });
+        if(!res.ok) return;
+        const data = await res.json();
+        assetsData = Array.isArray(data) ? data : [];
+        assetsData = assetsData.map(asset => ({ ...asset, searchText: assetSearchableText(asset) }));
+        renderAssetOptions(assetSearchInput?.value || '');
+      } catch (err){
+        assetsData = [];
+      }
     }
     function focusObjectMarker(entry){
       if(!entry || !entry.marker || !objectsMap) return;
@@ -1170,7 +1275,7 @@
       matches.sort((a,b)=>{
         if(a.positionScore !== b.positionScore) return a.positionScore - b.positionScore;
         if(a.lengthScore !== b.lengthScore) return a.lengthScore - b.lengthScore;
-        return (a.entry.data.object_name || '').localeCompare(b.entry.data.object_name || '');
+        return (a.entry.data.label || '').localeCompare(b.entry.data.label || '');
       });
       return matches.slice(0,10);
     }
@@ -1194,7 +1299,7 @@
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'objects-suggestion-item w-full text-left px-3 py-2 flex flex-col gap-0.5';
-        btn.innerHTML = `<div class="font-semibold">${entry.data.object_name || '—'}</div><div class="text-xs text-slate-600">${entry.data.address || ''}</div>`;
+        btn.innerHTML = `<div class="font-semibold">${entry.data.label || '—'}</div><div class="text-xs text-slate-600">${entry.data.address || ''}</div>`;
         btn.onclick = () => {
           focusObjectMarker(entry);
           objectsSuggestions.classList.add('hidden');
@@ -1283,10 +1388,19 @@
       // Remove existing markers
       objectsMarkers.forEach(m => objectsMap.removeLayer(m.marker));
       objectsMarkers = [];
-      const res = await fetch('/api/objects',{cache:'no-store'});
+      const res = await fetch('/api/assets',{cache:'no-store'});
+      if(!res.ok){
+        objectsData = [];
+        applyObjectsSearch();
+        applyPendingObjectsFocus();
+        scheduleObjectsMapResize(150);
+        return;
+      }
       const data = await res.json();
       objectsData = Array.isArray(data) ? data : [];
-      objectsData.forEach(obj => {
+      objectsData.filter(obj => obj.lat !== null && obj.lon !== null).forEach(obj => {
+        const label = buildAssetMapLabel(obj);
+        const entryData = { ...obj, label };
         // Draw a small circle marker for each object. Users can click to see the name.
         const circle = L.circleMarker([obj.lat, obj.lon], {
           radius: 6,
@@ -1294,9 +1408,9 @@
           fillColor: '#0f172a',
           fillOpacity: 0.8
         }).addTo(objectsMap);
-        circle.bindPopup(`<b>${obj.object_name}</b><br>${obj.address ?? ''}`);
-        const normalizedText = normalizeSearchText(`${obj.object_name ?? ''} ${obj.address ?? ''}`);
-        objectsMarkers.push({ marker: circle, data: obj, normalizedText, isVisible: true });
+        circle.bindPopup(`<b>${label}</b><br>${obj.address ?? ''}`);
+        const normalizedText = normalizeSearchText(`${label ?? ''} ${obj.address ?? ''} ${obj.serial_no ?? ''} ${obj.lift_label ?? ''} ${obj.entrance ?? ''}`);
+        objectsMarkers.push({ marker: circle, data: entryData, normalizedText, isVisible: true });
       });
       // Fit bounds to markers if any
       if(objectsMarkers.length>0 && tokenizeSearchQuery(objectsSearchInput?.value || '').length === 0){
@@ -1343,7 +1457,7 @@
 
     // Init
     initCreateMap();
-    refreshMe().then(()=>{ loadTicketFilters(); loadTickets(); });
+    refreshMe().then(()=>{ loadAssetsCatalog(); loadTicketFilters(); loadTickets(); });
     setInterval(()=>{ if(!viewOps.classList.contains('hidden')) loadKanban(); }, 5000);
   </script>
 </body>
