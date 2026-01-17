@@ -45,8 +45,8 @@ def create_app():
     def first_request_setup():
         if _db_initialized["done"]:
             return
-        ensure_migrations()
         init_db()
+        ensure_migrations()
         os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
         archive_path = config.ARCHIVE_PATH
