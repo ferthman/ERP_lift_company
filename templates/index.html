@@ -10,8 +10,15 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <style>
-    .modal{display:none;position:fixed;inset:0;background:rgba(2,6,23,.6);align-items:center;justify-content:center;z-index:50}
+    .modal{display:none;position:fixed;inset:0;background:rgba(2,6,23,.6);align-items:center;justify-content:center;z-index:60}
     .modal.open{display:flex}
+    .leaflet-pane,
+    .leaflet-control,
+    .leaflet-top,
+    .leaflet-bottom{z-index:20}
+    .leaflet-container{position:relative;z-index:0}
+    #map-create,
+    #modal-map{position:relative;overflow:hidden}
     #objects-map-shell{height:70vh;width:100%}
     @media (max-width:768px){ #objects-map-shell{height:60vh} }
     #objects-map-shell.objects-map-fullscreen{height:100%}
@@ -540,6 +547,7 @@
         extended[which][0].classList.add('bg-slate-900','text-white');
         extended[which][1].classList.remove('hidden');
         if(which==='objects'){ scheduleObjectsMapResize(); }
+        if(which==='admin'){ scheduleMapInvalidate(mapCreate, 150); }
         else { closeObjectsFullscreen(); }
       }
     }
@@ -581,6 +589,10 @@
 
     // Map
     let mapCreate, markerCreate, circleCreate;
+    function scheduleMapInvalidate(mapInstance, delay = 0){
+      if(!mapInstance) return;
+      setTimeout(() => { mapInstance.invalidateSize(true); }, delay);
+    }
     function initCreateMap(){
       mapCreate = L.map('map-create').setView([43.238949,76.889709], 12);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ attribution:'&copy; OpenStreetMap' }).addTo(mapCreate);
@@ -596,7 +608,9 @@
     let modalMap=null;
     function openMap(lat,lon){ modal.classList.add('open'); setTimeout(()=>{ if(modalMap){modalMap.remove(); modalMap=null;} modalMap=L.map('modal-map').setView([lat,lon],16);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ attribution:'&copy; OpenStreetMap' }).addTo(modalMap);
-      L.marker([lat,lon]).addTo(modalMap); L.circle([lat,lon],{radius:500}).addTo(modalMap); },50); }
+      L.marker([lat,lon]).addTo(modalMap); L.circle([lat,lon],{radius:500}).addTo(modalMap);
+      requestAnimationFrame(() => scheduleMapInvalidate(modalMap, 0));
+    },50); }
 
     function populateCancelReasons() {
       cancelReasonSelect.innerHTML = '<option value="">Выберите причину</option>' +
@@ -1642,7 +1656,7 @@
     }
 
     function scheduleObjectsMapResize(delay = 150){
-      if(objectsMap) setTimeout(() => { objectsMap.invalidateSize(); }, delay);
+      scheduleMapInvalidate(objectsMap, delay);
     }
     function isObjectsFullscreenOpen(){
       return !!(objectsMapModal && objectsMapModal.classList.contains('open'));
