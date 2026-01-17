@@ -45,8 +45,8 @@ def create_app():
     def first_request_setup():
         if _db_initialized["done"]:
             return
-        init_db()
         ensure_migrations()
+        init_db()
         os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
         archive_path = config.ARCHIVE_PATH
@@ -92,12 +92,14 @@ def create_app():
         )
 
     from .auth.routes import bp as auth_bp
+    from .access.routes import bp as access_bp
     from .tickets.routes import bp as tickets_bp
     from .assets.routes import bp as assets_bp
     from .objects.routes import bp as objects_bp
     from .utils.health import bp as health_bp
 
     app.register_blueprint(auth_bp)
+    app.register_blueprint(access_bp)
     app.register_blueprint(tickets_bp)
     app.register_blueprint(assets_bp)
     app.register_blueprint(objects_bp)

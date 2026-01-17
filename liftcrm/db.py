@@ -5,7 +5,7 @@ from flask_login import UserMixin
 from werkzeug.security import generate_password_hash
 
 from . import config
-from .utils.security import generate_temp_password
+from .utils.roles import ROLE_TECHNICIAN
 
 engine = create_engine(f"sqlite:///{config.DB_PATH}", echo=False, future=True)
 SessionLocal = scoped_session(
@@ -18,6 +18,7 @@ class Master(Base):
     __tablename__ = "masters"
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
+    phone = Column(String, nullable=True)
     is_active = Column(Integer, default=1)
     user = relationship("User", uselist=False, back_populates="master")
     tickets = relationship("Ticket", back_populates="assigned_master")
@@ -28,8 +29,9 @@ class User(UserMixin, Base):
     id = Column(Integer, primary_key=True)
     username = Column(String, unique=True, nullable=False)
     password_hash = Column(String, nullable=False)
-    role = Column(String, nullable=False)  # admin | dispatcher | master
+    role = Column(String, nullable=False)  # admin | dispatcher | technician
     master_id = Column(Integer, ForeignKey("masters.id"), nullable=True)
+    is_active = Column(Integer, default=1)
     master = relationship("Master", back_populates="user")
 
     def get_id(self):
@@ -119,6 +121,12 @@ Index("idx_assets_serial_no", Asset.serial_no)
 Index("idx_assets_address", Asset.address)
 Index("idx_assets_address_norm", Asset.address_norm)
 Index("idx_assets_lat_lon", Asset.lat, Asset.lon)
+Index(
+    "ux_users_master_id",
+    User.master_id,
+    unique=True,
+    sqlite_where=User.master_id.isnot(None),
+)
 
 
 def init_db():
@@ -133,23 +141,15 @@ def init_db():
                 username=config.ADMIN_USERNAME,
                 password_hash=generate_password_hash(config.ADMIN_PASSWORD),
                 role="admin",
+                is_active=1,
             )
             disp = User(
                 username=config.DISPATCHER_USERNAME,
                 password_hash=generate_password_hash(config.DISPATCHER_PASSWORD),
                 role="dispatcher",
+                is_active=1,
             )
             db.add_all([admin, disp])
-            db.commit()
-            for m in db.query(Master).order_by(Master.id).all():
-                temp_password = generate_temp_password()
-                u = User(
-                    username=f"master{m.id}",
-                    password_hash=generate_password_hash(temp_password),
-                    role="master",
-                    master_id=m.id,
-                )
-                db.add(u)
             db.commit()
 
 
@@ -184,6 +184,23 @@ def ensure_migrations():
         if "is_active" not in cols:
             cur.execute("ALTER TABLE masters ADD COLUMN is_active INTEGER DEFAULT 1")
             conn.commit()
+        if "phone" not in cols:
+            cur.execute("ALTER TABLE masters ADD COLUMN phone TEXT")
+            conn.commit()
+        cur.execute("PRAGMA table_info(users)")
+        ucols = [r[1] for r in cur.fetchall()]
+        if "is_active" not in ucols:
+            cur.execute("ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1")
+            conn.commit()
+        cur.execute(
+            "UPDATE users SET role = ? WHERE role = ?",
+            (ROLE_TECHNICIAN, "master"),
+        )
+        conn.commit()
+        cur.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_users_master_id ON users(master_id) WHERE master_id IS NOT NULL"
+        )
+        conn.commit()
         cur.execute("PRAGMA table_info(tickets)")
         tcols = [r[1] for r in cur.fetchall()]
         if "priority" not in tcols:

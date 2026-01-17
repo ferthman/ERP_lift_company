@@ -58,6 +58,7 @@
         <button id="tab-assets" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Лифты</button>
         <button id="tab-objects" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Объекты</button>
         <button id="tab-super" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100 hidden">Админ</button>
+        <button id="tab-access" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100 hidden">Пользователи и допуск</button>
       </nav>
       <div class="flex items-center gap-2">
         <span id="login-state" class="text-sm text-slate-600">Не вошли</span>
@@ -202,33 +203,69 @@
 
     <!-- Admin view -->
     <section id="view-super" class="hidden space-y-6">
-      <div class="grid md:grid-cols-3 gap-4">
-        <div class="bg-white rounded-2xl shadow p-4">
-          <h2 class="text-lg font-semibold mb-3">Добавить мастера</h2>
-          <form id="form-master" class="space-y-3">
-            <div><label class="block text-sm">Имя мастера *</label>
-              <input name="name" required class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200" placeholder="Иван Петров"></div>
-            <button class="px-4 py-2 rounded-xl bg-slate-900 text-white font-semibold">Добавить</button>
-            <p id="master-msg" class="text-xs text-slate-500"></p>
-          </form>
-          <div class="mt-4">
-            <h3 class="font-semibold mb-2 text-sm">Текущие мастера</h3>
-            <ul id="masters-list" class="text-sm space-y-1"></ul>
-            <p class="text-xs text-slate-500 mt-2">Деактивация перераспределит открытые заявки на активных.</p>
-          </div>
+      <div class="bg-white rounded-2xl shadow p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-lg font-semibold">Дашборд выполнения</h2>
+          <button id="btn-dash-refresh" class="px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Обновить</button>
         </div>
-        <div class="bg-white rounded-2xl shadow p-4 md:col-span-2">
+        <div id="dashboard" class="space-y-2"></div>
+        <div class="mt-6 grid md:grid-cols-3 gap-3">
+          <div class="bg-white rounded-2xl shadow p-4"><h3 class="font-semibold mb-2 text-sm">Итоги</h3><div id="metrics-overall" class="text-sm text-slate-700">—</div></div>
+          <div class="bg-white rounded-2xl shadow p-4"><h3 class="font-semibold mb-2 text-sm">Причины закрытия</h3><div id="metrics-close-reasons" class="text-sm text-slate-700">—</div></div>
+          <div class="bg-white rounded-2xl shadow p-4"><h3 class="font-semibold mb-2 text-sm">SLA по причинам</h3><div id="metrics-sla-reasons" class="text-sm text-slate-700">—</div></div>
+          <div class="md:col-span-2 bg-white rounded-2xl shadow p-4"><h3 class="font-semibold mb-2 text-sm">Топ мастеров (30 дней)</h3><div id="metrics-masters" class="text-sm overflow-x-auto">—</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Users & Access -->
+    <section id="view-access" class="hidden space-y-6">
+      <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 class="text-lg font-semibold">Пользователи и допуск</h2>
+          <p class="text-sm text-slate-600">Разделение аккаунтов доступа и карточек сотрудников.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="access-tab-users" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white">Пользователи</button>
+          <button id="access-tab-masters" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Мастера</button>
+        </div>
+      </div>
+
+      <div id="access-users-panel" class="space-y-4">
+        <div class="bg-white rounded-2xl shadow p-4">
           <div class="flex items-center justify-between mb-3">
-            <h2 class="text-lg font-semibold">Дашборд выполнения</h2>
-            <button id="btn-dash-refresh" class="px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Обновить</button>
+            <h3 class="font-semibold">Аккаунты</h3>
+            <button id="btn-users-refresh" class="px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Обновить</button>
           </div>
-          <div id="dashboard" class="space-y-2"></div>
-          <div class="mt-6 grid md:grid-cols-3 gap-3">
-            <div class="bg-white rounded-2xl shadow p-4"><h3 class="font-semibold mb-2 text-sm">Итоги</h3><div id="metrics-overall" class="text-sm text-slate-700">—</div></div>
-            <div class="bg-white rounded-2xl shadow p-4"><h3 class="font-semibold mb-2 text-sm">Причины закрытия</h3><div id="metrics-close-reasons" class="text-sm text-slate-700">—</div></div>
-            <div class="bg-white rounded-2xl shadow p-4"><h3 class="font-semibold mb-2 text-sm">SLA по причинам</h3><div id="metrics-sla-reasons" class="text-sm text-slate-700">—</div></div>
-            <div class="md:col-span-2 bg-white rounded-2xl shadow p-4"><h3 class="font-semibold mb-2 text-sm">Топ мастеров (30 дней)</h3><div id="metrics-masters" class="text-sm overflow-x-auto">—</div></div>
+          <div id="users-table" class="overflow-x-auto"></div>
+        </div>
+      </div>
+
+      <div id="access-masters-panel" class="hidden space-y-4">
+        <div class="bg-white rounded-2xl shadow p-4">
+          <h3 class="font-semibold mb-3">Добавить мастера</h3>
+          <form id="form-master" class="grid gap-3 md:grid-cols-3">
+            <div class="md:col-span-2">
+              <label class="block text-sm">Имя мастера *</label>
+              <input name="name" required class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200" placeholder="Иван Петров">
+            </div>
+            <div>
+              <label class="block text-sm">Телефон</label>
+              <input name="phone" class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200" placeholder="+7...">
+            </div>
+            <div class="md:col-span-3 flex items-center gap-2">
+              <button class="px-4 py-2 rounded-xl bg-slate-900 text-white font-semibold">Добавить</button>
+              <span id="master-msg" class="text-xs text-slate-500"></span>
+            </div>
+          </form>
+        </div>
+        <div class="bg-white rounded-2xl shadow p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-semibold">Список мастеров</h3>
+            <button id="btn-masters-refresh" class="px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Обновить</button>
           </div>
+          <div id="masters-table" class="overflow-x-auto"></div>
+          <p class="text-xs text-slate-500 mt-2">Деактивация мастера и замена влияют только на открытые заявки.</p>
         </div>
       </div>
     </section>
@@ -378,10 +415,10 @@
   <div id="temp-password-modal" class="modal">
     <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-md">
       <div class="flex items-center justify-between">
-        <h3 id="temp-password-title" class="font-semibold">Пароль мастера</h3>
+        <h3 id="temp-password-title" class="font-semibold">Временный пароль</h3>
         <button id="temp-password-close" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-sm">Закрыть</button>
       </div>
-      <p class="text-sm text-slate-600 mt-2">Пароль показывается один раз. Передайте мастеру безопасным каналом.</p>
+      <p class="text-sm text-slate-600 mt-2">Пароль показывается один раз. Передайте сотруднику безопасным каналом.</p>
       <div class="mt-4 space-y-3 text-sm">
         <div>
           <label class="block text-xs text-slate-500">Логин</label>
@@ -395,6 +432,103 @@
       <div class="mt-4 flex items-center gap-2">
         <button id="temp-password-copy" class="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm">Скопировать</button>
         <span id="temp-password-copy-msg" class="text-xs text-slate-500"></span>
+      </div>
+    </div>
+  </div>
+
+  <div id="assign-role-modal" class="modal">
+    <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-md">
+      <div class="flex items-center justify-between">
+        <h3 class="font-semibold">Назначить роль</h3>
+        <button id="assign-role-close" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-sm">Закрыть</button>
+      </div>
+      <p class="text-sm text-slate-600 mt-2">Роль доступна только для мастера (техника).</p>
+      <form id="assign-role-form" class="mt-4 space-y-3 text-sm">
+        <input type="hidden" name="master_id" id="assign-role-master-id">
+        <div>
+          <label class="block text-xs text-slate-500">Роль</label>
+          <select name="role" class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200">
+            <option value="TECHNICIAN">TECHNICIAN</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-500">Логин (опционально)</label>
+          <input name="username" class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200" placeholder="master-ivan">
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm">Назначить</button>
+          <span id="assign-role-msg" class="text-xs text-slate-500"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="change-role-modal" class="modal">
+    <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-md">
+      <div class="flex items-center justify-between">
+        <h3 class="font-semibold">Изменить роль пользователя</h3>
+        <button id="change-role-close" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-sm">Закрыть</button>
+      </div>
+      <form id="change-role-form" class="mt-4 space-y-3 text-sm">
+        <input type="hidden" name="user_id" id="change-role-user-id">
+        <div>
+          <label class="block text-xs text-slate-500">Роль</label>
+          <select name="role" id="change-role-select" class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200">
+            <option value="ADMIN">ADMIN</option>
+            <option value="DISPATCHER">DISPATCHER</option>
+            <option value="TECHNICIAN">TECHNICIAN</option>
+          </select>
+        </div>
+        <div id="change-role-master-field" class="hidden">
+          <label class="block text-xs text-slate-500">Профиль мастера</label>
+          <select name="master_id" id="change-role-master-select" class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200"></select>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm">Сохранить</button>
+          <span id="change-role-msg" class="text-xs text-slate-500"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="replace-tech-modal" class="modal">
+    <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-lg">
+      <div class="flex items-center justify-between">
+        <h3 class="font-semibold">Замена сотрудника</h3>
+        <button id="replace-tech-close" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-sm">Закрыть</button>
+      </div>
+      <div class="mt-4 space-y-4 text-sm">
+        <input type="hidden" id="replace-old-master-id">
+        <div class="space-y-2">
+          <label class="block text-xs text-slate-500">Шаг 1: новый мастер</label>
+          <div class="flex items-center gap-3">
+            <label class="flex items-center gap-2">
+              <input type="radio" name="replace-mode" value="existing" checked>
+              Выбрать существующего
+            </label>
+            <label class="flex items-center gap-2">
+              <input type="radio" name="replace-mode" value="new">
+              Создать нового
+            </label>
+          </div>
+          <div id="replace-existing" class="mt-2">
+            <select id="replace-existing-select" class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200"></select>
+          </div>
+          <div id="replace-new" class="mt-2 hidden space-y-2">
+            <input id="replace-new-name" class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200" placeholder="Имя нового мастера">
+            <input id="replace-new-phone" class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200" placeholder="Телефон (опционально)">
+          </div>
+        </div>
+        <div class="space-y-2">
+          <label class="block text-xs text-slate-500">Шаг 2: действия</label>
+          <label class="flex items-center gap-2"><input id="replace-reassign" type="checkbox" checked>Переназначить открытые заявки</label>
+          <label class="flex items-center gap-2"><input id="replace-disable-user" type="checkbox" checked>Отключить доступ старому пользователю</label>
+          <label class="flex items-center gap-2"><input id="replace-deactivate-master" type="checkbox">Деактивировать профиль мастера</label>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="replace-tech-submit" class="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm">Выполнить замену</button>
+          <span id="replace-tech-msg" class="text-xs text-slate-500"></span>
+        </div>
       </div>
     </div>
   </div>
@@ -428,6 +562,8 @@
       LOW: 'bg-slate-50 text-slate-500 ring-1 ring-slate-200'
     };
     const PRIORITY_DOTS = { HIGH: 'bg-red-500', MEDIUM: 'bg-slate-400', LOW: 'bg-slate-300' };
+    const ROLE_LABELS = { admin: 'Админ', dispatcher: 'Диспетчер', technician: 'Техник' };
+    const ROLE_ORDER = ['admin', 'dispatcher', 'technician'];
     const HISTORY_ACTION_LABELS = {
       CREATE: 'Создание',
       ASSIGN: 'Назначение',
@@ -452,6 +588,14 @@
     };
 
     function normalizePriority(p){ return (p || 'MEDIUM').toString().toUpperCase(); }
+    function normalizeRole(r){
+      const raw = (r || '').toString().toLowerCase();
+      return raw === 'master' ? 'technician' : raw;
+    }
+    function renderRoleLabel(r){
+      const key = normalizeRole(r);
+      return ROLE_LABELS[key] || key || '—';
+    }
     function renderPriorityBadge(priority){
       const key = normalizePriority(priority);
       const style = PRIORITY_STYLES[key] || PRIORITY_STYLES.MEDIUM;
@@ -476,14 +620,24 @@
     const tabOps = document.getElementById('tab-ops');
     const tabTech = document.getElementById('tab-tech');
     const tabSuper = document.getElementById('tab-super');
+    const tabAccess = document.getElementById('tab-access');
     const tabAssets = document.getElementById('tab-assets');
     const tabObjects = document.getElementById('tab-objects');
     const viewAdmin = document.getElementById('view-admin');
     const viewOps = document.getElementById('view-ops');
     const viewTech = document.getElementById('view-tech');
     const viewSuper = document.getElementById('view-super');
+    const viewAccess = document.getElementById('view-access');
     const viewAssets = document.getElementById('view-assets');
     const viewObjects = document.getElementById('view-objects');
+    const accessTabUsers = document.getElementById('access-tab-users');
+    const accessTabMasters = document.getElementById('access-tab-masters');
+    const accessUsersPanel = document.getElementById('access-users-panel');
+    const accessMastersPanel = document.getElementById('access-masters-panel');
+    const btnUsersRefresh = document.getElementById('btn-users-refresh');
+    const btnMastersRefresh = document.getElementById('btn-masters-refresh');
+    const usersTable = document.getElementById('users-table');
+    const mastersTable = document.getElementById('masters-table');
     const btnObjectsRefresh = document.getElementById('btn-objects-refresh');
     const btnObjectsFullscreen = document.getElementById('btn-objects-fullscreen');
     const objectsMapHome = document.getElementById('objects-map-home');
@@ -510,6 +664,30 @@
     const tempPasswordCopy = document.getElementById('temp-password-copy');
     const tempPasswordCopyMsg = document.getElementById('temp-password-copy-msg');
     const tempPasswordClose = document.getElementById('temp-password-close');
+    const assignRoleModal = document.getElementById('assign-role-modal');
+    const assignRoleForm = document.getElementById('assign-role-form');
+    const assignRoleMasterId = document.getElementById('assign-role-master-id');
+    const assignRoleClose = document.getElementById('assign-role-close');
+    const assignRoleMsg = document.getElementById('assign-role-msg');
+    const changeRoleModal = document.getElementById('change-role-modal');
+    const changeRoleForm = document.getElementById('change-role-form');
+    const changeRoleUserId = document.getElementById('change-role-user-id');
+    const changeRoleSelect = document.getElementById('change-role-select');
+    const changeRoleMasterField = document.getElementById('change-role-master-field');
+    const changeRoleMasterSelect = document.getElementById('change-role-master-select');
+    const changeRoleClose = document.getElementById('change-role-close');
+    const changeRoleMsg = document.getElementById('change-role-msg');
+    const replaceTechModal = document.getElementById('replace-tech-modal');
+    const replaceTechClose = document.getElementById('replace-tech-close');
+    const replaceTechSubmit = document.getElementById('replace-tech-submit');
+    const replaceTechMsg = document.getElementById('replace-tech-msg');
+    const replaceOldMasterId = document.getElementById('replace-old-master-id');
+    const replaceExistingSelect = document.getElementById('replace-existing-select');
+    const replaceNewName = document.getElementById('replace-new-name');
+    const replaceNewPhone = document.getElementById('replace-new-phone');
+    const replaceReassign = document.getElementById('replace-reassign');
+    const replaceDisableUser = document.getElementById('replace-disable-user');
+    const replaceDeactivateMaster = document.getElementById('replace-deactivate-master');
     const assetsSearchInput = document.getElementById('assets-search');
     const assetsTable = document.getElementById('assets-table');
     const btnAssetsRefresh = document.getElementById('btn-assets-refresh');
@@ -539,9 +717,19 @@
     let ticketTimerInterval = null;
 
     function setTab(which) {
-      for (const btn of [tabAdmin, tabOps, tabTech, tabAssets, tabObjects, tabSuper]) btn.classList.remove('bg-slate-900','text-white');
-      for (const v of [viewAdmin, viewOps, viewTech, viewAssets, viewSuper, viewObjects]) v.classList.add('hidden');
-      const map = {admin:[tabAdmin,viewAdmin], ops:[tabOps,viewOps], tech:[tabTech,viewTech], super:[tabSuper,viewSuper]};
+      for (const btn of [tabAdmin, tabOps, tabTech, tabAssets, tabObjects, tabSuper, tabAccess]) {
+        btn.classList.remove('bg-slate-900','text-white');
+      }
+      for (const v of [viewAdmin, viewOps, viewTech, viewAssets, viewSuper, viewObjects, viewAccess]) {
+        v.classList.add('hidden');
+      }
+      const map = {
+        admin:[tabAdmin,viewAdmin],
+        ops:[tabOps,viewOps],
+        tech:[tabTech,viewTech],
+        super:[tabSuper,viewSuper],
+        access:[tabAccess,viewAccess],
+      };
       const extended = {assets:[tabAssets, viewAssets], objects:[tabObjects, viewObjects], ...map};
       if (extended[which]) {
         extended[which][0].classList.add('bg-slate-900','text-white');
@@ -554,7 +742,8 @@
     tabAdmin.onclick = () => setTab('admin');
     tabOps.onclick = () => { loadKanban(); setTab('ops'); };
     tabTech.onclick = () => { loadMyTickets(); setTab('tech'); };
-    tabSuper.onclick = () => { loadMastersList(); loadDashboard(); loadMetrics(); setTab('super'); };
+    tabSuper.onclick = () => { loadDashboard(); loadMetrics(); setTab('super'); };
+    tabAccess.onclick = () => { loadUsers(); loadAccessMasters(); setAccessTab('users'); setTab('access'); };
     tabAssets.onclick = () => { loadAssets(); setTab('assets'); };
     tabObjects.onclick = () => { loadObjects(); setTab('objects'); };
 
@@ -562,21 +751,22 @@
     const btnLogin = document.getElementById('btn-login');
     const btnLogout = document.getElementById('btn-logout');
     btnLogin.onclick = async () => {
-      const username = prompt('Логин (admin/dispatcher/master1..):','admin'); if (!username) return;
+      const username = prompt('Логин (admin/dispatcher/tech..):','admin'); if (!username) return;
       const password = prompt('Пароль (admin123 / disp123 / выданный администратором):','admin123'); if (!password) return;
       const res = await fetch('/api/login',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username,password})});
       const data = await res.json(); if (!res.ok) return alert(data.error||'Ошибка входа');
-      await refreshMe(); await loadTicketFilters(); await loadTickets(); await loadKanban(); await loadMyTickets(); loadMastersList(); loadDashboard(); loadMetrics();
+      await refreshMe(); await loadTicketFilters(); await loadTickets(); await loadKanban(); await loadMyTickets(); loadAccessMasters(); loadDashboard(); loadMetrics();
     };
     btnLogout.onclick = async () => { await fetch('/api/logout',{method:'POST'}); me = null; renderAuth(); };
     async function refreshMe(){ const res=await fetch('/api/me'); me=await res.json(); renderAuth(); }
     function renderAuth(){
       if (!me||!me.authenticated){ loginState.textContent='Не вошли'; btnLogin.classList.remove('hidden'); btnLogout.classList.add('hidden'); tabSuper.classList.add('hidden'); tabAssets.classList.add('hidden');
+        tabAccess.classList.add('hidden');
         document.querySelectorAll('[data-admin-only]').forEach(el=>el.classList.add('opacity-50','pointer-events-none'));
         document.querySelectorAll('[data-sla-override]').forEach(el=>el.classList.add('hidden'));
-      } else { loginState.textContent=`${me.username} (${me.role})`; btnLogin.classList.add('hidden'); btnLogout.classList.remove('hidden');
-        if (me.role==='admin'){ tabSuper.classList.remove('hidden'); } else { tabSuper.classList.add('hidden'); }
-        if (['admin','dispatcher'].includes(me.role)){
+      } else { loginState.textContent=`${me.username} (${renderRoleLabel(me.role)})`; btnLogin.classList.add('hidden'); btnLogout.classList.remove('hidden');
+        if (me.role==='admin'){ tabSuper.classList.remove('hidden'); tabAccess.classList.remove('hidden'); } else { tabSuper.classList.add('hidden'); tabAccess.classList.add('hidden'); }
+        if (['admin','dispatcher'].includes(normalizeRole(me.role))){
           tabAssets.classList.remove('hidden');
           document.querySelectorAll('[data-admin-only]').forEach(el=>el.classList.remove('opacity-50','pointer-events-none'));
           document.querySelectorAll('[data-sla-override]').forEach(el=>el.classList.remove('hidden'));
@@ -959,7 +1149,7 @@
       filterPriority.value = ticketFilters.priority;
       const res=await fetch(`/api/tickets${buildTicketsQuery()}`,{cache:'no-store'}); if(!res.ok){ tableHolder.innerHTML='<div class="text-sm text-slate-500">Требуется вход.</div>'; return; }
       const data=await res.json();
-      const canEditPriority = me && ['admin','dispatcher'].includes(me.role);
+      const canEditPriority = me && ['admin','dispatcher'].includes(normalizeRole(me.role));
       const showSlaOverrides = canEditPriority;
       const slaOverrideHeader = showSlaOverrides ? '<th class="py-2 px-2">Кастом SLA (мин)</th>' : '';
       let html=`<table class="min-w-full text-sm"><thead><tr class="text-left border-b">
@@ -1292,7 +1482,7 @@
 
     // Technician view
     async function loadMyTickets(){
-      await refreshMe(); if(!me?.authenticated){ document.getElementById('tech-tickets').innerHTML='<div class="text-sm text-slate-500">Войдите как masterN.</div>'; return; }
+      await refreshMe(); if(!me?.authenticated){ document.getElementById('tech-tickets').innerHTML='<div class="text-sm text-slate-500">Войдите как technician.</div>'; return; }
       const res=await fetch('/api/tickets',{cache:'no-store'}); if(!res.ok) return; const data=await res.json();
       const my=data.filter(t=>String(t.assigned_master_id)===String(me.master_id)&&!['COMPLETED','CANCELLED'].includes(t.status));
       const holder=document.getElementById('tech-tickets'); holder.innerHTML='';
@@ -1363,32 +1553,278 @@
       });
     }
 
-    // Admin - masters and dashboard/metrics
-    const formMaster=document.getElementById('form-master'); const masterMsg=document.getElementById('master-msg');
-    async function loadMastersList(){
-      const res=await fetch('/api/masters',{cache:'no-store'}); if(!res.ok) return; const ms=await res.json();
-      const ul=document.getElementById('masters-list'); ul.innerHTML='';
-      for(const m of ms){
-        const li=document.createElement('li'); li.className='flex items-center justify-between gap-2';
-        li.innerHTML=`<span>${m.id}. ${m.name} — логин: ${m.username ?? '—'} ${m.is_active?'':'<span class="ml-2 text-xs px-2 py-0.5 rounded bg-slate-100 ring-1 ring-slate-200">неактивен</span>'}</span>
-                      <div class='flex gap-2'>
-                        <button class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white" data-reset="${m.id}">Сбросить пароль</button>
-                        <button class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" data-toggle="${m.id}">${m.is_active?'Деактивировать':'Активировать'}</button>
-                        <button class="px-2 py-1 text-xs rounded-lg bg-red-50 ring-1 ring-red-200 text-red-700" data-del="${m.id}">Удалить</button>
-                      </div>`;
-        ul.appendChild(li);
+    // Access management
+    let accessMastersCache = [];
+    let accessUsersCache = [];
+
+    function setAccessTab(which){
+      if(which === 'users'){
+        accessTabUsers.classList.add('bg-slate-900','text-white');
+        accessTabUsers.classList.remove('bg-slate-100');
+        accessTabMasters.classList.remove('bg-slate-900','text-white');
+        accessTabMasters.classList.add('bg-slate-100');
+        accessUsersPanel.classList.remove('hidden');
+        accessMastersPanel.classList.add('hidden');
+      } else {
+        accessTabMasters.classList.add('bg-slate-900','text-white');
+        accessTabMasters.classList.remove('bg-slate-100');
+        accessTabUsers.classList.remove('bg-slate-900','text-white');
+        accessTabUsers.classList.add('bg-slate-100');
+        accessUsersPanel.classList.add('hidden');
+        accessMastersPanel.classList.remove('hidden');
       }
-      ul.querySelectorAll('[data-reset]').forEach(btn=>{ btn.onclick=async()=>{ const id=btn.getAttribute('data-reset'); if(!confirm('Сбросить пароль мастера #' + id + '?')) return; const res=await fetch(`/api/masters/${id}/reset_password`,{method:'POST'}); const data=await res.json(); if(!res.ok){ alert(data.error||'Ошибка'); return; } openTempPasswordModal('Новый пароль мастера', data.username, data.temp_password); loadMastersList(); }; });
-      ul.querySelectorAll('[data-del]').forEach(btn=>{ btn.onclick=async()=>{ const id=btn.getAttribute('data-del'); if(!confirm('Удалить мастера #' + id + ' и перераспределить его открытые заявки?')) return; const res=await fetch(`/api/masters/${id}`,{method:'DELETE'}); const data=await res.json(); if(!res.ok){ alert(data.error||'Ошибка удаления'); return; } loadMastersList(); loadTickets(); loadKanban(); loadDashboard(); loadMetrics(); }; });
-      ul.querySelectorAll('[data-toggle]').forEach(btn=>{ btn.onclick=async()=>{ const id=btn.getAttribute('data-toggle'); const res=await fetch(`/api/masters/${id}/toggle_active`,{method:'PATCH'}); const data=await res.json(); if(!res.ok){ alert(data.error||'Ошибка'); return; } loadMastersList(); loadTickets(); loadKanban(); loadDashboard(); loadMetrics(); }; });
     }
+    if(accessTabUsers && accessTabMasters){
+      accessTabUsers.onclick = () => setAccessTab('users');
+      accessTabMasters.onclick = () => setAccessTab('masters');
+    }
+
+    async function loadUsers(){
+      const res = await fetch('/api/users', {cache:'no-store'}); if(!res.ok) return;
+      const users = await res.json();
+      accessUsersCache = users;
+      renderUsersTable(users);
+    }
+
+    function renderUsersTable(users){
+      if(!usersTable) return;
+      let html = '<table class="min-w-full text-sm"><thead><tr class="text-left border-b">' +
+        '<th class="py-2 px-2">Логин</th><th class="py-2 px-2">Роль</th><th class="py-2 px-2">Активен</th>' +
+        '<th class="py-2 px-2">Мастер</th><th class="py-2 px-2">Действия</th></tr></thead><tbody>';
+      users.forEach(u=>{
+        const masterLabel = u.master_name ? `${u.master_name}${u.master_phone ? ` • ${u.master_phone}` : ''}` : '—';
+        const activeBadge = u.is_active ? '<span class="text-xs px-2 py-0.5 rounded bg-emerald-50 ring-1 ring-emerald-200 text-emerald-700">Да</span>'
+          : '<span class="text-xs px-2 py-0.5 rounded bg-slate-100 ring-1 ring-slate-200 text-slate-600">Нет</span>';
+        html += `<tr class="border-b">
+          <td class="py-2 px-2 font-mono">${u.username}</td>
+          <td class="py-2 px-2">${renderRoleLabel(u.role)}</td>
+          <td class="py-2 px-2">${activeBadge}</td>
+          <td class="py-2 px-2">${masterLabel}</td>
+          <td class="py-2 px-2">
+            <div class="flex flex-wrap gap-2">
+              <button class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white" data-user-reset="${u.id}">Сбросить пароль</button>
+              <button class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" data-user-toggle="${u.id}" data-active="${u.is_active ? '1' : '0'}">${u.is_active ? 'Отключить' : 'Включить'}</button>
+              <button class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" data-user-role="${u.id}">Изменить роль</button>
+            </div>
+          </td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      usersTable.innerHTML = html;
+      usersTable.querySelectorAll('[data-user-reset]').forEach(btn=>{
+        btn.onclick = async ()=>{
+          const id = btn.getAttribute('data-user-reset');
+          if(!confirm('Сбросить пароль пользователя #' + id + '?')) return;
+          const res = await fetch(`/api/users/${id}/reset-password`, {method:'POST'});
+          const data = await res.json();
+          if(!res.ok){ alert(extractErrorMessage(data,'Ошибка')); return; }
+          openTempPasswordModal('Новый пароль', data.username, data.temp_password);
+        };
+      });
+      usersTable.querySelectorAll('[data-user-toggle]').forEach(btn=>{
+        btn.onclick = async ()=>{
+          const id = btn.getAttribute('data-user-toggle');
+          const isActive = btn.getAttribute('data-active') === '1';
+          const res = await fetch(`/api/users/${id}`, {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({is_active: !isActive})});
+          const data = await res.json();
+          if(!res.ok){ alert(extractErrorMessage(data,'Ошибка')); return; }
+          await loadUsers(); await loadAccessMasters();
+        };
+      });
+      usersTable.querySelectorAll('[data-user-role]').forEach(btn=>{
+        btn.onclick = ()=>{
+          const id = btn.getAttribute('data-user-role');
+          const user = accessUsersCache.find(u => String(u.id) === String(id));
+          if(!user) return;
+          openChangeRoleModal(user);
+        };
+      });
+    }
+
+    async function loadAccessMasters(){
+      const res = await fetch('/api/masters', {cache:'no-store'}); if(!res.ok) return;
+      const masters = await res.json();
+      accessMastersCache = masters;
+      renderMastersTable(masters);
+      populateMasterSelects(masters);
+    }
+
+    function renderMastersTable(masters){
+      if(!mastersTable) return;
+      let html = '<table class="min-w-full text-sm"><thead><tr class="text-left border-b">' +
+        '<th class="py-2 px-2">Мастер</th><th class="py-2 px-2">Телефон</th><th class="py-2 px-2">Активен</th>' +
+        '<th class="py-2 px-2">Доступ</th><th class="py-2 px-2">Логин</th><th class="py-2 px-2">Действия</th></tr></thead><tbody>';
+      masters.forEach(m=>{
+        const activeBadge = m.is_active ? '<span class="text-xs px-2 py-0.5 rounded bg-emerald-50 ring-1 ring-emerald-200 text-emerald-700">Да</span>'
+          : '<span class="text-xs px-2 py-0.5 rounded bg-slate-100 ring-1 ring-slate-200 text-slate-600">Нет</span>';
+        const accessLabel = m.user_id ? 'Назначен' : 'Нет';
+        html += `<tr class="border-b">
+          <td class="py-2 px-2">${m.name}</td>
+          <td class="py-2 px-2">${m.phone || '—'}</td>
+          <td class="py-2 px-2">${activeBadge}</td>
+          <td class="py-2 px-2">${accessLabel}</td>
+          <td class="py-2 px-2 font-mono">${m.username || '—'}</td>
+          <td class="py-2 px-2">
+            <div class="flex flex-wrap gap-2">
+              ${m.user_id ? `<button class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white" data-master-reset="${m.user_id}">Сбросить пароль</button>` :
+                `<button class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white" data-master-assign="${m.id}">Назначить роль</button>`}
+              <button class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" data-master-replace="${m.id}">Замена сотрудника</button>
+              <button class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" data-master-toggle="${m.id}">${m.is_active ? 'Деактивировать' : 'Активировать'}</button>
+            </div>
+          </td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      mastersTable.innerHTML = html;
+      mastersTable.querySelectorAll('[data-master-assign]').forEach(btn=>{
+        btn.onclick = ()=>{
+          const id = btn.getAttribute('data-master-assign');
+          openAssignRoleModal(id);
+        };
+      });
+      mastersTable.querySelectorAll('[data-master-reset]').forEach(btn=>{
+        btn.onclick = async ()=>{
+          const id = btn.getAttribute('data-master-reset');
+          if(!confirm('Сбросить пароль пользователя #' + id + '?')) return;
+          const res = await fetch(`/api/users/${id}/reset-password`, {method:'POST'});
+          const data = await res.json();
+          if(!res.ok){ alert(extractErrorMessage(data,'Ошибка')); return; }
+          openTempPasswordModal('Новый пароль', data.username, data.temp_password);
+        };
+      });
+      mastersTable.querySelectorAll('[data-master-toggle]').forEach(btn=>{
+        btn.onclick = async ()=>{
+          const id = btn.getAttribute('data-master-toggle');
+          const res = await fetch(`/api/masters/${id}/toggle_active`, {method:'PATCH'});
+          const data = await res.json();
+          if(!res.ok){ alert(extractErrorMessage(data,'Ошибка')); return; }
+          await loadAccessMasters(); await loadTickets(); await loadKanban(); await loadDashboard(); await loadMetrics();
+        };
+      });
+      mastersTable.querySelectorAll('[data-master-replace]').forEach(btn=>{
+        btn.onclick = ()=>{ openReplaceTechModal(btn.getAttribute('data-master-replace')); };
+      });
+    }
+
+    function populateMasterSelects(masters){
+      if(!changeRoleMasterSelect || !replaceExistingSelect) return;
+      changeRoleMasterSelect.innerHTML = '<option value="">Выберите мастера</option>' +
+        masters.map(m=>`<option value="${m.id}">${m.name}</option>`).join('');
+      replaceExistingSelect.innerHTML = masters.map(m=>`<option value="${m.id}">${m.name}</option>`).join('');
+    }
+
+    function openAssignRoleModal(masterId){
+      assignRoleMsg.textContent = '';
+      assignRoleMasterId.value = masterId;
+      assignRoleForm.reset();
+      assignRoleModal.classList.add('open');
+    }
+    assignRoleClose.onclick = () => assignRoleModal.classList.remove('open');
+    assignRoleForm.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const masterId = assignRoleMasterId.value;
+      const fd = new FormData(assignRoleForm);
+      const payload = Object.fromEntries(fd.entries());
+      assignRoleMsg.textContent = 'Назначаю...';
+      const res = await fetch(`/api/masters/${masterId}/assign-role`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+      const data = await res.json();
+      if(!res.ok){ assignRoleMsg.textContent = extractErrorMessage(data,'Ошибка'); return; }
+      assignRoleModal.classList.remove('open');
+      openTempPasswordModal('Новый доступ', data.username, data.temp_password);
+      await loadUsers(); await loadAccessMasters();
+    });
+
+    function openChangeRoleModal(user){
+      changeRoleMsg.textContent = '';
+      changeRoleUserId.value = user.id;
+      const currentRole = normalizeRole(user.role);
+      changeRoleSelect.value = currentRole.toUpperCase();
+      if(currentRole === 'technician'){
+        changeRoleMasterField.classList.remove('hidden');
+        changeRoleMasterSelect.value = user.master_id || '';
+      } else {
+        changeRoleMasterField.classList.add('hidden');
+        changeRoleMasterSelect.value = '';
+      }
+      changeRoleModal.classList.add('open');
+    }
+    changeRoleClose.onclick = () => changeRoleModal.classList.remove('open');
+    changeRoleSelect.onchange = () => {
+      const role = changeRoleSelect.value;
+      if(role === 'TECHNICIAN'){
+        changeRoleMasterField.classList.remove('hidden');
+      } else {
+        changeRoleMasterField.classList.add('hidden');
+        changeRoleMasterSelect.value = '';
+      }
+    };
+    changeRoleForm.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const userId = changeRoleUserId.value;
+      const payload = { role: changeRoleSelect.value };
+      if(changeRoleSelect.value === 'TECHNICIAN'){
+        payload.master_id = changeRoleMasterSelect.value || null;
+      } else {
+        payload.master_id = null;
+      }
+      changeRoleMsg.textContent = 'Сохраняю...';
+      const res = await fetch(`/api/users/${userId}`, {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+      const data = await res.json();
+      if(!res.ok){ changeRoleMsg.textContent = extractErrorMessage(data,'Ошибка'); return; }
+      changeRoleModal.classList.remove('open');
+      await loadUsers(); await loadAccessMasters();
+    });
+
+    function openReplaceTechModal(masterId){
+      replaceTechMsg.textContent = '';
+      replaceOldMasterId.value = masterId;
+      replaceNewName.value = '';
+      replaceNewPhone.value = '';
+      replaceReassign.checked = true;
+      replaceDisableUser.checked = true;
+      replaceDeactivateMaster.checked = false;
+      replaceTechModal.classList.add('open');
+    }
+    replaceTechClose.onclick = () => replaceTechModal.classList.remove('open');
+    const replaceModeInputs = document.querySelectorAll('input[name="replace-mode"]');
+    replaceModeInputs.forEach(input=>{
+      input.onchange = ()=>{
+        const mode = document.querySelector('input[name="replace-mode"]:checked')?.value;
+        document.getElementById('replace-existing').classList.toggle('hidden', mode !== 'existing');
+        document.getElementById('replace-new').classList.toggle('hidden', mode !== 'new');
+      };
+    });
+    replaceTechSubmit.onclick = async ()=>{
+      const mode = document.querySelector('input[name="replace-mode"]:checked')?.value || 'existing';
+      const payload = {
+        old_master_id: Number(replaceOldMasterId.value),
+        reassign_open_tickets: replaceReassign.checked,
+        disable_old_user: replaceDisableUser.checked,
+        deactivate_old_master: replaceDeactivateMaster.checked,
+      };
+      if(mode === 'existing'){
+        payload.new_master_id = Number(replaceExistingSelect.value);
+      } else {
+        payload.new_master_profile = { name: replaceNewName.value || '', phone: replaceNewPhone.value || '' };
+      }
+      replaceTechMsg.textContent = 'Выполняю...';
+      const res = await fetch('/api/access/replace-technician', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+      const data = await res.json();
+      if(!res.ok){ replaceTechMsg.textContent = extractErrorMessage(data,'Ошибка'); return; }
+      replaceTechModal.classList.remove('open');
+      await loadAccessMasters(); await loadUsers(); await loadTickets(); await loadKanban();
+      alert(`Готово. Переназначено заявок: ${data.reassigned_tickets}`);
+    };
+
+    const formMaster=document.getElementById('form-master'); const masterMsg=document.getElementById('master-msg');
     if(formMaster){ formMaster.addEventListener('submit', async (e)=>{
       e.preventDefault(); const fd=new FormData(formMaster); const body=Object.fromEntries(fd.entries()); masterMsg.textContent='Добавляю...';
       const res=await fetch('/api/masters',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); const data=await res.json();
-      if(!res.ok){ masterMsg.textContent=data.error||'Ошибка'; return; }
-      masterMsg.textContent=`Создан: ${data.name}. Пароль показан в окне.`; formMaster.reset(); loadMastersList();
-      openTempPasswordModal('Пароль нового мастера', data.username, data.temp_password);
+      if(!res.ok){ masterMsg.textContent=extractErrorMessage(data,'Ошибка'); return; }
+      masterMsg.textContent=`Создан: ${data.name}.`; formMaster.reset(); loadAccessMasters();
     });}
+    if(btnUsersRefresh){ btnUsersRefresh.onclick = () => loadUsers(); }
+    if(btnMastersRefresh){ btnMastersRefresh.onclick = () => loadAccessMasters(); }
 
     function statusProgress(s){ if(s==='NEW') return 10; if(s==='ASSIGNED') return 35; if(s==='IN_PROGRESS') return 70; if(s==='COMPLETED') return 100; if(s==='CANCELLED') return 100; return 0; }
     function fmtDuration(ms){ const sec=Math.floor(ms/1000); const d=Math.floor(sec/86400); const h=Math.floor((sec%86400)/3600); const m=Math.floor((sec%3600)/60); const s=sec%60; let out=[];
