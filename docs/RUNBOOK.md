@@ -6,12 +6,20 @@
 3) Аккаунты для входа:
    - admin / `admin123`
    - dispatcher / `disp123`
-   - master1 … master10 / уникальные временные пароли (создаются при первом запуске, выдаются через сброс пароля).【F:app.py†L92-L118】
+   - Учётки техников создаются отдельно через админ-панель (см. «Управление учётками техников»).【F:liftcrm/db.py†L123-L168】【F:liftcrm/tickets/routes.py†L61-L120】
 
 ## Что создаётся автоматически
 - База `lift_crm.db` (SQLite) и таблицы при первом запросе (hook `before_request`).【F:app.py†L124-L180】
-- Каталог `uploads/` для файлов вложений и таблица `assets` в SQLite (создаётся миграцией при первом запросе).【F:liftcrm/db.py†L95-L142】
+- Каталог `uploads/` для файлов вложений и таблица `assets` в SQLite (создаётся миграцией при первом запросе).【F:liftcrm/db.py†L95-L168】
 - Файл `archive.xlsx` (пустой с заголовками, включая колонку priority) для скачивания архива заявок.【F:liftcrm/__init__.py†L68-L104】
+- Профили мастеров создаются при первом запуске, но логины техников не создаются автоматически — их создаёт администратор через UI или API.【F:liftcrm/db.py†L123-L168】【F:templates/index.html†L186-L227】
+
+## Управление учётками техников
+- Профиль мастера — доменная сущность (имя/телефон/активность), без пароля/роли. Учётная запись техника — в таблице `users` с `role=technician` и `master_id` (уникально).【F:liftcrm/db.py†L18-L70】
+- Создать логин техника для мастера (админ): `POST /api/masters/{id}/create-user` → `{ ok, user_id, username, temp_password }`.【F:liftcrm/tickets/routes.py†L86-L122】
+- Сбросить пароль пользователя (админ): `POST /api/users/{id}/reset-password` → `{ ok, username, temp_password }`.【F:liftcrm/auth/routes.py†L75-L138】
+- Если пользователь уже связан с мастером, создание логина вернёт `409` (master already linked).【F:liftcrm/tickets/routes.py†L93-L104】
+- Dev-скрипт для разового бэкфилла логинов: `python scripts/backfill_technician_users.py` (создаёт техников для мастеров без учёток).【F:scripts/backfill_technician_users.py†L1-L47】
 
 ## Приоритеты заявок
 - Enum: HIGH («Очень важно»), MEDIUM («Нужно сделать», значение по умолчанию), LOW («Не срочно»).【F:liftcrm/tickets/routes.py†L20-L27】【F:liftcrm/db.py†L46-L77】
@@ -22,10 +30,10 @@
 ## SLA: контроль ответа и завершения
 - SLA ответа = `created_at` → `arrived_at`; SLA завершения = `created_at` → `completed_at`.
 - Дедлайны считаются динамически из `SLA_RESPONSE_MINUTES` и `SLA_COMPLETION_MINUTES`; по умолчанию 30/120 минут, можно переопределять через переменные окружения.
-- **Перекрытие по тикету:** admin/dispatcher могут задать `custom_sla_response_minutes` и/или `custom_sla_completion_minutes` (целые >0) при создании/редактировании заявки. Эти поля перекрывают значения конфига только для выбранного тикета. Поля скрыты для мастера и доступны через форму создания/таблицу (кнопка «Сохранить» рядом с заявкой). В API `PATCH /api/tickets/{id}` можно передавать только SLA поля (priority становится опциональным).【F:liftcrm/tickets/routes.py†L174-L240】【F:templates/index.html†L33-L78】【F:templates/index.html†L268-L334】
+- **Перекрытие по тикету:** admin/dispatcher могут задать `custom_sla_response_minutes` и/или `custom_sla_completion_minutes` (целые >0) при создании/редактировании заявки. Эти поля перекрывают значения конфига только для выбранного тикета. Поля скрыты для техника и доступны через форму создания/таблицу (кнопка «Сохранить» рядом с заявкой). В API `PATCH /api/tickets/{id}` можно передавать только SLA поля (priority становится опциональным).【F:liftcrm/tickets/routes.py†L174-L240】【F:templates/index.html†L33-L78】【F:templates/index.html†L268-L334】
 - Нарушение фиксируется, если время факта позже дедлайна или если факт отсутствует, а текущее время уже вышло за срок. Флаги отображаются в таблице заявок, карточках канбана/дашборда и выгружаются в `archive.xlsx` (добавлены колонки custom_sla_*).【F:liftcrm/tickets/repository.py†L10-L68】【F:liftcrm/tickets/routes.py†L390-L421】
 - API `/api/metrics` отдаёт счётчики и проценты нарушений, UI показывает их в блоке «Дашборд выполнения».
-- При завершении тикета мастер обязан выбрать `close_reason` из списка (EQUIPMENT_FAILURE/PASSENGER_TRAPPED/FALSE_CALL/POWER_ISSUE/EXTERNAL_REASON/OTHER); поле отражается в API, метриках и выгрузке архива.【F:liftcrm/tickets/routes.py†L184-L241】【F:templates/index.html†L373-L421】
+- При завершении тикета техник обязан выбрать `close_reason` из списка (EQUIPMENT_FAILURE/PASSENGER_TRAPPED/FALSE_CALL/POWER_ISSUE/EXTERNAL_REASON/OTHER); поле отражается в API, метриках и выгрузке архива.【F:liftcrm/tickets/routes.py†L184-L241】【F:templates/index.html†L373-L421】
 
 ## Архивация заявок (soft-delete)
 - `DELETE /api/tickets/{id}` больше не удаляет строку из БД, а проставляет `archived_at`; вложения остаются, запись скрывается из активного списка.【F:liftcrm/tickets/routes.py†L360-L372】
@@ -44,7 +52,7 @@
 3. Создать заявку (форма на главной).  
 4. Проверить автоназначение мастера и отображение в таблице/канбане.  
 5. Скачать архив через кнопку «Скачать архив».
-6. Переключиться на masterN и отметить «Приехал» / «Завершить» (нужна геолокация в браузере; при завершении выбрать обязательную причину закрытия из списка перед подтверждением).
+6. Создать логин техника для мастера, войти под ним и отметить «Приехал» / «Завершить» (нужна геолокация в браузере; при завершении выбрать обязательную причину закрытия из списка перед подтверждением).
 7. Открыть вкладку «Объекты» и убедиться, что точки отображаются из SQL-реестра лифтов, а переключатель «Показывать заявки» показывает открытые тикеты.
 
 ## Частые ошибки и решения
@@ -65,7 +73,7 @@
   - `SECRET_KEY` — ключ сессий Flask (dev по умолчанию `dev-secret`, обязательно переопределить в проде).【F:liftcrm/config.py†L7-L18】【F:liftcrm/__init__.py†L12-L33】
   - `ADMIN_USERNAME` / `ADMIN_PASSWORD` — креды админа (dev: `admin` / `admin123`).【F:liftcrm/config.py†L7-L18】【F:liftcrm/db.py†L58-L73】
   - `DISPATCHER_USERNAME` / `DISPATCHER_PASSWORD` — креды диспетчера (dev: `dispatcher` / `disp123`).【F:liftcrm/config.py†L7-L18】【F:liftcrm/db.py†L58-L73】
-  - `MASTER_PASSWORD` — **deprecated**, используется только при явном запросе "use_default_password" при создании мастера (dev-only).【F:liftcrm/config.py†L7-L18】【F:liftcrm/tickets/routes.py†L45-L102】
+  - `MASTER_PASSWORD` — **deprecated**, используется только при явном запросе `use_default_password` при создании логина техника (dev-only).【F:liftcrm/config.py†L7-L18】【F:liftcrm/tickets/routes.py†L86-L122】
   - `SLA_RESPONSE_MINUTES`, `SLA_COMPLETION_MINUTES` — опциональные, задают лимиты SLA в минутах (30/120 по умолчанию).【F:liftcrm/config.py†L7-L23】
 - Опционально:
   - `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` — для email-отправки отчёта при завершении; если пусто, отправка пропускается.【F:liftcrm/config.py†L20-L23】【F:liftcrm/tickets/service.py†L43-L77】
@@ -100,7 +108,7 @@
 2. `python app.py` — сервер стартует, открывается `/` с формой логина.
 3. Логин admin/admin123 успешен, `GET /api/me` возвращает role=admin.
 4. Создание заявки через форму с выбранным приоритетом → запись появляется в таблице/канбане (`GET /api/tickets`).
-5. Переключение приоритета через выпадающий список в таблице обновляет бейдж в таблице/канбане/мастерском UI.
+5. Переключение приоритета через выпадающий список в таблице обновляет бейдж в таблице/канбане/интерфейсе техника.
 6. Назначение мастера вручную (`POST /api/tickets/{id}/assign/{mid}`) — мастер обновлён.
 7. Метрики (`GET /api/metrics`) отвечают корректно под admin/dispatcher; блок «Итоги» показывает распределение по приоритетам.
 8. Скачивание архива (`GET /api/archive`) отдаёт `archive.xlsx` с колонкой priority.

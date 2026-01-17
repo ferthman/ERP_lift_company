@@ -5,7 +5,7 @@ from flask_login import UserMixin
 from werkzeug.security import generate_password_hash
 
 from . import config
-from .utils.security import generate_temp_password
+from .utils.users import ROLE_TECHNICIAN
 
 engine = create_engine(f"sqlite:///{config.DB_PATH}", echo=False, future=True)
 SessionLocal = scoped_session(
@@ -18,7 +18,14 @@ class Master(Base):
     __tablename__ = "masters"
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
+    phone = Column(String, nullable=True)
     is_active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
     user = relationship("User", uselist=False, back_populates="master")
     tickets = relationship("Ticket", back_populates="assigned_master")
 
@@ -28,8 +35,8 @@ class User(UserMixin, Base):
     id = Column(Integer, primary_key=True)
     username = Column(String, unique=True, nullable=False)
     password_hash = Column(String, nullable=False)
-    role = Column(String, nullable=False)  # admin | dispatcher | master
-    master_id = Column(Integer, ForeignKey("masters.id"), nullable=True)
+    role = Column(String, nullable=False)  # admin | dispatcher | technician | manager
+    master_id = Column(Integer, ForeignKey("masters.id"), nullable=True, unique=True)
     master = relationship("Master", back_populates="user")
 
     def get_id(self):
@@ -119,6 +126,7 @@ Index("idx_assets_serial_no", Asset.serial_no)
 Index("idx_assets_address", Asset.address)
 Index("idx_assets_address_norm", Asset.address_norm)
 Index("idx_assets_lat_lon", Asset.lat, Asset.lon)
+Index("idx_users_master_id", User.master_id)
 
 
 def init_db():
@@ -141,16 +149,6 @@ def init_db():
             )
             db.add_all([admin, disp])
             db.commit()
-            for m in db.query(Master).order_by(Master.id).all():
-                temp_password = generate_temp_password()
-                u = User(
-                    username=f"master{m.id}",
-                    password_hash=generate_password_hash(temp_password),
-                    role="master",
-                    master_id=m.id,
-                )
-                db.add(u)
-            db.commit()
 
 
 def ensure_migrations():
@@ -159,6 +157,8 @@ def ensure_migrations():
 
         conn = sqlite3.connect(config.DB_PATH)
         cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = {row[0] for row in cur.fetchall()}
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_log'")
         if not cur.fetchone():
             cur.execute(
@@ -179,46 +179,96 @@ def ensure_migrations():
                 "CREATE INDEX idx_audit_log_entity_created ON audit_log (entity_type, entity_id, created_at)"
             )
             conn.commit()
-        cur.execute("PRAGMA table_info(masters)")
-        cols = [r[1] for r in cur.fetchall()]
-        if "is_active" not in cols:
-            cur.execute("ALTER TABLE masters ADD COLUMN is_active INTEGER DEFAULT 1")
+        if "masters" in tables:
+            cur.execute("PRAGMA table_info(masters)")
+            cols = [r[1] for r in cur.fetchall()]
+            if "is_active" not in cols:
+                cur.execute("ALTER TABLE masters ADD COLUMN is_active INTEGER DEFAULT 1")
+                conn.commit()
+            if "phone" not in cols:
+                cur.execute("ALTER TABLE masters ADD COLUMN phone TEXT")
+                conn.commit()
+            if "created_at" not in cols:
+                cur.execute("ALTER TABLE masters ADD COLUMN created_at DATETIME")
+                conn.commit()
+            if "updated_at" not in cols:
+                cur.execute("ALTER TABLE masters ADD COLUMN updated_at DATETIME")
+                conn.commit()
+            now = datetime.now(timezone.utc).isoformat()
+            cur.execute("UPDATE masters SET created_at = ? WHERE created_at IS NULL", (now,))
+            cur.execute("UPDATE masters SET updated_at = ? WHERE updated_at IS NULL", (now,))
             conn.commit()
-        cur.execute("PRAGMA table_info(tickets)")
-        tcols = [r[1] for r in cur.fetchall()]
-        if "priority" not in tcols:
-            cur.execute("ALTER TABLE tickets ADD COLUMN priority TEXT DEFAULT 'MEDIUM'")
+        if "users" in tables:
+            cur.execute("PRAGMA table_info(users)")
+            ucols = [r[1] for r in cur.fetchall()]
+            if "master_id" not in ucols:
+                cur.execute("ALTER TABLE users ADD COLUMN master_id INTEGER")
+                conn.commit()
+            cur.execute("UPDATE users SET role = ? WHERE role = ?", (ROLE_TECHNICIAN, "master"))
             conn.commit()
-        if "email" not in tcols:
-            cur.execute("ALTER TABLE tickets ADD COLUMN email TEXT")
+            cur.execute("SELECT id, username, master_id, role FROM users")
+            rows = cur.fetchall()
+            for user_id, username, master_id, role in rows:
+                if role != ROLE_TECHNICIAN or master_id is not None:
+                    continue
+                if username and username.lower().startswith("master"):
+                    suffix = username[6:]
+                    if suffix.isdigit():
+                        candidate = int(suffix)
+                        cur.execute("SELECT id FROM masters WHERE id = ?", (candidate,))
+                        if cur.fetchone():
+                            cur.execute(
+                                "UPDATE users SET master_id = ? WHERE id = ?",
+                                (candidate, user_id),
+                            )
             conn.commit()
-        if "archived_at" not in tcols:
-            cur.execute("ALTER TABLE tickets ADD COLUMN archived_at DATETIME")
-            conn.commit()
-        if "close_reason" not in tcols:
-            cur.execute("ALTER TABLE tickets ADD COLUMN close_reason TEXT")
-            conn.commit()
-        if "close_comment" not in tcols:
-            cur.execute("ALTER TABLE tickets ADD COLUMN close_comment TEXT")
-            conn.commit()
-        if "cancel_reason" in tcols and "close_reason" in tcols:
             cur.execute(
-                "UPDATE tickets SET close_reason = cancel_reason "
-                "WHERE close_reason IS NULL AND cancel_reason IS NOT NULL"
+                "UPDATE users SET master_id = NULL WHERE role != ? AND master_id IS NOT NULL",
+                (ROLE_TECHNICIAN,),
             )
             conn.commit()
-        if "custom_sla_response_minutes" not in tcols:
-            cur.execute("ALTER TABLE tickets ADD COLUMN custom_sla_response_minutes INTEGER")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_users_master_id ON users (master_id)")
+            cur.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_users_master_id ON users (master_id) "
+                "WHERE master_id IS NOT NULL"
+            )
             conn.commit()
-        if "custom_sla_completion_minutes" not in tcols:
-            cur.execute("ALTER TABLE tickets ADD COLUMN custom_sla_completion_minutes INTEGER")
-            conn.commit()
-        if "assigned_at" not in tcols:
-            cur.execute("ALTER TABLE tickets ADD COLUMN assigned_at DATETIME")
-            conn.commit()
-        if "asset_id" not in tcols:
-            cur.execute("ALTER TABLE tickets ADD COLUMN asset_id INTEGER")
-            conn.commit()
+        if "tickets" in tables:
+            cur.execute("PRAGMA table_info(tickets)")
+            tcols = [r[1] for r in cur.fetchall()]
+            if "priority" not in tcols:
+                cur.execute("ALTER TABLE tickets ADD COLUMN priority TEXT DEFAULT 'MEDIUM'")
+                conn.commit()
+            if "email" not in tcols:
+                cur.execute("ALTER TABLE tickets ADD COLUMN email TEXT")
+                conn.commit()
+            if "archived_at" not in tcols:
+                cur.execute("ALTER TABLE tickets ADD COLUMN archived_at DATETIME")
+                conn.commit()
+            if "close_reason" not in tcols:
+                cur.execute("ALTER TABLE tickets ADD COLUMN close_reason TEXT")
+                conn.commit()
+            if "close_comment" not in tcols:
+                cur.execute("ALTER TABLE tickets ADD COLUMN close_comment TEXT")
+                conn.commit()
+            if "cancel_reason" in tcols and "close_reason" in tcols:
+                cur.execute(
+                    "UPDATE tickets SET close_reason = cancel_reason "
+                    "WHERE close_reason IS NULL AND cancel_reason IS NOT NULL"
+                )
+                conn.commit()
+            if "custom_sla_response_minutes" not in tcols:
+                cur.execute("ALTER TABLE tickets ADD COLUMN custom_sla_response_minutes INTEGER")
+                conn.commit()
+            if "custom_sla_completion_minutes" not in tcols:
+                cur.execute("ALTER TABLE tickets ADD COLUMN custom_sla_completion_minutes INTEGER")
+                conn.commit()
+            if "assigned_at" not in tcols:
+                cur.execute("ALTER TABLE tickets ADD COLUMN assigned_at DATETIME")
+                conn.commit()
+            if "asset_id" not in tcols:
+                cur.execute("ALTER TABLE tickets ADD COLUMN asset_id INTEGER")
+                conn.commit()
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='assets'")
         if not cur.fetchone():
             cur.execute(

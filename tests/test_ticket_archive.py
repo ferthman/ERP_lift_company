@@ -3,7 +3,8 @@ import unittest
 from werkzeug.security import generate_password_hash
 
 from liftcrm import create_app, config
-from liftcrm.db import SessionLocal, Ticket, User
+from liftcrm.db import SessionLocal, Ticket, User, Master
+from liftcrm.utils.users import ROLE_TECHNICIAN
 
 
 class TicketArchiveApiTest(unittest.TestCase):
@@ -16,14 +17,30 @@ class TicketArchiveApiTest(unittest.TestCase):
     def setUp(self):
         self.client = self.app.test_client()
         self.master_password = "test-master-pass"
-        self._set_password("master1", self.master_password)
+        self._ensure_technician_user("master1", self.master_password)
 
-    def _set_password(self, username, password):
+    def _ensure_technician_user(self, username, password):
         with SessionLocal() as db:
-            user = db.query(User).filter(User.username == username).first()
-            if user:
-                user.password_hash = generate_password_hash(password)
+            master = db.query(Master).order_by(Master.id).first()
+            if not master:
+                master = Master(name="Мастер 1", is_active=1)
+                db.add(master)
                 db.commit()
+                db.refresh(master)
+            user = db.query(User).filter(User.username == username).first()
+            if not user:
+                user = User(
+                    username=username,
+                    password_hash=generate_password_hash(password),
+                    role=ROLE_TECHNICIAN,
+                    master_id=master.id,
+                )
+                db.add(user)
+            else:
+                user.password_hash = generate_password_hash(password)
+                user.role = ROLE_TECHNICIAN
+                user.master_id = master.id
+            db.commit()
 
     def login(self, username, password):
         res = self.client.post("/api/login", json={"username": username, "password": password})

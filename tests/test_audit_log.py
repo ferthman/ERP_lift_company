@@ -5,6 +5,7 @@ from werkzeug.security import generate_password_hash
 
 from liftcrm import create_app, config
 from liftcrm.db import SessionLocal, Ticket, Master, AuditLog, User
+from liftcrm.utils.users import ROLE_TECHNICIAN
 
 
 class AuditLogTest(unittest.TestCase):
@@ -17,15 +18,31 @@ class AuditLogTest(unittest.TestCase):
     def setUp(self):
         self.client = self.app.test_client()
         self.master_password = "test-master-pass"
-        self._set_password("master1", self.master_password)
-        self._set_password("master2", self.master_password)
+        self._ensure_technician_user("master1", self.master_password, idx=1)
+        self._ensure_technician_user("master2", self.master_password, idx=2)
 
-    def _set_password(self, username, password):
+    def _ensure_technician_user(self, username, password, idx=1):
         with SessionLocal() as db:
-            user = db.query(User).filter(User.username == username).first()
-            if user:
-                user.password_hash = generate_password_hash(password)
+            master = db.query(Master).order_by(Master.id).offset(idx - 1).first()
+            if not master:
+                master = Master(name=f"Мастер {idx}", is_active=1)
+                db.add(master)
                 db.commit()
+                db.refresh(master)
+            user = db.query(User).filter(User.username == username).first()
+            if not user:
+                user = User(
+                    username=username,
+                    password_hash=generate_password_hash(password),
+                    role=ROLE_TECHNICIAN,
+                    master_id=master.id,
+                )
+                db.add(user)
+            else:
+                user.password_hash = generate_password_hash(password)
+                user.role = ROLE_TECHNICIAN
+                user.master_id = master.id
+            db.commit()
 
     def login(self, username, password):
         res = self.client.post("/api/login", json={"username": username, "password": password})

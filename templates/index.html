@@ -54,7 +54,7 @@
       <nav class="flex items-center gap-2">
         <button id="tab-admin" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white">Панель</button>
         <button id="tab-ops" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Контроль этапов</button>
-        <button id="tab-tech" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Приложение мастера</button>
+        <button id="tab-tech" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Приложение техника</button>
         <button id="tab-assets" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Лифты</button>
         <button id="tab-objects" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Объекты</button>
         <button id="tab-super" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100 hidden">Админ</button>
@@ -194,8 +194,8 @@
     <!-- Technician App -->
     <section id="view-tech" class="hidden space-y-4">
       <div class="bg-white rounded-2xl shadow p-4">
-        <h2 class="text-lg font-semibold mb-3">Приложение мастера</h2>
-        <p class="text-sm text-slate-600 mb-2">Войдите под пользователем мастерского аккаунта (пароль выдаёт администратор). Кнопки работают только в радиусе 500 м.</p>
+        <h2 class="text-lg font-semibold mb-3">Приложение техника</h2>
+        <p class="text-sm text-slate-600 mb-2">Войдите под учётной записью техника (пароль выдаёт администратор). Кнопки работают только в радиусе 500 м.</p>
         <div id="tech-tickets" class="space-y-3"></div>
       </div>
     </section>
@@ -204,10 +204,12 @@
     <section id="view-super" class="hidden space-y-6">
       <div class="grid md:grid-cols-3 gap-4">
         <div class="bg-white rounded-2xl shadow p-4">
-          <h2 class="text-lg font-semibold mb-3">Добавить мастера</h2>
+          <h2 class="text-lg font-semibold mb-3">Добавить профиль мастера</h2>
           <form id="form-master" class="space-y-3">
             <div><label class="block text-sm">Имя мастера *</label>
               <input name="name" required class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200" placeholder="Иван Петров"></div>
+            <div><label class="block text-sm">Телефон</label>
+              <input name="phone" class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200" placeholder="+7 777 777 77 77"></div>
             <button class="px-4 py-2 rounded-xl bg-slate-900 text-white font-semibold">Добавить</button>
             <p id="master-msg" class="text-xs text-slate-500"></p>
           </form>
@@ -1292,9 +1294,11 @@
 
     // Technician view
     async function loadMyTickets(){
-      await refreshMe(); if(!me?.authenticated){ document.getElementById('tech-tickets').innerHTML='<div class="text-sm text-slate-500">Войдите как masterN.</div>'; return; }
-      const res=await fetch('/api/tickets',{cache:'no-store'}); if(!res.ok) return; const data=await res.json();
-      const my=data.filter(t=>String(t.assigned_master_id)===String(me.master_id)&&!['COMPLETED','CANCELLED'].includes(t.status));
+      await refreshMe(); if(!me?.authenticated){ document.getElementById('tech-tickets').innerHTML='<div class="text-sm text-slate-500">Войдите как техник.</div>'; return; }
+      if(me.role !== 'technician'){ document.getElementById('tech-tickets').innerHTML='<div class="text-sm text-slate-500">Раздел доступен только техникам.</div>'; return; }
+      const res=await fetch('/api/tickets',{cache:'no-store'}); const data=await res.json();
+      if(!res.ok){ document.getElementById('tech-tickets').innerHTML=`<div class="text-sm text-slate-500">${extractErrorMessage(data,'Ошибка загрузки')}</div>`; return; }
+      const my=data.filter(t=>!['COMPLETED','CANCELLED'].includes(t.status));
       const holder=document.getElementById('tech-tickets'); holder.innerHTML='';
       if(my.length===0){ holder.innerHTML='<div class="text-sm text-slate-500">Нет назначенных заявок.</div>'; return; }
       for(const t of my){
@@ -1370,15 +1374,23 @@
       const ul=document.getElementById('masters-list'); ul.innerHTML='';
       for(const m of ms){
         const li=document.createElement('li'); li.className='flex items-center justify-between gap-2';
-        li.innerHTML=`<span>${m.id}. ${m.name} — логин: ${m.username ?? '—'} ${m.is_active?'':'<span class="ml-2 text-xs px-2 py-0.5 rounded bg-slate-100 ring-1 ring-slate-200">неактивен</span>'}</span>
-                      <div class='flex gap-2'>
-                        <button class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white" data-reset="${m.id}">Сбросить пароль</button>
-                        <button class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" data-toggle="${m.id}">${m.is_active?'Деактивировать':'Активировать'}</button>
-                        <button class="px-2 py-1 text-xs rounded-lg bg-red-50 ring-1 ring-red-200 text-red-700" data-del="${m.id}">Удалить</button>
-                      </div>`;
+        const phoneLabel = m.phone ? ` • ${m.phone}` : '';
+        const statusBadge = m.is_active ? '' : '<span class="ml-2 text-xs px-2 py-0.5 rounded bg-slate-100 ring-1 ring-slate-200">неактивен</span>';
+        const loginLabel = m.username ? `логин: ${m.username}` : 'логин: —';
+        const actions = [];
+        if (m.user_id) {
+          actions.push(`<button class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white" data-reset-user="${m.user_id}">Сбросить пароль</button>`);
+        } else {
+          actions.push(`<button class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white" data-create-user="${m.id}">Создать логин</button>`);
+        }
+        actions.push(`<button class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" data-toggle="${m.id}">${m.is_active?'Деактивировать':'Активировать'}</button>`);
+        actions.push(`<button class="px-2 py-1 text-xs rounded-lg bg-red-50 ring-1 ring-red-200 text-red-700" data-del="${m.id}">Удалить</button>`);
+        li.innerHTML=`<span>${m.id}. ${m.name}${phoneLabel} — ${loginLabel} ${statusBadge}</span>
+                      <div class='flex gap-2'>${actions.join('')}</div>`;
         ul.appendChild(li);
       }
-      ul.querySelectorAll('[data-reset]').forEach(btn=>{ btn.onclick=async()=>{ const id=btn.getAttribute('data-reset'); if(!confirm('Сбросить пароль мастера #' + id + '?')) return; const res=await fetch(`/api/masters/${id}/reset_password`,{method:'POST'}); const data=await res.json(); if(!res.ok){ alert(data.error||'Ошибка'); return; } openTempPasswordModal('Новый пароль мастера', data.username, data.temp_password); loadMastersList(); }; });
+      ul.querySelectorAll('[data-create-user]').forEach(btn=>{ btn.onclick=async()=>{ const id=btn.getAttribute('data-create-user'); if(!confirm('Создать логин для мастера #' + id + '?')) return; const res=await fetch(`/api/masters/${id}/create-user`,{method:'POST'}); const data=await res.json(); if(!res.ok){ alert(data.error||'Ошибка'); return; } openTempPasswordModal('Логин мастера создан', data.username, data.temp_password); loadMastersList(); }; });
+      ul.querySelectorAll('[data-reset-user]').forEach(btn=>{ btn.onclick=async()=>{ const id=btn.getAttribute('data-reset-user'); if(!confirm('Сбросить пароль пользователя #' + id + '?')) return; const res=await fetch(`/api/users/${id}/reset-password`,{method:'POST'}); const data=await res.json(); if(!res.ok){ alert(data.error||'Ошибка'); return; } openTempPasswordModal('Новый пароль пользователя', data.username, data.temp_password); loadMastersList(); }; });
       ul.querySelectorAll('[data-del]').forEach(btn=>{ btn.onclick=async()=>{ const id=btn.getAttribute('data-del'); if(!confirm('Удалить мастера #' + id + ' и перераспределить его открытые заявки?')) return; const res=await fetch(`/api/masters/${id}`,{method:'DELETE'}); const data=await res.json(); if(!res.ok){ alert(data.error||'Ошибка удаления'); return; } loadMastersList(); loadTickets(); loadKanban(); loadDashboard(); loadMetrics(); }; });
       ul.querySelectorAll('[data-toggle]').forEach(btn=>{ btn.onclick=async()=>{ const id=btn.getAttribute('data-toggle'); const res=await fetch(`/api/masters/${id}/toggle_active`,{method:'PATCH'}); const data=await res.json(); if(!res.ok){ alert(data.error||'Ошибка'); return; } loadMastersList(); loadTickets(); loadKanban(); loadDashboard(); loadMetrics(); }; });
     }
@@ -1386,8 +1398,7 @@
       e.preventDefault(); const fd=new FormData(formMaster); const body=Object.fromEntries(fd.entries()); masterMsg.textContent='Добавляю...';
       const res=await fetch('/api/masters',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); const data=await res.json();
       if(!res.ok){ masterMsg.textContent=data.error||'Ошибка'; return; }
-      masterMsg.textContent=`Создан: ${data.name}. Пароль показан в окне.`; formMaster.reset(); loadMastersList();
-      openTempPasswordModal('Пароль нового мастера', data.username, data.temp_password);
+      masterMsg.textContent=`Создан профиль: ${data.name}.`; formMaster.reset(); loadMastersList();
     });}
 
     function statusProgress(s){ if(s==='NEW') return 10; if(s==='ASSIGNED') return 35; if(s==='IN_PROGRESS') return 70; if(s==='COMPLETED') return 100; if(s==='CANCELLED') return 100; return 0; }

@@ -12,6 +12,7 @@ from . import repository
 from ..db import SessionLocal, Master, Ticket, Attachment, User, AuditLog, Asset
 from ..assets.service import upsert_asset_from_ticket, rounded_coords
 from ..utils.security import role_required, generate_temp_password
+from ..utils.users import ROLE_TECHNICIAN
 from ..utils.time import to_utc
 from ..utils.audit import log_audit, changed_fields
 from .. import config
@@ -52,7 +53,14 @@ def list_masters():
         ms = db.query(Master).order_by(Master.id).all()
         return jsonify(
             [
-                {"id": m.id, "name": m.name, "is_active": bool(m.is_active), "username": m.user.username if m.user else None}
+                {
+                    "id": m.id,
+                    "name": m.name,
+                    "phone": m.phone,
+                    "is_active": bool(m.is_active),
+                    "user_id": m.user.id if m.user and m.user.role == ROLE_TECHNICIAN else None,
+                    "username": m.user.username if m.user and m.user.role == ROLE_TECHNICIAN else None,
+                }
                 for m in ms
             ]
         )
@@ -64,47 +72,55 @@ def list_masters():
 def create_master():
     data = request.get_json() or {}
     name = (data.get("name") or "").strip()
-    use_default_password = bool(data.get("use_default_password"))
+    phone = (data.get("phone") or "").strip() or None
     if not name:
         return jsonify({"error": "Name is required"}), 400
     with SessionLocal() as db:
-        m = Master(name=name, is_active=1)
+        m = Master(name=name, phone=phone, is_active=1)
         db.add(m)
         db.commit()
         db.refresh(m)
-        temp_password = config.MASTER_PASSWORD if use_default_password and config.MASTER_PASSWORD else generate_temp_password()
-        u = User(
-            username=_unique_master_username(db, f"master{m.id}"),
-            password_hash=generate_password_hash(temp_password),
-            role="master",
-            master_id=m.id,
-        )
-        db.add(u)
-        db.commit()
-        return jsonify({"id": m.id, "name": m.name, "username": u.username, "temp_password": temp_password}), 201
+        return jsonify({"id": m.id, "name": m.name, "phone": m.phone}), 201
 
 
-@bp.post("/api/masters/<int:master_id>/reset_password")
+@bp.post("/api/masters/<int:master_id>/create-user")
 @login_required
 @role_required("admin")
-def reset_master_password(master_id):
+def create_master_user(master_id):
+    data = request.get_json() or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password")
+    use_default_password = bool(data.get("use_default_password"))
     with SessionLocal() as db:
         m = db.get(Master, master_id)
         if not m:
             return jsonify({"error": "Master not found"}), 404
-        user = db.query(User).filter(User.master_id == master_id, User.role == "master").first()
-        if not user:
-            user = User(
-                username=_unique_master_username(db, f"master{master_id}"),
-                password_hash="",
-                role="master",
-                master_id=master_id,
-            )
-            db.add(user)
-        temp_password = generate_temp_password()
-        user.password_hash = generate_password_hash(temp_password)
+        existing = db.query(User).filter(User.master_id == master_id).first()
+        if existing:
+            return jsonify({"error": "Master already has a linked user"}), 409
+        if not username:
+            username = _unique_master_username(db, f"master{master_id}")
+        elif db.query(User).filter(User.username == username).first():
+            return jsonify({"error": "Username already exists"}), 409
+        if password:
+            temp_password = password
+        elif use_default_password and config.MASTER_PASSWORD:
+            temp_password = config.MASTER_PASSWORD
+        else:
+            temp_password = generate_temp_password()
+        user = User(
+            username=username,
+            password_hash=generate_password_hash(temp_password),
+            role=ROLE_TECHNICIAN,
+            master_id=master_id,
+        )
+        db.add(user)
         db.commit()
-        return jsonify({"ok": True, "username": user.username, "temp_password": temp_password})
+        db.refresh(user)
+        return (
+            jsonify({"ok": True, "user_id": user.id, "username": user.username, "temp_password": temp_password}),
+            201,
+        )
 
 
 @bp.delete("/api/masters/<int:master_id>")
@@ -221,6 +237,11 @@ def list_tickets():
             master_id = int(master_id)
         except ValueError:
             return jsonify({"error": "Invalid master_id"}), 400
+    if current_user.role == ROLE_TECHNICIAN:
+        if not current_user.master_id:
+            return jsonify({"error": "Not a technician account"}), 403
+        master_id = current_user.master_id
+        unassigned_only = False
     with SessionLocal() as db:
         query = db.query(Ticket).order_by(Ticket.created_at.desc())
         if not include_archived:
@@ -522,14 +543,21 @@ def get_ticket(ticket_id):
         t = db.get(Ticket, ticket_id)
         if not t:
             return jsonify({"error": "Ticket not found"}), 404
+        if current_user.role == ROLE_TECHNICIAN:
+            if not current_user.master_id:
+                return jsonify({"error": "Not a technician account"}), 403
+            if t.assigned_master_id != current_user.master_id:
+                return jsonify({"error": "Forbidden"}), 403
         return jsonify(repository.serialize_ticket(t))
 
 
 @bp.post("/api/tickets/<int:ticket_id>/arrive")
 @login_required
 def arrive_ticket(ticket_id):
-    if current_user.role != "master":
-        return jsonify({"error": "Only master can mark arrival"}), 403
+    if current_user.role != ROLE_TECHNICIAN:
+        return jsonify({"error": "Only technician can mark arrival"}), 403
+    if not current_user.master_id:
+        return jsonify({"error": "Not a technician account"}), 403
     data = request.get_json() or {}
     lat = data.get("lat")
     lon = data.get("lon")
@@ -592,8 +620,10 @@ def arrive_ticket(ticket_id):
 @bp.post("/api/tickets/<int:ticket_id>/complete")
 @login_required
 def complete_ticket(ticket_id):
-    if current_user.role != "master":
-        return jsonify({"error": "Only master can complete"}), 403
+    if current_user.role != ROLE_TECHNICIAN:
+        return jsonify({"error": "Only technician can complete"}), 403
+    if not current_user.master_id:
+        return jsonify({"error": "Not a technician account"}), 403
     data = request.get_json() or {}
     lat = data.get("lat")
     lon = data.get("lon")
@@ -676,8 +706,11 @@ def upload_file(ticket_id):
             return jsonify({"error": "Ticket not found"}), 404
         if t.archived_at:
             return jsonify({"error": "Ticket archived"}), 400
-        if current_user.role == "master" and t.assigned_master_id != current_user.master_id:
-            return jsonify({"error": "Ticket not assigned to you"}), 403
+        if current_user.role == ROLE_TECHNICIAN:
+            if not current_user.master_id:
+                return jsonify({"error": "Not a technician account"}), 403
+            if t.assigned_master_id != current_user.master_id:
+                return jsonify({"error": "Ticket not assigned to you"}), 403
     if "file" not in request.files:
         return jsonify({"error": "No file"}), 400
     f = request.files["file"]
@@ -840,7 +873,9 @@ def ticket_history(ticket_id):
         t = db.get(Ticket, ticket_id)
         if not t:
             return jsonify({"error": "Ticket not found"}), 404
-        if current_user.role == "master":
+        if current_user.role == ROLE_TECHNICIAN:
+            if not current_user.master_id:
+                return jsonify({"error": "Not a technician account"}), 403
             if t.assigned_master_id != current_user.master_id:
                 return jsonify({"error": "Forbidden"}), 403
         elif current_user.role not in {"admin", "dispatcher"}:

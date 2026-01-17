@@ -3,7 +3,7 @@
 ## Обзор стека
 - **Backend:** Flask + SQLAlchemy (SQLite, file `lift_crm.db`).【F:app.py†L23-L91】
 - **Frontend:** Single-page HTML (Jinja template), Tailwind CDN, Vanilla JS, Leaflet, сервис-воркер для PWA-манифеста.【F:templates/index.html†L1-L27】【F:templates/index.html†L200-L351】
-- **Auth:** Flask-Login с cookie-сессиями; роли: admin, dispatcher, master.【F:app.py†L1-L91】【F:templates/index.html†L219-L262】
+- **Auth:** Flask-Login с cookie-сессиями; роли: admin, dispatcher, technician (техник), manager (опц.).【F:app.py†L1-L91】【F:templates/index.html†L219-L262】
 - **Файлы и данные:** Excel через openpyxl (есть в `vendor/openpyxl`), загрузки в `uploads/`, архив `archive.xlsx`, реестр лифтов в SQL-таблице `assets` (экспорт в CSV/XLSX).【F:liftcrm/db.py†L46-L104】【F:liftcrm/assets/routes.py†L1-L176】
 
 ## Карта директорий и ответственности
@@ -28,22 +28,22 @@
 - `/requirements.txt` — зависимости Python (Flask, SQLAlchemy, Flask-Login/CORS, Pillow, pandas, openpyxl).【F:requirements.txt†L1-L8】
 
 ## Основные модели и роли
-- `User`: username, password_hash, role (`admin|dispatcher|master`), связь `master_id`.【F:liftcrm/db.py†L27-L43】
-- `Master`: справочник мастеров, флаг `is_active`.【F:liftcrm/db.py†L11-L24】
+- `User`: username, password_hash, role (`admin|dispatcher|technician|manager`), связь `master_id` для техников. 【F:liftcrm/db.py†L27-L44】
+- `Master`: доменный профиль (имя, телефон, активность, timestamps), без пароля/роли. 【F:liftcrm/db.py†L11-L28】
 - `Ticket`: заявка со статусами `NEW/ASSIGNED/IN_PROGRESS/COMPLETED/CANCELLED`, координатами, временами прибытия/завершения, e-mail клиента, гео факты прибытия/завершения, вложения, полем **priority** (`HIGH|MEDIUM|LOW`, дефолт MEDIUM), **custom_sla_response_minutes/custom_sla_completion_minutes** (опциональные, только для admin/dispatcher, перекрывают конфиг SLA), **close_reason** и привязкой к `assets` через `asset_id` + summary поля в сериализации.【F:liftcrm/db.py†L46-L112】【F:liftcrm/tickets/repository.py†L17-L43】
 - `Asset`: реестр лифтов (адрес, подъезд, метка, серийник, координаты, статус).【F:liftcrm/db.py†L82-L112】
 - `Attachment`: файл, связанный с заявкой, лежит в `uploads/`.【F:liftcrm/db.py†L76-L84】
 
 ### Связка Users ↔ Masters
-- `masters` хранит сущность мастера (ФИО, активность) — без логина/пароля.
-- `users` хранит учётные записи. Для ролей `admin/dispatcher` поле `master_id` пустое. Для роли `master` поле `users.master_id` обязательно и указывает на конкретную запись в `masters`.
-- Каждому мастеру соответствует ровно один пользователь с `role=master` (создаётся при первичной инициализации и при добавлении мастера). Пароль для мастерского пользователя уникален и выдаётся как временный при создании или через сброс. 【F:liftcrm/db.py†L11-L73】【F:liftcrm/tickets/routes.py†L33-L120】
+- `masters` хранит доменный профиль (ФИО, телефон, активность) — без логина/пароля.
+- `users` хранит учётные записи. Для ролей `admin/dispatcher/manager` поле `master_id` пустое. Для роли `technician` поле `users.master_id` обязательно и указывает на запись в `masters`.
+- Каждому мастеру соответствует максимум один пользователь с `role=technician` (создаётся админом через `/api/masters/{id}/create-user`), пароль выдаётся как временный при создании или через сброс. 【F:liftcrm/db.py†L11-L70】【F:liftcrm/tickets/routes.py†L86-L122】【F:liftcrm/auth/routes.py†L75-L138】
 
 ### Назначение заявок на мастеров
 - В заявке поле `tickets.assigned_master_id` ссылается на `masters.id` и определяет исполнителя.
 - Автоназанчение выбирает активного мастера с минимальной нагрузкой по открытым статусам (`NEW|ASSIGNED|IN_PROGRESS`).【F:liftcrm/tickets/service.py†L15-L38】
 - Ручное назначение/переназначение через `POST /api/tickets/{id}/assign/{master_id}` проставляет `assigned_master_id` (только активным мастерам) и, при необходимости, переводит статус в `ASSIGNED`.【F:liftcrm/tickets/routes.py†L299-L324】
-- При удалении или деактивации мастера открытые заявки перераспределяются на других активных мастеров; связанные `users` с ролью master удаляются или остаются в зависимости от операции удаления мастера.【F:liftcrm/tickets/routes.py†L33-L122】
+- При удалении или деактивации мастера открытые заявки перераспределяются на других активных мастеров; связанные `users` с `master_id` удаляются при удалении мастера. 【F:liftcrm/tickets/routes.py†L123-L173】
 
 ### Карта статусов (бизнес → enum → эндпойнт → таймстемпы)
 
@@ -84,9 +84,9 @@ UI форма с выбором лифта + приоритета (`HIGH|MEDIUM|
 ### 5) Назначение мастера (ручное)
 UI `showReassign()` выбирает master → `POST /api/tickets/{id}/assign/{master_id}` (admin/dispatcher) → проверка активности мастера → обновление `assigned_master_id`, статус `ASSIGNED` если нужно → JSON подтверждение → UI перерисовывает списки.【F:app.py†L618-L639】【F:templates/index.html†L308-L334】
 
-### 6) Обновление статуса мастером
-- **Прибыл:** мастерский UI → геолокация → `POST /api/tickets/{id}/arrive` (role master) → проверка владельца, геозона 500 м (haversine) → статус `IN_PROGRESS`, `arrived_at`, координаты прибытия → JSON.【F:app.py†L370-L405】【F:templates/index.html†L349-L419】
-- **Завершил:** мастерский UI → выбор причины закрытия (dropdown, без неё кнопка блокируется) → геолокация → `POST /api/tickets/{id}/complete` (role master) → проверки аналогичны → статус `COMPLETED`, `completed_at`, координаты завершения, `close_reason` из разрешённого списка → попытка `send_report()` по email → JSON.【F:liftcrm/tickets/routes.py†L184-L214】【F:templates/index.html†L373-L421】
+### 6) Обновление статуса техником
+- **Прибыл:** UI техника → геолокация → `POST /api/tickets/{id}/arrive` (role technician) → проверка владельца, геозона 500 м (haversine) → статус `IN_PROGRESS`, `arrived_at`, координаты прибытия → JSON.【F:liftcrm/tickets/routes.py†L511-L590】【F:templates/index.html†L349-L419】
+- **Завершил:** UI техника → выбор причины закрытия (dropdown, без неё кнопка блокируется) → геолокация → `POST /api/tickets/{id}/complete` (role technician) → проверки аналогичны → статус `COMPLETED`, `completed_at`, координаты завершения, `close_reason` из разрешённого списка → попытка `send_report()` по email → JSON.【F:liftcrm/tickets/routes.py†L593-L677】【F:templates/index.html†L373-L421】
 
 ### 7) Отмена / удаление и архив
 - **Отмена:** `POST /api/tickets/{id}/cancel` (admin/dispatcher) → статус `CANCELLED` → ответ.【F:app.py†L326-L338】【F:templates/index.html†L287-L299】
