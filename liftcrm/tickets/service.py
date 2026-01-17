@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 from math import radians, sin, cos, atan2, sqrt
 
 from . import repository
-from ..db import Master, Ticket
+from ..db import Master, Ticket, User
+from ..utils.roles import ROLE_TECHNICIAN
 from ..utils.time import to_utc
 from .. import config
 
@@ -24,7 +25,16 @@ def haversine_m(lat1, lon1, lat2, lon2):
 
 def auto_assign_master(db):
     open_statuses = ["NEW", "ASSIGNED", "IN_PROGRESS"]
-    active = db.query(Master).filter(Master.is_active == 1).all()
+    active = (
+        db.query(Master)
+        .join(User, User.master_id == Master.id)
+        .filter(
+            Master.is_active == 1,
+            User.is_active == 1,
+            User.role == ROLE_TECHNICIAN,
+        )
+        .all()
+    )
     counts = {m.id: 0 for m in active}
     if active:
         rows = (

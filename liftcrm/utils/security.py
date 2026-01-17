@@ -13,6 +13,8 @@ def role_required(*roles):
         def wrapper(*args, **kwargs):
             if not current_user.is_authenticated:
                 return jsonify({"error": "Unauthorized"}), 401
+            if hasattr(current_user, "is_active") and not current_user.is_active:
+                return jsonify({"error": "Account disabled"}), 403
             if current_user.role not in roles:
                 return jsonify({"error": "Forbidden"}), 403
             return fn(*args, **kwargs)

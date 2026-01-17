@@ -5,6 +5,7 @@ from flask_login import login_user, login_required, logout_user, current_user
 from werkzeug.security import check_password_hash
 
 from ..db import SessionLocal, User
+from ..utils.roles import normalize_role
 from ..extensions import login_manager
 from ..utils.rate_limit import check_rate_limit, get_client_ip
 
@@ -51,12 +52,29 @@ def api_login():
                 extra={"username": username, "ip": ip, "success": False, "remaining": info["remaining"]},
             )
             return jsonify({"error": "Неверный логин или пароль"}), 400
+        if not getattr(user, "is_active", 1):
+            logger.info(
+                "login_attempt",
+                extra={"username": username, "ip": ip, "success": False, "remaining": info["remaining"], "disabled": True},
+            )
+            return jsonify({"error": "Аккаунт отключен"}), 403
+        if user.role != normalize_role(user.role):
+            user.role = normalize_role(user.role)
+            db.commit()
     login_user(user)
     logger.info(
         "login_attempt",
         extra={"username": username, "ip": ip, "success": True, "remaining": info["remaining"]},
     )
-    return jsonify({"ok": True, "role": user.role, "username": user.username, "master_id": user.master_id})
+    return jsonify(
+        {
+            "ok": True,
+            "role": user.role,
+            "username": user.username,
+            "master_id": user.master_id,
+            "is_active": bool(getattr(user, "is_active", 1)),
+        }
+    )
 
 
 @bp.post("/api/logout")
@@ -71,5 +89,11 @@ def api_me():
     if not current_user.is_authenticated:
         return jsonify({"authenticated": False})
     return jsonify(
-        {"authenticated": True, "username": current_user.username, "role": current_user.role, "master_id": current_user.master_id}
+        {
+            "authenticated": True,
+            "username": current_user.username,
+            "role": current_user.role,
+            "master_id": current_user.master_id,
+            "is_active": bool(getattr(current_user, "is_active", 1)),
+        }
     )

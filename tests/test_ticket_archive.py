@@ -1,9 +1,11 @@
 import unittest
+import uuid
 
 from werkzeug.security import generate_password_hash
 
 from liftcrm import create_app, config
-from liftcrm.db import SessionLocal, Ticket, User
+from liftcrm.db import SessionLocal, Ticket, User, Master
+from liftcrm.utils.roles import ROLE_TECHNICIAN
 
 
 class TicketArchiveApiTest(unittest.TestCase):
@@ -15,15 +17,22 @@ class TicketArchiveApiTest(unittest.TestCase):
 
     def setUp(self):
         self.client = self.app.test_client()
-        self.master_password = "test-master-pass"
-        self._set_password("master1", self.master_password)
-
-    def _set_password(self, username, password):
+        self.master_password = "test-tech-pass"
+        self.tech_username = f"tech_{uuid.uuid4().hex[:8]}"
         with SessionLocal() as db:
-            user = db.query(User).filter(User.username == username).first()
-            if user:
-                user.password_hash = generate_password_hash(password)
-                db.commit()
+            master = Master(name=f"Тестовый мастер {self.tech_username}", is_active=1)
+            db.add(master)
+            db.commit()
+            db.refresh(master)
+            user = User(
+                username=self.tech_username,
+                password_hash=generate_password_hash(self.master_password),
+                role=ROLE_TECHNICIAN,
+                master_id=master.id,
+                is_active=1,
+            )
+            db.add(user)
+            db.commit()
 
     def login(self, username, password):
         res = self.client.post("/api/login", json={"username": username, "password": password})
@@ -74,6 +83,6 @@ class TicketArchiveApiTest(unittest.TestCase):
 
         self.logout()
 
-        self.login("master1", self.master_password)
+        self.login(self.tech_username, self.master_password)
         forbidden = self.client.post(f"/api/tickets/{ticket_id_for_master}/archive")
         self.assertIn(forbidden.status_code, (401, 403))
