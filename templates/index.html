@@ -70,10 +70,20 @@
     {% if user_role == 'technician' %}
       <div class="border-t border-slate-200 bg-amber-50">
         <div class="max-w-6xl mx-auto px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p class="text-sm text-amber-900">Вы вошли как мастер. В админке доступ ограничен.</p>
-          <a href="/mobile?ui=mobile" class="inline-flex items-center justify-center px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold">
-            Вернуться в приложение мастера
-          </a>
+          <div class="text-sm text-amber-900 space-y-1">
+            <p>Вы вошли как мастер. В админке доступ ограничен.</p>
+            <p>Если вам нужна админка — войдите под диспетчером/админом.</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <a href="/mobile?ui=mobile" class="inline-flex items-center justify-center px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold">
+              Вернуться в приложение мастера
+            </a>
+            <form method="post" action="/api/logout">
+              <button type="submit" class="px-4 py-2 rounded-xl bg-white ring-1 ring-slate-200 text-sm">
+                Выйти
+              </button>
+            </form>
+          </div>
         </div>
       </div>
     {% endif %}

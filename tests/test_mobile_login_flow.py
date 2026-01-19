@@ -91,7 +91,9 @@ class MobileLoginFlowTest(unittest.TestCase):
         body = res.get_data(as_text=True)
         self.assertIn("Lift CRM", body)
         self.assertIn("Вы вошли как мастер. В админке доступ ограничен.", body)
+        self.assertIn("Если вам нужна админка — войдите под диспетчером/админом.", body)
         self.assertIn("/mobile?ui=mobile", body)
+        self.assertIn(">Выйти<", body)
 
     def test_non_technician_mobile_notice(self):
         self.login_api("dispatcher_mobile_test", "disppass")
@@ -108,6 +110,15 @@ class MobileLoginFlowTest(unittest.TestCase):
         body = res.get_data(as_text=True)
         self.assertIn("Lift CRM", body)
         self.assertNotIn("Вы вошли как мастер. В админке доступ ограничен.", body)
+        self.assertNotIn("Если вам нужна админка — войдите под диспетчером/админом.", body)
+
+    def test_logout_action_clears_session(self):
+        self.login_api("tech_mobile_test", "techpass")
+        logout_res = self.client.post("/api/logout")
+        self.assertEqual(logout_res.status_code, 200)
+        res = self.client.get("/api/me")
+        payload = res.get_json()
+        self.assertFalse(payload["authenticated"])
 
     def test_login_next_redirect_is_safe(self):
         res = self.client.post(

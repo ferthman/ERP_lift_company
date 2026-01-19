@@ -34,6 +34,7 @@ Admin/dispatcher UI must continue to work as before.
 - [x] (2025-02-14 13:05Z) Harden safe redirect normalization with a strict allowlist and add open-redirect regression tests.
 - [x] (2025-02-14 13:30Z) Add admin escape hatch and UI preference cookie to avoid technician redirect traps.
 - [x] (2025-02-14 14:05Z) Add technician desktop banner on /admin with a link back to /mobile.
+- [x] (2025-02-14 14:20Z) Expand technician banner with guidance text and logout action.
 
 ## Surprises & Discoveries
 
@@ -82,6 +83,9 @@ Record every decision made while working on this plan.
   Date/Author: 2025-02-14 / codex
 - Decision: Show a technician-only banner on `/admin` to clarify limited desktop access and offer a one-click return to `/mobile`.
   Rationale: Reduce confusion when technicians open the desktop UI for navigation/testing.
+  Date/Author: 2025-02-14 / codex
+- Decision: Add guidance text and a logout action to the technician banner using existing `/api/logout`.
+  Rationale: Provide clearer next steps without changing permissions.
   Date/Author: 2025-02-14 / codex
 
 (Keep adding entries as decisions occur.)
