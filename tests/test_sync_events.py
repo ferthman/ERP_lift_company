@@ -184,3 +184,71 @@ class SyncEventsTest(unittest.TestCase):
             self.assertEqual(ticket.status, "COMPLETED")
             self.assertEqual(ticket.version, 6)
         self.logout()
+
+    def test_resume_from_waiting_preserves_arrived_at(self):
+        ticket_id = self.create_ticket(self.master_id)
+        original_arrived = datetime(2024, 5, 1, 8, 0)
+        with SessionLocal() as db:
+            ticket = db.get(Ticket, ticket_id)
+            ticket.status = "WAITING"
+            ticket.arrived_at = original_arrived
+            ticket.arrival_lat = 43.238949
+            ticket.arrival_lon = 76.889709
+            ticket.waiting_reason = "Нет доступа"
+            ticket.waiting_at = datetime(2024, 5, 1, 9, 0)
+            db.commit()
+        self.login(self.tech_username, self.tech_password)
+        payload = {
+            "events": [
+                {
+                    "id": str(uuid.uuid4()),
+                    "type": "TICKET_IN_PROGRESS",
+                    "ticket_id": ticket_id,
+                    "expected_version": 1,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "payload": {"lat": 44.0, "lon": 77.0},
+                }
+            ]
+        }
+        res = self.client.post("/api/sync/events", json=payload)
+        self.assertEqual(res.status_code, 200)
+        with SessionLocal() as db:
+            ticket = db.get(Ticket, ticket_id)
+            self.assertEqual(ticket.status, "IN_PROGRESS")
+            self.assertEqual(ticket.arrived_at, original_arrived)
+            self.assertEqual(ticket.arrival_lat, 43.238949)
+            self.assertEqual(ticket.arrival_lon, 76.889709)
+        self.logout()
+
+    def test_in_progress_sets_arrived_at_once(self):
+        ticket_id = self.create_ticket(self.master_id)
+        with SessionLocal() as db:
+            ticket = db.get(Ticket, ticket_id)
+            ticket.status = "ACCEPTED"
+            ticket.accepted_at = datetime.now(timezone.utc)
+            ticket.arrived_at = None
+            ticket.arrival_lat = None
+            ticket.arrival_lon = None
+            db.commit()
+        self.login(self.tech_username, self.tech_password)
+        payload = {
+            "events": [
+                {
+                    "id": str(uuid.uuid4()),
+                    "type": "TICKET_IN_PROGRESS",
+                    "ticket_id": ticket_id,
+                    "expected_version": 1,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "payload": {"lat": 43.5, "lon": 76.5},
+                }
+            ]
+        }
+        res = self.client.post("/api/sync/events", json=payload)
+        self.assertEqual(res.status_code, 200)
+        with SessionLocal() as db:
+            ticket = db.get(Ticket, ticket_id)
+            self.assertEqual(ticket.status, "IN_PROGRESS")
+            self.assertIsNotNone(ticket.arrived_at)
+            self.assertEqual(ticket.arrival_lat, 43.5)
+            self.assertEqual(ticket.arrival_lon, 76.5)
+        self.logout()

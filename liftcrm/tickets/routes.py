@@ -7,7 +7,14 @@ from flask import Blueprint, jsonify, request, send_from_directory
 from flask_login import login_required, current_user
 from werkzeug.security import generate_password_hash
 
-from .service import auto_assign_master, bump_ticket_version, haversine_m, send_report, validate_status_transition
+from .service import (
+    apply_in_progress_arrival,
+    auto_assign_master,
+    bump_ticket_version,
+    haversine_m,
+    send_report,
+    validate_status_transition,
+)
 from . import repository
 from ..db import SessionLocal, Master, Ticket, Attachment, User, AuditLog, Asset, AppliedEvent, TicketComment
 from ..assets.service import upsert_asset_from_ticket, rounded_coords
@@ -693,14 +700,9 @@ def sync_events():
                             new=new,
                         )
                 elif event_type == "TICKET_IN_PROGRESS":
-                    lat = payload.get("lat")
-                    lon = payload.get("lon")
                     old_arrived = ticket.arrived_at
-                    if lat is not None:
-                        ticket.arrival_lat = float(lat)
-                    if lon is not None:
-                        ticket.arrival_lon = float(lon)
-                    ticket.arrived_at = datetime.now(timezone.utc)
+                    old_arrival_lat = ticket.arrival_lat
+                    old_arrival_lon = ticket.arrival_lon
                     ticket.status = "IN_PROGRESS"
                     if old_status == "WAITING":
                         old_waiting_at = ticket.waiting_at
@@ -726,17 +728,32 @@ def sync_events():
                         results.append({"id": event_id, "ok": False, "error": {"code": code, "message": message}})
                         db.rollback()
                         continue
+                    apply_in_progress_arrival(ticket, payload)
                     if old_status == "WAITING":
                         old_snapshot = {
                             "status": old_status,
                             "arrived_at": old_arrived,
+                            "arrival_lat": old_arrival_lat,
+                            "arrival_lon": old_arrival_lon,
                             "waiting_at": old_waiting_at,
                             "waiting_reason": old_waiting_reason,
                         }
-                        fields = ["status", "arrived_at", "waiting_at", "waiting_reason"]
+                        fields = [
+                            "status",
+                            "arrived_at",
+                            "arrival_lat",
+                            "arrival_lon",
+                            "waiting_at",
+                            "waiting_reason",
+                        ]
                     else:
-                        old_snapshot = {"status": old_status, "arrived_at": old_arrived}
-                        fields = ["status", "arrived_at"]
+                        old_snapshot = {
+                            "status": old_status,
+                            "arrived_at": old_arrived,
+                            "arrival_lat": old_arrival_lat,
+                            "arrival_lon": old_arrival_lon,
+                        }
+                        fields = ["status", "arrived_at", "arrival_lat", "arrival_lon"]
                     old, new = changed_fields(old_snapshot, ticket, fields)
                     if old or new:
                         bump_ticket_version(ticket)
@@ -953,6 +970,8 @@ def arrive_ticket(ticket_id):
             return jsonify({"error": f"Outside geofence ({int(dist)} m > 500 m)"}), 403
         old_status = t.status
         old_arrived = t.arrived_at
+        old_arrival_lat = t.arrival_lat
+        old_arrival_lon = t.arrival_lon
         if old_status == "ASSIGNED":
             t.accepted_at = datetime.now(timezone.utc)
             ok, code, message = validate_status_transition(
@@ -967,9 +986,7 @@ def arrive_ticket(ticket_id):
             old_status = "ACCEPTED"
             t.status = "ACCEPTED"
         t.status = "IN_PROGRESS"
-        t.arrived_at = datetime.now(timezone.utc)
-        t.arrival_lat = float(lat)
-        t.arrival_lon = float(lon)
+        apply_in_progress_arrival(t, {"lat": lat, "lon": lon})
         ok, code, message = validate_status_transition(
             old_status,
             t.status,
@@ -980,9 +997,14 @@ def arrive_ticket(ticket_id):
         if not ok:
             return _transition_error(code, message)
         old, new = changed_fields(
-            {"status": old_status, "arrived_at": old_arrived},
+            {
+                "status": old_status,
+                "arrived_at": old_arrived,
+                "arrival_lat": old_arrival_lat,
+                "arrival_lon": old_arrival_lon,
+            },
             t,
-            ["status", "arrived_at"],
+            ["status", "arrived_at", "arrival_lat", "arrival_lon"],
         )
         if old or new:
             bump_ticket_version(t)

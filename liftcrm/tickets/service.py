@@ -191,6 +191,19 @@ def bump_ticket_version(ticket: Ticket):
     ticket.version = (ticket.version or 1) + 1
 
 
+def apply_in_progress_arrival(ticket: Ticket, payload=None):
+    if ticket.arrived_at is not None:
+        return False
+    lat = (payload or {}).get("lat")
+    lon = (payload or {}).get("lon")
+    if lat is not None:
+        ticket.arrival_lat = float(lat)
+    if lon is not None:
+        ticket.arrival_lon = float(lon)
+    ticket.arrived_at = datetime.now(timezone.utc)
+    return True
+
+
 def validate_status_transition(old_status, new_status, ticket, actor_role, payload):
     allowed_transitions = {
         "NEW": {"ASSIGNED", "CANCELLED"},
