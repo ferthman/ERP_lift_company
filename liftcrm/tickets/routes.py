@@ -7,9 +7,16 @@ from flask import Blueprint, jsonify, request, send_from_directory
 from flask_login import login_required, current_user
 from werkzeug.security import generate_password_hash
 
-from .service import auto_assign_master, haversine_m, send_report, validate_status_transition
+from .service import (
+    apply_in_progress_arrival,
+    auto_assign_master,
+    bump_ticket_version,
+    haversine_m,
+    send_report,
+    validate_status_transition,
+)
 from . import repository
-from ..db import SessionLocal, Master, Ticket, Attachment, User, AuditLog, Asset
+from ..db import SessionLocal, Master, Ticket, Attachment, User, AuditLog, Asset, AppliedEvent, TicketComment
 from ..assets.service import upsert_asset_from_ticket, rounded_coords
 from ..utils.security import role_required, generate_temp_password
 from ..utils.roles import normalize_role, is_technician
@@ -107,7 +114,7 @@ def delete_master(master_id):
         others = db.query(Master).filter(Master.id != master_id, Master.is_active == 1).all()
         if not others:
             return jsonify({"error": "Нельзя удалить единственного активного мастера"}), 400
-        open_statuses = ["NEW", "ASSIGNED", "IN_PROGRESS"]
+        open_statuses = ["NEW", "ASSIGNED", "ACCEPTED", "IN_PROGRESS", "WAITING"]
         open_tickets = (
             db.query(Ticket)
             .filter(
@@ -136,6 +143,7 @@ def delete_master(master_id):
             t.assigned_at = datetime.now(timezone.utc)
             if t.status in ["NEW", "ASSIGNED"]:
                 t.status = "ASSIGNED"
+            bump_ticket_version(t)
             counts[new_id] += 1
         for u in db.query(User).filter(User.master_id == master_id).all():
             db.delete(u)
@@ -158,7 +166,7 @@ def toggle_master_active(master_id):
             others = db.query(Master).filter(Master.id != master_id, Master.is_active == 1).all()
             if not others:
                 return jsonify({"error": "Нет других активных мастеров для перераспределения"}), 400
-            open_statuses = ["NEW", "ASSIGNED", "IN_PROGRESS"]
+            open_statuses = ["NEW", "ASSIGNED", "ACCEPTED", "IN_PROGRESS", "WAITING"]
             open_tickets = (
                 db.query(Ticket)
                 .filter(
@@ -187,6 +195,7 @@ def toggle_master_active(master_id):
                 t.assigned_at = datetime.now(timezone.utc)
                 if t.status in ["NEW", "ASSIGNED"]:
                     t.status = "ASSIGNED"
+                bump_ticket_version(t)
                 counts[new_id] += 1
             reassigned = len(open_tickets)
         db.commit()
@@ -234,6 +243,29 @@ def list_tickets():
                 if sla["sla_response_breached"] or sla["sla_completion_breached"]:
                     filtered.append(t)
             tickets = filtered
+        return jsonify([repository.serialize_ticket(t) for t in tickets])
+
+
+@bp.get("/api/me/tickets")
+@login_required
+@role_required("technician")
+def list_my_tickets():
+    include_closed = request.args.get("include_closed") in {"1", "true", "True"}
+    if not current_user.master_id:
+        return jsonify({"error": "Missing master profile for technician"}), 403
+    closed_statuses = {"COMPLETED", "CANCELLED"}
+    with SessionLocal() as db:
+        query = (
+            db.query(Ticket)
+            .filter(
+                Ticket.assigned_master_id == current_user.master_id,
+                Ticket.archived_at.is_(None),
+            )
+            .order_by(Ticket.created_at.desc())
+        )
+        if not include_closed:
+            query = query.filter(~Ticket.status.in_(closed_statuses))
+        tickets = query.all()
         return jsonify([repository.serialize_ticket(t) for t in tickets])
 
 
@@ -404,6 +436,7 @@ def update_ticket(ticket_id):
             ],
         )
         if old or new:
+            bump_ticket_version(t)
             log_audit(
                 db,
                 entity_type="ticket",
@@ -446,6 +479,7 @@ def reassign_ticket(ticket_id):
             )
             if not ok:
                 return _transition_error(code, message)
+        bump_ticket_version(t)
         log_audit(
             db,
             entity_type="ticket",
@@ -497,6 +531,7 @@ def cancel_ticket(ticket_id):
             ["status", "close_reason", "close_comment"],
         )
         if old or new:
+            bump_ticket_version(t)
             log_audit(
                 db,
                 entity_type="ticket",
@@ -524,7 +559,379 @@ def get_ticket(ticket_id):
                 return jsonify({"error": "Missing master profile for technician"}), 403
             if t.assigned_master_id != current_user.master_id:
                 return jsonify({"error": "Forbidden"}), 403
-        return jsonify(repository.serialize_ticket(t))
+        payload = repository.serialize_ticket(t)
+        payload["comments"] = [
+            {
+                "id": c.id,
+                "user_id": c.user_id,
+                "body": c.body,
+                "created_at": (to_utc(c.created_at).isoformat() if c.created_at else None),
+            }
+            for c in (t.comments or [])
+        ]
+        return jsonify(payload)
+
+
+@bp.post("/api/sync/events")
+@login_required
+@role_required("technician")
+def sync_events():
+    data = request.get_json() or {}
+    events = data.get("events") if isinstance(data, dict) else data
+    if not isinstance(events, list):
+        return jsonify({"error": {"code": "INVALID_PAYLOAD", "message": "events list is required"}}), 400
+    if not current_user.master_id:
+        return jsonify({"error": {"code": "MISSING_MASTER", "message": "Missing master profile"}}), 403
+    results = []
+    with SessionLocal() as db:
+        for event in events:
+            event_id = (event or {}).get("id")
+            event_type = (event or {}).get("type")
+            ticket_id = (event or {}).get("ticket_id")
+            expected_version = (event or {}).get("expected_version")
+            payload = (event or {}).get("payload") or {}
+            if not event_id or not event_type or not ticket_id or expected_version is None:
+                results.append(
+                    {
+                        "id": event_id,
+                        "ok": False,
+                        "error": {"code": "INVALID_EVENT", "message": "Missing required event fields"},
+                    }
+                )
+                continue
+            existing = db.query(AppliedEvent).filter(AppliedEvent.event_id == event_id).first()
+            if existing:
+                ticket = db.get(Ticket, ticket_id)
+                results.append(
+                    {
+                        "id": event_id,
+                        "ok": True,
+                        "status": "duplicate",
+                        "ticket": {
+                            "id": ticket.id if ticket else ticket_id,
+                            "status": ticket.status if ticket else None,
+                            "version": ticket.version if ticket else None,
+                        },
+                    }
+                )
+                continue
+            ticket = db.get(Ticket, ticket_id)
+            if not ticket:
+                results.append(
+                    {
+                        "id": event_id,
+                        "ok": False,
+                        "error": {"code": "NOT_FOUND", "message": "Ticket not found"},
+                    }
+                )
+                continue
+            if ticket.archived_at:
+                results.append(
+                    {
+                        "id": event_id,
+                        "ok": False,
+                        "error": {"code": "ARCHIVED", "message": "Ticket archived"},
+                    }
+                )
+                continue
+            if ticket.assigned_master_id != current_user.master_id:
+                results.append(
+                    {
+                        "id": event_id,
+                        "ok": False,
+                        "error": {"code": "FORBIDDEN", "message": "Ticket not assigned to you"},
+                    }
+                )
+                continue
+            if ticket.version != expected_version:
+                results.append(
+                    {
+                        "id": event_id,
+                        "ok": False,
+                        "error": {
+                            "code": "CONFLICT",
+                            "message": "Ticket version mismatch",
+                            "server_version": ticket.version,
+                            "server_status": ticket.status,
+                        },
+                    }
+                )
+                continue
+            if ticket.status in {"COMPLETED", "CANCELLED"} and event_type != "TICKET_ADD_COMMENT":
+                results.append(
+                    {
+                        "id": event_id,
+                        "ok": False,
+                        "error": {"code": "IMMUTABLE", "message": "Ticket is closed"},
+                    }
+                )
+                continue
+            try:
+                old_status = ticket.status
+                if event_type == "TICKET_ACCEPT":
+                    old_accept = ticket.accepted_at
+                    ticket.accepted_at = datetime.now(timezone.utc)
+                    ticket.status = "ACCEPTED"
+                    ok, code, message = validate_status_transition(
+                        old_status,
+                        ticket.status,
+                        ticket,
+                        current_user.role,
+                        payload,
+                    )
+                    if not ok:
+                        results.append({"id": event_id, "ok": False, "error": {"code": code, "message": message}})
+                        db.rollback()
+                        continue
+                    old, new = changed_fields(
+                        {"status": old_status, "accepted_at": old_accept},
+                        ticket,
+                        ["status", "accepted_at"],
+                    )
+                    if old or new:
+                        bump_ticket_version(ticket)
+                        log_audit(
+                            db,
+                            entity_type="ticket",
+                            entity_id=ticket.id,
+                            action="STATUS_CHANGE",
+                            actor_user_id=current_user.id,
+                            old=old,
+                            new=new,
+                        )
+                elif event_type == "TICKET_IN_PROGRESS":
+                    old_arrived = ticket.arrived_at
+                    old_arrival_lat = ticket.arrival_lat
+                    old_arrival_lon = ticket.arrival_lon
+                    ticket.status = "IN_PROGRESS"
+                    if old_status == "WAITING":
+                        old_waiting_at = ticket.waiting_at
+                        old_waiting_reason = ticket.waiting_reason
+                        ticket.waiting_at = None
+                        ticket.waiting_reason = None
+                        ok, code, message = validate_status_transition(
+                            old_status,
+                            "IN_PROGRESS",
+                            ticket,
+                            current_user.role,
+                            payload,
+                        )
+                    else:
+                        ok, code, message = validate_status_transition(
+                            old_status,
+                            ticket.status,
+                            ticket,
+                            current_user.role,
+                            payload,
+                        )
+                    if not ok:
+                        results.append({"id": event_id, "ok": False, "error": {"code": code, "message": message}})
+                        db.rollback()
+                        continue
+                    apply_in_progress_arrival(ticket, payload)
+                    if old_status == "WAITING":
+                        old_snapshot = {
+                            "status": old_status,
+                            "arrived_at": old_arrived,
+                            "arrival_lat": old_arrival_lat,
+                            "arrival_lon": old_arrival_lon,
+                            "waiting_at": old_waiting_at,
+                            "waiting_reason": old_waiting_reason,
+                        }
+                        fields = [
+                            "status",
+                            "arrived_at",
+                            "arrival_lat",
+                            "arrival_lon",
+                            "waiting_at",
+                            "waiting_reason",
+                        ]
+                    else:
+                        old_snapshot = {
+                            "status": old_status,
+                            "arrived_at": old_arrived,
+                            "arrival_lat": old_arrival_lat,
+                            "arrival_lon": old_arrival_lon,
+                        }
+                        fields = ["status", "arrived_at", "arrival_lat", "arrival_lon"]
+                    old, new = changed_fields(old_snapshot, ticket, fields)
+                    if old or new:
+                        bump_ticket_version(ticket)
+                        log_audit(
+                            db,
+                            entity_type="ticket",
+                            entity_id=ticket.id,
+                            action="STATUS_CHANGE",
+                            actor_user_id=current_user.id,
+                            old=old,
+                            new=new,
+                        )
+                elif event_type == "TICKET_WAITING":
+                    reason = (payload.get("waiting_reason") or "").strip()
+                    if not reason:
+                        results.append(
+                            {
+                                "id": event_id,
+                                "ok": False,
+                                "error": {"code": "VALIDATION_ERROR", "message": "waiting_reason is required"},
+                            }
+                        )
+                        db.rollback()
+                        continue
+                    old_waiting_at = ticket.waiting_at
+                    old_waiting_reason = ticket.waiting_reason
+                    ticket.waiting_reason = reason
+                    ticket.waiting_at = datetime.now(timezone.utc)
+                    ticket.status = "WAITING"
+                    ok, code, message = validate_status_transition(
+                        old_status,
+                        ticket.status,
+                        ticket,
+                        current_user.role,
+                        payload,
+                    )
+                    if not ok:
+                        results.append({"id": event_id, "ok": False, "error": {"code": code, "message": message}})
+                        db.rollback()
+                        continue
+                    old, new = changed_fields(
+                        {"status": old_status, "waiting_reason": old_waiting_reason, "waiting_at": old_waiting_at},
+                        ticket,
+                        ["status", "waiting_reason", "waiting_at"],
+                    )
+                    if old or new:
+                        bump_ticket_version(ticket)
+                        log_audit(
+                            db,
+                            entity_type="ticket",
+                            entity_id=ticket.id,
+                            action="STATUS_CHANGE",
+                            actor_user_id=current_user.id,
+                            old=old,
+                            new=new,
+                        )
+                elif event_type == "TICKET_DONE":
+                    close_reason = payload.get("close_reason")
+                    close_comment = payload.get("close_comment")
+                    if not close_reason:
+                        results.append(
+                            {
+                                "id": event_id,
+                                "ok": False,
+                                "error": {"code": "VALIDATION_ERROR", "message": "close_reason is required"},
+                            }
+                        )
+                        db.rollback()
+                        continue
+                    if close_reason not in CLOSE_REASONS:
+                        results.append(
+                            {
+                                "id": event_id,
+                                "ok": False,
+                                "error": {"code": "VALIDATION_ERROR", "message": "Invalid close_reason"},
+                            }
+                        )
+                        db.rollback()
+                        continue
+                    old_completed = ticket.completed_at
+                    old_reason = ticket.close_reason
+                    old_comment = ticket.close_comment
+                    ticket.status = "COMPLETED"
+                    ticket.completed_at = datetime.now(timezone.utc)
+                    ticket.close_reason = close_reason
+                    if close_comment is not None:
+                        ticket.close_comment = str(close_comment).strip()
+                    ok, code, message = validate_status_transition(
+                        old_status,
+                        ticket.status,
+                        ticket,
+                        current_user.role,
+                        payload,
+                    )
+                    if not ok:
+                        results.append({"id": event_id, "ok": False, "error": {"code": code, "message": message}})
+                        db.rollback()
+                        continue
+                    old, new = changed_fields(
+                        {
+                            "status": old_status,
+                            "completed_at": old_completed,
+                            "close_reason": old_reason,
+                            "close_comment": old_comment,
+                        },
+                        ticket,
+                        ["status", "completed_at", "close_reason", "close_comment"],
+                    )
+                    if old or new:
+                        bump_ticket_version(ticket)
+                        log_audit(
+                            db,
+                            entity_type="ticket",
+                            entity_id=ticket.id,
+                            action="STATUS_CHANGE",
+                            actor_user_id=current_user.id,
+                            old=old,
+                            new=new,
+                        )
+                elif event_type == "TICKET_ADD_COMMENT":
+                    body = (payload.get("body") or "").strip()
+                    if not body:
+                        results.append(
+                            {
+                                "id": event_id,
+                                "ok": False,
+                                "error": {"code": "VALIDATION_ERROR", "message": "Comment body is required"},
+                            }
+                        )
+                        db.rollback()
+                        continue
+                    comment = TicketComment(ticket_id=ticket.id, user_id=current_user.id, body=body)
+                    db.add(comment)
+                    db.flush()
+                    bump_ticket_version(ticket)
+                    log_audit(
+                        db,
+                        entity_type="ticket_comment",
+                        entity_id=comment.id,
+                        action="CREATE",
+                        actor_user_id=current_user.id,
+                        old={},
+                        new={"ticket_id": ticket.id, "body": body},
+                    )
+                else:
+                    results.append(
+                        {
+                            "id": event_id,
+                            "ok": False,
+                            "error": {"code": "INVALID_EVENT", "message": "Unknown event type"},
+                        }
+                    )
+                    db.rollback()
+                    continue
+                applied = AppliedEvent(
+                    event_id=event_id,
+                    user_id=current_user.id,
+                    ticket_id=ticket.id,
+                )
+                db.add(applied)
+                db.commit()
+                results.append(
+                    {
+                        "id": event_id,
+                        "ok": True,
+                        "ticket": {"id": ticket.id, "status": ticket.status, "version": ticket.version},
+                    }
+                )
+            except Exception as exc:
+                db.rollback()
+                results.append(
+                    {
+                        "id": event_id,
+                        "ok": False,
+                        "error": {"code": "SERVER_ERROR", "message": str(exc)},
+                    }
+                )
+    return jsonify({"results": results})
 
 
 @bp.post("/api/tickets/<int:ticket_id>/arrive")
@@ -563,10 +970,23 @@ def arrive_ticket(ticket_id):
             return jsonify({"error": f"Outside geofence ({int(dist)} m > 500 m)"}), 403
         old_status = t.status
         old_arrived = t.arrived_at
+        old_arrival_lat = t.arrival_lat
+        old_arrival_lon = t.arrival_lon
+        if old_status == "ASSIGNED":
+            t.accepted_at = datetime.now(timezone.utc)
+            ok, code, message = validate_status_transition(
+                old_status,
+                "ACCEPTED",
+                t,
+                current_user.role,
+                {},
+            )
+            if not ok:
+                return _transition_error(code, message)
+            old_status = "ACCEPTED"
+            t.status = "ACCEPTED"
         t.status = "IN_PROGRESS"
-        t.arrived_at = datetime.now(timezone.utc)
-        t.arrival_lat = float(lat)
-        t.arrival_lon = float(lon)
+        apply_in_progress_arrival(t, {"lat": lat, "lon": lon})
         ok, code, message = validate_status_transition(
             old_status,
             t.status,
@@ -577,11 +997,17 @@ def arrive_ticket(ticket_id):
         if not ok:
             return _transition_error(code, message)
         old, new = changed_fields(
-            {"status": old_status, "arrived_at": old_arrived},
+            {
+                "status": old_status,
+                "arrived_at": old_arrived,
+                "arrival_lat": old_arrival_lat,
+                "arrival_lon": old_arrival_lon,
+            },
             t,
-            ["status", "arrived_at"],
+            ["status", "arrived_at", "arrival_lat", "arrival_lon"],
         )
         if old or new:
+            bump_ticket_version(t)
             log_audit(
                 db,
                 entity_type="ticket",
@@ -637,6 +1063,17 @@ def complete_ticket(ticket_id):
         old_status = t.status
         old_completed = t.completed_at
         old_reason = t.close_reason
+        if old_status == "WAITING":
+            ok, code, message = validate_status_transition(
+                old_status,
+                "IN_PROGRESS",
+                t,
+                current_user.role,
+                {},
+            )
+            if not ok:
+                return _transition_error(code, message)
+            old_status = "IN_PROGRESS"
         t.status = "COMPLETED"
         t.completed_at = datetime.now(timezone.utc)
         t.completion_lat = float(lat)
@@ -657,6 +1094,7 @@ def complete_ticket(ticket_id):
             ["status", "completed_at", "close_reason"],
         )
         if old or new:
+            bump_ticket_version(t)
             log_audit(
                 db,
                 entity_type="ticket",
@@ -704,6 +1142,9 @@ def upload_file(ticket_id):
         a = Attachment(ticket_id=ticket_id, filename=unique, orig_name=fname)
         db.add(a)
         db.flush()
+        ticket = db.get(Ticket, ticket_id)
+        if ticket:
+            bump_ticket_version(ticket)
         log_audit(
             db,
             entity_type="attachment",
@@ -754,6 +1195,7 @@ def assign_ticket(ticket_id, master_id):
             )
             if not ok:
                 return _transition_error(code, message)
+        bump_ticket_version(t)
         log_audit(
             db,
             entity_type="ticket",
@@ -921,7 +1363,15 @@ def metrics():
         reason_counts = {r: 0 for r in CLOSE_REASONS}
         reason_counts["UNSPECIFIED"] = 0
         sla_breaches_by_reason = {k: {"response": 0, "completion": 0} for k in reason_counts}
-        counts = {"NEW": 0, "ASSIGNED": 0, "IN_PROGRESS": 0, "COMPLETED": 0, "CANCELLED": 0}
+        counts = {
+            "NEW": 0,
+            "ASSIGNED": 0,
+            "ACCEPTED": 0,
+            "IN_PROGRESS": 0,
+            "WAITING": 0,
+            "COMPLETED": 0,
+            "CANCELLED": 0,
+        }
         priority_counts = {p: 0 for p in PRIORITY_VALUES}
         for t, info in zip(tickets, sla_infos):
             counts[t.status] = counts.get(t.status, 0) + 1
@@ -946,7 +1396,15 @@ def metrics():
         masters_data = []
         for m in masters:
             mtickets = [t for t in tickets if t.assigned_master_id == m.id]
-            m_counts = {"NEW": 0, "ASSIGNED": 0, "IN_PROGRESS": 0, "COMPLETED": 0, "CANCELLED": 0}
+            m_counts = {
+                "NEW": 0,
+                "ASSIGNED": 0,
+                "ACCEPTED": 0,
+                "IN_PROGRESS": 0,
+                "WAITING": 0,
+                "COMPLETED": 0,
+                "CANCELLED": 0,
+            }
             mdurs = []
             for t in mtickets:
                 m_counts[t.status] = m_counts.get(t.status, 0) + 1

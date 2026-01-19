@@ -1,4 +1,5 @@
 import unittest
+import uuid
 
 from werkzeug.security import generate_password_hash
 
@@ -111,8 +112,8 @@ class AccessManagementTest(unittest.TestCase):
         self.login(config.ADMIN_USERNAME, config.ADMIN_PASSWORD)
         master_a = self.create_master("Мастер A2")
         master_b = self.create_master("Мастер B2")
-        access_a = self.assign_role(master_a["id"], username="tech_a")
-        access_b = self.assign_role(master_b["id"], username="tech_b")
+        access_a = self.assign_role(master_a["id"], username=f"tech_a_{uuid.uuid4().hex[:6]}")
+        access_b = self.assign_role(master_b["id"], username=f"tech_b_{uuid.uuid4().hex[:6]}")
         with SessionLocal() as db:
             t1 = Ticket(
                 object_name="Заявка A",
@@ -140,9 +141,10 @@ class AccessManagementTest(unittest.TestCase):
         data = res.get_json()
         self.assertTrue(all(str(item["assigned_master_id"]) == str(master_a["id"]) for item in data))
 
+        rogue_username = f"tech_missing_{uuid.uuid4().hex[:6]}"
         with SessionLocal() as db:
             rogue = User(
-                username="tech_missing",
+                username=rogue_username,
                 password_hash=generate_password_hash("secret"),
                 role=ROLE_TECHNICIAN,
                 master_id=None,
@@ -152,6 +154,6 @@ class AccessManagementTest(unittest.TestCase):
             db.commit()
 
         self.logout()
-        self.login("tech_missing", "secret")
+        self.login(rogue_username, "secret")
         res = self.client.get("/api/tickets")
         self.assertEqual(res.status_code, 403)

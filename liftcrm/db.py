@@ -47,6 +47,7 @@ class Ticket(Base):
     lon = Column(Float, nullable=False)
     description = Column(String, nullable=True)
     status = Column(String, default="NEW")
+    version = Column(Integer, default=1)
     priority = Column(String, default="MEDIUM")
     assigned_master_id = Column(Integer, ForeignKey("masters.id"), nullable=True)
     assigned_at = Column(DateTime, nullable=True)
@@ -56,7 +57,10 @@ class Ticket(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+    accepted_at = Column(DateTime, nullable=True)
     arrived_at = Column(DateTime, nullable=True)
+    waiting_at = Column(DateTime, nullable=True)
+    waiting_reason = Column(Text, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     archived_at = Column(DateTime, nullable=True)
     arrival_lat = Column(Float, nullable=True)
@@ -69,6 +73,7 @@ class Ticket(Base):
     custom_sla_completion_minutes = Column(Integer, nullable=True)
     assigned_master = relationship("Master", back_populates="tickets")
     attachments = relationship("Attachment", back_populates="ticket", cascade="all, delete-orphan")
+    comments = relationship("TicketComment", back_populates="ticket", cascade="all, delete-orphan")
     email = Column(String, nullable=True)
     asset_id = Column(Integer, ForeignKey("assets.id"), nullable=True)
     asset = relationship("Asset", back_populates="tickets")
@@ -103,6 +108,25 @@ class Attachment(Base):
     orig_name = Column(String, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     ticket = relationship("Ticket", back_populates="attachments")
+
+
+class TicketComment(Base):
+    __tablename__ = "ticket_comments"
+    id = Column(Integer, primary_key=True)
+    ticket_id = Column(Integer, ForeignKey("tickets.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    ticket = relationship("Ticket", back_populates="comments")
+
+
+class AppliedEvent(Base):
+    __tablename__ = "applied_events"
+    id = Column(Integer, primary_key=True)
+    event_id = Column(String, nullable=False, unique=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    ticket_id = Column(Integer, ForeignKey("tickets.id"), nullable=False)
+    applied_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class AuditLog(Base):
@@ -219,6 +243,18 @@ def ensure_migrations():
         if _table_exists(cur, "tickets"):
             cur.execute("PRAGMA table_info(tickets)")
             tcols = [r[1] for r in cur.fetchall()]
+            if "version" not in tcols:
+                cur.execute("ALTER TABLE tickets ADD COLUMN version INTEGER DEFAULT 1")
+                conn.commit()
+            if "accepted_at" not in tcols:
+                cur.execute("ALTER TABLE tickets ADD COLUMN accepted_at DATETIME")
+                conn.commit()
+            if "waiting_at" not in tcols:
+                cur.execute("ALTER TABLE tickets ADD COLUMN waiting_at DATETIME")
+                conn.commit()
+            if "waiting_reason" not in tcols:
+                cur.execute("ALTER TABLE tickets ADD COLUMN waiting_reason TEXT")
+                conn.commit()
             if "priority" not in tcols:
                 cur.execute("ALTER TABLE tickets ADD COLUMN priority TEXT DEFAULT 'MEDIUM'")
                 conn.commit()
@@ -251,6 +287,9 @@ def ensure_migrations():
                 conn.commit()
             if "asset_id" not in tcols:
                 cur.execute("ALTER TABLE tickets ADD COLUMN asset_id INTEGER")
+                conn.commit()
+            if "version" in tcols:
+                cur.execute("UPDATE tickets SET version = 1 WHERE version IS NULL")
                 conn.commit()
         if not _table_exists(cur, "assets"):
             cur.execute(
@@ -299,6 +338,36 @@ def ensure_migrations():
             cur.execute("CREATE INDEX IF NOT EXISTS idx_assets_address ON assets (address)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_assets_address_norm ON assets (address_norm)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_assets_lat_lon ON assets (lat, lon)")
+        if not _table_exists(cur, "ticket_comments"):
+            cur.execute(
+                """
+                CREATE TABLE ticket_comments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ticket_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    body TEXT NOT NULL,
+                    created_at DATETIME,
+                    FOREIGN KEY(ticket_id) REFERENCES tickets(id),
+                    FOREIGN KEY(user_id) REFERENCES users(id)
+                )
+                """
+            )
+            conn.commit()
+        if not _table_exists(cur, "applied_events"):
+            cur.execute(
+                """
+                CREATE TABLE applied_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id TEXT NOT NULL UNIQUE,
+                    user_id INTEGER NOT NULL,
+                    ticket_id INTEGER NOT NULL,
+                    applied_at DATETIME,
+                    FOREIGN KEY(user_id) REFERENCES users(id),
+                    FOREIGN KEY(ticket_id) REFERENCES tickets(id)
+                )
+                """
+            )
+            conn.commit()
         conn.close()
     except Exception as e:
         print("Migration check failed:", e)

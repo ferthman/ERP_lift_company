@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lift CRM — Мастер</title>
+  <link rel="manifest" href="/static/manifest.mobile.webmanifest">
+  <meta name="theme-color" content="#0f172a">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 text-slate-900 min-h-screen">
+  <main class="max-w-3xl mx-auto px-4 py-4 space-y-4">
+    <header class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h1 class="text-xl font-semibold">Приложение мастера</h1>
+        <p class="text-sm text-slate-600">Работа с заявками даже без интернета.</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <span id="sync-status" class="px-3 py-1 rounded-full text-xs font-semibold bg-slate-200 text-slate-700">—</span>
+        <button id="btn-sync" class="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm">Синхронизировать</button>
+        <button id="btn-reset" class="px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Сброс офлайн-данных</button>
+      </div>
+    </header>
+
+    {% if not_technician %}
+      <div class="bg-white rounded-2xl shadow p-4">
+        <p class="text-sm text-slate-700">Этот раздел доступен только для учетных записей мастера.</p>
+        <a href="/" class="inline-block mt-3 text-sm text-slate-900 underline">Перейти в основную панель</a>
+      </div>
+    {% else %}
+      <section class="bg-white rounded-2xl shadow p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <h2 class="font-semibold">Мои заявки</h2>
+          <span id="last-sync" class="text-xs text-slate-500">—</span>
+        </div>
+        <div id="tickets-list" class="space-y-2"></div>
+      </section>
+
+      <section class="bg-white rounded-2xl shadow p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <h2 class="font-semibold">Детали заявки</h2>
+          <span id="ticket-status" class="text-xs text-slate-500">—</span>
+        </div>
+        <div id="ticket-detail" class="text-sm text-slate-700">Выберите заявку в списке.</div>
+      </section>
+    {% endif %}
+  </main>
+
+  <script>
+    window.MOBILE_BOOTSTRAP = {
+      notTechnician: {{ 'true' if not_technician else 'false' }},
+      username: {{ (username or '')|tojson }}
+    };
+  </script>
+  <script src="/static/mobile.js"></script>
+</body>
+</html>

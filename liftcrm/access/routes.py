@@ -6,6 +6,7 @@ from werkzeug.security import generate_password_hash
 
 from ..db import SessionLocal, User, Master, Ticket
 from ..utils.security import role_required, generate_temp_password
+from ..tickets.service import bump_ticket_version
 from ..utils.roles import ALLOWED_ROLES, ROLE_TECHNICIAN, normalize_role, is_technician
 
 bp = Blueprint("access", __name__)
@@ -197,7 +198,7 @@ def replace_technician():
 
         reassigned_count = 0
         if reassign_open:
-            open_statuses = ["NEW", "ASSIGNED", "IN_PROGRESS"]
+            open_statuses = ["NEW", "ASSIGNED", "ACCEPTED", "IN_PROGRESS", "WAITING"]
             rows = (
                 db.query(Ticket)
                 .filter(
@@ -210,6 +211,7 @@ def replace_technician():
             for t in rows:
                 t.assigned_master_id = new_master_id
                 t.assigned_at = datetime.now(timezone.utc)
+                bump_ticket_version(t)
             reassigned_count = len(rows)
 
         disabled_users = 0

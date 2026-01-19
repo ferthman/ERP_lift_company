@@ -91,6 +91,17 @@ def create_app():
             cancel_reasons=[reason.value for reason in CancelReason],
         )
 
+    @app.get("/mobile")
+    def mobile():
+        from flask_login import current_user
+        from .utils.roles import is_technician
+
+        if not current_user.is_authenticated:
+            return redirect(url_for("index"))
+        if not is_technician(current_user.role):
+            return render_template("mobile.html", not_technician=True, username=current_user.username)
+        return render_template("mobile.html", not_technician=False, username=current_user.username)
+
     from .auth.routes import bp as auth_bp
     from .access.routes import bp as access_bp
     from .tickets.routes import bp as tickets_bp
