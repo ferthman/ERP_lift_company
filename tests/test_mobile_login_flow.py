@@ -74,6 +74,23 @@ class MobileLoginFlowTest(unittest.TestCase):
         self.assertIn("Приложение мастера", body)
         self.assertIn("Мои заявки", body)
 
+    def test_technician_admin_preference_allows_root(self):
+        self.login_api("tech_mobile_test", "techpass")
+        admin_res = self.client.get("/admin?ui=admin")
+        self.assertEqual(admin_res.status_code, 200)
+
+        res = self.client.get("/")
+        self.assertEqual(res.status_code, 200)
+        body = res.get_data(as_text=True)
+        self.assertIn("Lift CRM", body)
+
+    def test_admin_route_not_redirected(self):
+        self.login_api("tech_mobile_test", "techpass")
+        res = self.client.get("/admin")
+        self.assertEqual(res.status_code, 200)
+        body = res.get_data(as_text=True)
+        self.assertIn("Lift CRM", body)
+
     def test_non_technician_mobile_notice(self):
         self.login_api("dispatcher_mobile_test", "disppass")
         res = self.client.get("/mobile")
@@ -81,6 +98,13 @@ class MobileLoginFlowTest(unittest.TestCase):
         body = res.get_data(as_text=True)
         self.assertIn("Это приложение для мастеров", body)
         self.assertIn("Перейти в админку", body)
+
+    def test_non_technician_root_unchanged(self):
+        self.login_api("dispatcher_mobile_test", "disppass")
+        res = self.client.get("/")
+        self.assertEqual(res.status_code, 200)
+        body = res.get_data(as_text=True)
+        self.assertIn("Lift CRM", body)
 
     def test_login_next_redirect_is_safe(self):
         res = self.client.post(

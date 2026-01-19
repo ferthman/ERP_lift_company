@@ -32,6 +32,7 @@ Admin/dispatcher UI must continue to work as before.
 - [x] (2026-01-19 12:55Z) Update README with clear technician PWA usage and troubleshooting.
 - [x] (2025-02-14 12:20Z) Add `/mobile` login gate + non-technician page, safe post-login redirect, technician auto-redirect from `/`, and tests for the flow.
 - [x] (2025-02-14 13:05Z) Harden safe redirect normalization with a strict allowlist and add open-redirect regression tests.
+- [x] (2025-02-14 13:30Z) Add admin escape hatch and UI preference cookie to avoid technician redirect traps.
 
 ## Surprises & Discoveries
 
@@ -74,6 +75,9 @@ Record every decision made while working on this plan.
   Date/Author: 2025-02-14 / codex
 - Decision: Normalize and allowlist post-login redirect targets to only `/` and `/mobile`.
   Rationale: Prevent encoded/backslash open-redirect bypasses while keeping mobile UX intact.
+  Date/Author: 2025-02-14 / codex
+- Decision: Add `/admin` route with an optional `ui` preference cookie to let technicians reach the desktop UI without disabling the default `/` redirect.
+  Rationale: Preserve default mobile-first routing while providing a reliable escape hatch.
   Date/Author: 2025-02-14 / codex
 
 (Keep adding entries as decisions occur.)
