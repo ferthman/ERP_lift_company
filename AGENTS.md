@@ -21,15 +21,7 @@ If a task is complex, do not start coding immediately. Create or update an ExecP
 
 - The ExecPlan is the source of truth for the work.
 - If there is conflict between an implementation idea and the ExecPlan, update the ExecPlan first, record the decision, then proceed.
-- The ExecPlan must remain self-contained and must not rely on external links or prior conversations.
 
-## Required ExecPlan file and format
-
-- Store execution plans in a clear path from repo root. Prefer one of:
-  - `docs/PLANS.md` (single plan), or
-  - `docs/execplans/<short-name>.md` (multiple plans).
-- Each ExecPlan must follow the repository’s planning rules described in `PLANS.md` (from repo root) if present.
-- If `PLANS.md` exists, the agent must read it fully before writing or implementing any ExecPlan.
 
 ## Non-negotiable requirements for agents
 
