@@ -110,6 +110,7 @@ def create_app():
             render_template(
                 "index.html",
                 cancel_reasons=[reason.value for reason in CancelReason],
+                user_role=getattr(current_user, "role", None),
             )
         )
         return _maybe_set_ui_preference(response)
@@ -117,11 +118,13 @@ def create_app():
     @app.get("/admin")
     def admin():
         from .tickets.service import CancelReason
+        from flask_login import current_user
 
         response = make_response(
             render_template(
                 "index.html",
                 cancel_reasons=[reason.value for reason in CancelReason],
+                user_role=getattr(current_user, "role", None),
             )
         )
         return _maybe_set_ui_preference(response)

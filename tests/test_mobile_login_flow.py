@@ -90,6 +90,8 @@ class MobileLoginFlowTest(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         body = res.get_data(as_text=True)
         self.assertIn("Lift CRM", body)
+        self.assertIn("Вы вошли как мастер. В админке доступ ограничен.", body)
+        self.assertIn("/mobile?ui=mobile", body)
 
     def test_non_technician_mobile_notice(self):
         self.login_api("dispatcher_mobile_test", "disppass")
@@ -105,6 +107,7 @@ class MobileLoginFlowTest(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         body = res.get_data(as_text=True)
         self.assertIn("Lift CRM", body)
+        self.assertNotIn("Вы вошли как мастер. В админке доступ ограничен.", body)
 
     def test_login_next_redirect_is_safe(self):
         res = self.client.post(

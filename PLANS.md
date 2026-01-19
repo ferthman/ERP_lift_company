@@ -33,6 +33,7 @@ Admin/dispatcher UI must continue to work as before.
 - [x] (2025-02-14 12:20Z) Add `/mobile` login gate + non-technician page, safe post-login redirect, technician auto-redirect from `/`, and tests for the flow.
 - [x] (2025-02-14 13:05Z) Harden safe redirect normalization with a strict allowlist and add open-redirect regression tests.
 - [x] (2025-02-14 13:30Z) Add admin escape hatch and UI preference cookie to avoid technician redirect traps.
+- [x] (2025-02-14 14:05Z) Add technician desktop banner on /admin with a link back to /mobile.
 
 ## Surprises & Discoveries
 
@@ -78,6 +79,9 @@ Record every decision made while working on this plan.
   Date/Author: 2025-02-14 / codex
 - Decision: Add `/admin` route with an optional `ui` preference cookie to let technicians reach the desktop UI without disabling the default `/` redirect.
   Rationale: Preserve default mobile-first routing while providing a reliable escape hatch.
+  Date/Author: 2025-02-14 / codex
+- Decision: Show a technician-only banner on `/admin` to clarify limited desktop access and offer a one-click return to `/mobile`.
+  Rationale: Reduce confusion when technicians open the desktop UI for navigation/testing.
   Date/Author: 2025-02-14 / codex
 
 (Keep adding entries as decisions occur.)

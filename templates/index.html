@@ -67,6 +67,16 @@
         <button id="btn-logout" class="hidden px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Выйти</button>
       </div>
     </div>
+    {% if user_role == 'technician' %}
+      <div class="border-t border-slate-200 bg-amber-50">
+        <div class="max-w-6xl mx-auto px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p class="text-sm text-amber-900">Вы вошли как мастер. В админке доступ ограничен.</p>
+          <a href="/mobile?ui=mobile" class="inline-flex items-center justify-center px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold">
+            Вернуться в приложение мастера
+          </a>
+        </div>
+      </div>
+    {% endif %}
   </header>
 
   <main class="max-w-6xl mx-auto p-4">
