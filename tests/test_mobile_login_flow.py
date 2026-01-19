@@ -95,8 +95,15 @@ class MobileLoginFlowTest(unittest.TestCase):
             data={
                 "username": "tech_mobile_test",
                 "password": "techpass",
-                "next": "https://evil.com",
+                "next": "/%2F%2Fevil.com",
             },
+        )
+        self.assertEqual(res.status_code, 302)
+        self.assertEqual(res.headers.get("Location"), "/")
+
+        res = self.client.post(
+            "/login",
+            data={"username": "tech_mobile_test", "password": "techpass", "next": "/\\evil.com"},
         )
         self.assertEqual(res.status_code, 302)
         self.assertEqual(res.headers.get("Location"), "/")
@@ -107,3 +114,17 @@ class MobileLoginFlowTest(unittest.TestCase):
         )
         self.assertEqual(res.status_code, 302)
         self.assertEqual(res.headers.get("Location"), "/")
+
+        res = self.client.post(
+            "/login",
+            data={"username": "tech_mobile_test", "password": "techpass", "next": "https://evil.com"},
+        )
+        self.assertEqual(res.status_code, 302)
+        self.assertEqual(res.headers.get("Location"), "/")
+
+        res = self.client.post(
+            "/login",
+            data={"username": "tech_mobile_test", "password": "techpass", "next": " /mobile "},
+        )
+        self.assertEqual(res.status_code, 302)
+        self.assertEqual(res.headers.get("Location"), "/mobile")

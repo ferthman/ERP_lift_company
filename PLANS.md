@@ -31,6 +31,7 @@ Admin/dispatcher UI must continue to work as before.
 - [ ] Manual verification: prove offline works using browser offline mode and a real phone install.
 - [x] (2026-01-19 12:55Z) Update README with clear technician PWA usage and troubleshooting.
 - [x] (2025-02-14 12:20Z) Add `/mobile` login gate + non-technician page, safe post-login redirect, technician auto-redirect from `/`, and tests for the flow.
+- [x] (2025-02-14 13:05Z) Harden safe redirect normalization with a strict allowlist and add open-redirect regression tests.
 
 ## Surprises & Discoveries
 
@@ -70,6 +71,9 @@ Record every decision made while working on this plan.
   Date/Author: 2026-01-19 / codex
 - Decision: Implemented a small HTML `/login` handler with a strict `next` allowlist (paths starting with `/`) for mobile login redirects.
   Rationale: Meets `/mobile` UX without opening open-redirect vulnerabilities.
+  Date/Author: 2025-02-14 / codex
+- Decision: Normalize and allowlist post-login redirect targets to only `/` and `/mobile`.
+  Rationale: Prevent encoded/backslash open-redirect bypasses while keeping mobile UX intact.
   Date/Author: 2025-02-14 / codex
 
 (Keep adding entries as decisions occur.)

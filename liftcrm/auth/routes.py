@@ -1,5 +1,6 @@
 import logging
-from urllib.parse import urlparse
+import re
+from urllib.parse import unquote, urlparse
 
 from flask import Blueprint, jsonify, request, redirect, render_template
 from flask_login import login_user, login_required, logout_user, current_user
@@ -14,15 +15,30 @@ bp = Blueprint("auth", __name__)
 logger = logging.getLogger("liftcrm.auth")
 
 
-def is_safe_next(next_url):
+_ALLOWED_NEXT_PATHS = {"/", "/mobile"}
+
+
+def normalize_next(next_url):
     if not next_url:
-        return False
-    if not next_url.startswith("/") or next_url.startswith("//"):
-        return False
-    parsed = urlparse(next_url)
+        return ""
+    value = unquote(str(next_url)).strip()
+    value = value.replace("\\", "/")
+    value = re.sub(r"/+", "/", value)
+    return value
+
+
+def safe_next_target(next_url):
+    candidate = normalize_next(next_url)
+    if not candidate or not candidate.startswith("/") or candidate.startswith("//"):
+        return "/"
+    parsed = urlparse(candidate)
     if parsed.scheme or parsed.netloc:
-        return False
-    return True
+        return "/"
+    if ":" in candidate.split("/", 1)[0]:
+        return "/"
+    if candidate not in _ALLOWED_NEXT_PATHS:
+        return "/"
+    return candidate
 
 
 @login_manager.user_loader
@@ -94,8 +110,7 @@ def login_form():
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "")
     next_url = request.form.get("next") or request.form.get("redirect_to") or "/"
-    if not is_safe_next(next_url):
-        next_url = "/"
+    next_url = safe_next_target(next_url)
     ip = get_client_ip(request)
     rate_key = f"login:{ip}:{username}"
     allowed, info = check_rate_limit(rate_key, limit=10, window_seconds=600)
