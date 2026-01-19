@@ -20,23 +20,23 @@ Admin/dispatcher UI must continue to work as before.
 
 ## Progress
 
-- [ ] (2026-01-19 00:00Z) Read repository structure and confirm where routes, models, and templates live; update “Context and Orientation” with exact paths found.
-- [ ] (2026-01-19 00:00Z) Confirm current ticket status values and technician-related endpoints; list existing routes and decide what to add.
-- [ ] Add backend support for technician workflow fields (Accept/Waiting) and ticket versioning.
-- [ ] Add technician-scoped endpoints: `/api/me/tickets` and mobile-safe `/api/tickets/<id>` details response.
-- [ ] Add idempotent batch sync endpoint: `POST /api/sync/events` with conflict handling.
-- [ ] Add `/mobile` UI (template + JS) with offline cache, outbox, and sync engine.
-- [ ] Add offline photo queue and upload-on-reconnect flow.
-- [ ] Add automated tests for permissions, idempotency, conflicts, and status transitions.
+- [x] (2026-01-19 09:10Z) Read repository structure and confirm where routes, models, and templates live; update “Context and Orientation” with exact paths found.
+- [x] (2026-01-19 09:15Z) Confirm current ticket status values and technician-related endpoints; list existing routes and decide what to add.
+- [x] (2026-01-19 11:05Z) Add backend support for technician workflow fields (Accept/Waiting) and ticket versioning.
+- [x] (2026-01-19 11:10Z) Add technician-scoped endpoints: `/api/me/tickets` and mobile-safe `/api/tickets/<id>` details response.
+- [x] (2026-01-19 11:30Z) Add idempotent batch sync endpoint: `POST /api/sync/events` with conflict handling.
+- [x] (2026-01-19 12:05Z) Add `/mobile` UI (template + JS) with offline cache, outbox, and sync engine.
+- [x] (2026-01-19 12:10Z) Add offline photo queue and upload-on-reconnect flow.
+- [x] (2026-01-19 12:45Z) Add automated tests for permissions, idempotency, conflicts, and status transitions.
 - [ ] Manual verification: prove offline works using browser offline mode and a real phone install.
-- [ ] Update README with clear technician PWA usage and troubleshooting.
+- [x] (2026-01-19 12:55Z) Update README with clear technician PWA usage and troubleshooting.
 
 ## Surprises & Discoveries
 
 Document unexpected behaviors, constraints, or bugs discovered during implementation, with short evidence.
 
-- Observation: (fill during work)
-  Evidence: (fill during work)
+- Observation: No blocking surprises during implementation; backend migrations required a one-time run before ad-hoc DB scripting.
+  Evidence: Local scripting failed until `ensure_migrations()` executed.
 
 ## Decision Log
 
@@ -50,24 +50,44 @@ Record every decision made while working on this plan.
   Rationale: Keeps scope small; existing schema already assigns a master to a ticket.
   Date/Author: 2026-01-19 / (fill)
 
+- Decision: Sync endpoint returns `FORBIDDEN` when a technician attempts to update a ticket that is no longer assigned to their master.
+  Rationale: Makes reassignment explicit and avoids silent conflicts.
+  Date/Author: 2026-01-19 / codex
+
+- Decision: Allow `TICKET_ADD_COMMENT` events on closed tickets, but block status changes once a ticket is `COMPLETED` or `CANCELLED`.
+  Rationale: Technicians can still append notes without altering final state.
+  Date/Author: 2026-01-19 / codex
+
+- Decision: Keep geofence enforcement only on the existing `/api/tickets/<id>/arrive` and `/complete` endpoints; sync events do not enforce geofence.
+  Rationale: Offline sync cannot reliably depend on GPS and should prioritize data consistency over location checks.
+  Date/Author: 2026-01-19 / codex
+
+- Decision: When a technician uses the legacy `/arrive` endpoint from `ASSIGNED`, the backend auto-records `accepted_at` and transitions through `ACCEPTED` for backward compatibility.
+  Rationale: Avoid breaking existing technician workflows while introducing the ACCEPTED state.
+  Date/Author: 2026-01-19 / codex
+
 (Keep adding entries as decisions occur.)
 
 ## Outcomes & Retrospective
 
 At major milestones or completion, summarize what was achieved, what remains, and lessons learned. Compare outcomes to the “Purpose / Big Picture” section.
 
+- Outcome (2026-01-19): Delivered backend versioning + sync endpoint, mobile PWA UI with offline cache/outbox/photo queue, and added automated sync tests + README docs. Manual offline verification on a real device remains.
+
 ## Context and Orientation
 
-This repo is a Flask application with SQLAlchemy models and server-rendered templates. Typical layout to confirm:
+This repo is a Flask application with SQLAlchemy models and server-rendered templates. Confirmed locations:
 
-- `app.py` starts the app.
+- `app.py` starts the Flask app.
 - `liftcrm/` contains the backend package:
-  - `liftcrm/db.py` contains SQLAlchemy models and any migration/initialization helpers.
-  - `liftcrm/auth/routes.py` contains login/logout and current-user endpoints (often `/api/me`).
-  - `liftcrm/tickets/routes.py` contains ticket endpoints and ticket actions.
-  - There may be `liftcrm/tickets/service.py` for business logic; use it to centralize status changes.
-- `templates/` contains HTML templates. The existing main UI is likely `templates/index.html`.
-- `static/` contains JS, CSS, icons, and existing PWA files like `manifest.webmanifest` and `sw.js`.
+  - `liftcrm/db.py` defines SQLAlchemy models (Ticket, User, Master, Attachment, Asset) and a sqlite migration helper `ensure_migrations()`.
+  - `liftcrm/auth/routes.py` provides `/api/login`, `/api/logout`, and `/api/me`.
+  - `liftcrm/tickets/routes.py` contains ticket CRUD/status endpoints and attachment upload (`/api/tickets/<id>/upload`), plus `/uploads/<filename>`.
+  - `liftcrm/tickets/service.py` contains status transition validation (`validate_status_transition`) and other ticket logic.
+- `templates/index.html` is the admin/dispatcher UI.
+- `static/` currently holds PWA assets (`manifest.webmanifest`, `sw.js`, icons).
+
+Current ticket status values: `NEW`, `ASSIGNED`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`. Existing endpoints for technician scope are limited to `/api/tickets` filtering; there is no `/api/me/tickets` yet.
 
 Key terms used in this plan (plain language):
 
@@ -373,6 +393,8 @@ Examples to record during work (indent them as plain text):
   - A log line indicating an event was already applied.
   - A screenshot description: “offline refresh shows cached tickets”.
 
+  - Tests: `pytest` (37 passed).
+
 ## Interfaces and Dependencies
 
 Be prescriptive:
@@ -398,3 +420,6 @@ When you edit this plan during implementation, append a short note here:
 - Change: ...
   Reason: ...
   Date/Author: ...
+- Change: Updated progress, decisions, outcomes, and notes for technician PWA backend + mobile implementation.
+  Reason: Track completed milestones and decisions made during implementation.
+  Date/Author: 2026-01-19 / codex

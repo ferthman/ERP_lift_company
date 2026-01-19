@@ -182,11 +182,13 @@
     <!-- Operations / Stage Control -->
     <section id="view-ops" class="hidden space-y-4">
       <h2 class="text-lg font-semibold">Контроль этапов</h2>
-      <p class="text-sm text-slate-600">Статусы: <b>NEW → ASSIGNED → IN_PROGRESS → COMPLETED</b> (или CANCELLED).</p>
-      <div id="kanban" class="grid grid-cols-1 md:grid-cols-5 gap-3">
+      <p class="text-sm text-slate-600">Статусы: <b>NEW → ASSIGNED → ACCEPTED → IN_PROGRESS → WAITING → COMPLETED</b> (или CANCELLED).</p>
+      <div id="kanban" class="grid grid-cols-1 md:grid-cols-7 gap-3">
         <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">NEW</h3><div id="col-NEW" class="space-y-2 min-h-[120px]"></div></div>
         <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">ASSIGNED</h3><div id="col-ASSIGNED" class="space-y-2 min-h-[120px]"></div></div>
+        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">ACCEPTED</h3><div id="col-ACCEPTED" class="space-y-2 min-h-[120px]"></div></div>
         <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">IN_PROGRESS</h3><div id="col-IN_PROGRESS" class="space-y-2 min-h-[120px]"></div></div>
+        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">WAITING</h3><div id="col-WAITING" class="space-y-2 min-h-[120px]"></div></div>
         <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">COMPLETED</h3><div id="col-COMPLETED" class="space-y-2 min-h-[120px]"></div></div>
         <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">CANCELLED</h3><div id="col-CANCELLED" class="space-y-2 min-h-[120px]"></div></div>
       </div>
@@ -1464,7 +1466,7 @@
     // Kanban
     async function loadKanban(){
       const res=await fetch('/api/tickets',{cache:'no-store'}); if(!res.ok) return; const data=await res.json();
-      const cols=['NEW','ASSIGNED','IN_PROGRESS','COMPLETED','CANCELLED']; for(const c of cols) document.getElementById('col-'+c).innerHTML='';
+      const cols=['NEW','ASSIGNED','ACCEPTED','IN_PROGRESS','WAITING','COMPLETED','CANCELLED']; for(const c of cols) document.getElementById('col-'+c).innerHTML='';
       for(const t of data){
         const slaInfo=renderSla(t,false);
         const slaBlock = slaInfo ? `<div class="text-[11px] mt-1">${slaInfo}</div>` : '';
@@ -1826,7 +1828,7 @@
     if(btnUsersRefresh){ btnUsersRefresh.onclick = () => loadUsers(); }
     if(btnMastersRefresh){ btnMastersRefresh.onclick = () => loadAccessMasters(); }
 
-    function statusProgress(s){ if(s==='NEW') return 10; if(s==='ASSIGNED') return 35; if(s==='IN_PROGRESS') return 70; if(s==='COMPLETED') return 100; if(s==='CANCELLED') return 100; return 0; }
+    function statusProgress(s){ if(s==='NEW') return 10; if(s==='ASSIGNED') return 25; if(s==='ACCEPTED') return 40; if(s==='IN_PROGRESS') return 65; if(s==='WAITING') return 75; if(s==='COMPLETED') return 100; if(s==='CANCELLED') return 100; return 0; }
     function fmtDuration(ms){ const sec=Math.floor(ms/1000); const d=Math.floor(sec/86400); const h=Math.floor((sec%86400)/3600); const m=Math.floor((sec%3600)/60); const s=sec%60; let out=[];
       if(d) out.push(`${d}д`); if(h) out.push(`${h}ч`); if(m) out.push(`${m}м`); if(!d&&!h&&!m) out.push(`${s}с`); return out.join(' ');
     }
@@ -1998,7 +2000,7 @@
       const res = await fetch('/api/tickets?include_archived=0', { cache: 'no-store' });
       if(!res.ok) return;
       const data = await res.json();
-      const openStatuses = new Set(['NEW','ASSIGNED','IN_PROGRESS']);
+      const openStatuses = new Set(['NEW','ASSIGNED','ACCEPTED','IN_PROGRESS','WAITING']);
       data.filter(t => openStatuses.has(t.status) && Number.isFinite(t.lat) && Number.isFinite(t.lon))
         .forEach(t => {
           const marker = L.circleMarker([t.lat, t.lon], {
@@ -2220,7 +2222,7 @@
       const compPct = (typeof m.completion_sla_breach_percent==='number') ? m.completion_sla_breach_percent.toFixed(1) : '0.0';
       const priorities = m.tickets_by_priority || {};
       const priorityLine = PRIORITY_ORDER.map(p=>`${PRIORITY_LABELS[p]}: ${priorities[p]||0}`).join(' • ');
-      document.getElementById('metrics-overall').innerHTML = `Всего: ${ov.total||m.total_tickets||0}<br>NEW: ${ov.counts?.NEW||0} • ASSIGNED: ${ov.counts?.ASSIGNED||0} • IN_PROGRESS: ${ov.counts?.IN_PROGRESS||0} • COMPLETED: ${ov.counts?.COMPLETED||0} • CANCELLED: ${ov.counts?.CANCELLED||0}<br>Среднее закрытие: ${fmtSec(ov.avg_close_sec)} • Медиана: ${fmtSec(ov.median_close_sec)}<br>SLA ответ: ${respPct}% (${m.response_sla_breached_count||0}/${m.total_tickets||0}) • SLA завершение: ${compPct}% (${m.completion_sla_breached_count||0}/${m.total_tickets||0})<br>Приоритеты: ${priorityLine}`;
+      document.getElementById('metrics-overall').innerHTML = `Всего: ${ov.total||m.total_tickets||0}<br>NEW: ${ov.counts?.NEW||0} • ASSIGNED: ${ov.counts?.ASSIGNED||0} • ACCEPTED: ${ov.counts?.ACCEPTED||0} • IN_PROGRESS: ${ov.counts?.IN_PROGRESS||0} • WAITING: ${ov.counts?.WAITING||0} • COMPLETED: ${ov.counts?.COMPLETED||0} • CANCELLED: ${ov.counts?.CANCELLED||0}<br>Среднее закрытие: ${fmtSec(ov.avg_close_sec)} • Медиана: ${fmtSec(ov.median_close_sec)}<br>SLA ответ: ${respPct}% (${m.response_sla_breached_count||0}/${m.total_tickets||0}) • SLA завершение: ${compPct}% (${m.completion_sla_breached_count||0}/${m.total_tickets||0})<br>Приоритеты: ${priorityLine}`;
       const reasons = m.tickets_by_close_reason || {};
       const reasonEntries = Object.entries(reasons).filter(([,v])=>v>0);
       const reasonsHtml = reasonEntries.length ? `<ul class="space-y-1">${reasonEntries.map(([k,v])=>`<li>${formatCloseReason(k)} — ${v}</li>`).join('')}</ul>` : 'Нет завершённых заявок с причиной.';

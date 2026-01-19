@@ -24,7 +24,7 @@ def haversine_m(lat1, lon1, lat2, lon2):
 
 
 def auto_assign_master(db):
-    open_statuses = ["NEW", "ASSIGNED", "IN_PROGRESS"]
+    open_statuses = ["NEW", "ASSIGNED", "ACCEPTED", "IN_PROGRESS", "WAITING"]
     active = (
         db.query(Master)
         .join(User, User.master_id == Master.id)
@@ -187,12 +187,18 @@ def _to_utc(dt):
     return to_utc(dt)
 
 
+def bump_ticket_version(ticket: Ticket):
+    ticket.version = (ticket.version or 1) + 1
+
+
 def validate_status_transition(old_status, new_status, ticket, actor_role, payload):
     allowed_transitions = {
         "NEW": {"ASSIGNED", "CANCELLED"},
-        "ASSIGNED": {"IN_PROGRESS", "CANCELLED"},
-        "IN_PROGRESS": {"COMPLETED", "CANCELLED"},
-        "COMPLETED": {"CANCELLED"},
+        "ASSIGNED": {"ACCEPTED", "CANCELLED"},
+        "ACCEPTED": {"IN_PROGRESS", "CANCELLED"},
+        "IN_PROGRESS": {"WAITING", "COMPLETED", "CANCELLED"},
+        "WAITING": {"IN_PROGRESS", "CANCELLED"},
+        "COMPLETED": set(),
         "CANCELLED": set(),
     }
     if old_status == new_status:
@@ -216,6 +222,8 @@ def _transition_hint(old_status, new_status):
         ("NEW", "IN_PROGRESS"): "Must go through ASSIGNED.",
         ("NEW", "COMPLETED"): "Must go through ASSIGNED/IN_PROGRESS.",
         ("ASSIGNED", "COMPLETED"): "Must go through IN_PROGRESS.",
+        ("ASSIGNED", "IN_PROGRESS"): "Must go through ACCEPTED.",
+        ("ACCEPTED", "COMPLETED"): "Must go through IN_PROGRESS.",
     }
     return hints.get((old_status, new_status))
 
@@ -233,6 +241,33 @@ def _validate_status_invariants(new_status, ticket, actor_role, payload):
             "INVALID_STATUS_TRANSITION",
             "Cannot set status IN_PROGRESS without assigned_master_id.",
         )
+    if new_status == "ACCEPTED":
+        if not ticket.accepted_at:
+            return (
+                False,
+                "INVALID_STATUS_TRANSITION",
+                "Cannot set status ACCEPTED without accepted_at.",
+            )
+        if not ticket.assigned_master_id:
+            return (
+                False,
+                "INVALID_STATUS_TRANSITION",
+                "Cannot set status ACCEPTED without assigned_master_id.",
+            )
+    if new_status == "WAITING":
+        if not ticket.waiting_at:
+            return (
+                False,
+                "INVALID_STATUS_TRANSITION",
+                "Cannot set status WAITING without waiting_at.",
+            )
+        reason = (ticket.waiting_reason or "").strip()
+        if not reason:
+            return (
+                False,
+                "INVALID_STATUS_TRANSITION",
+                "Cannot set status WAITING without waiting_reason.",
+            )
     if new_status == "COMPLETED":
         if not ticket.completed_at:
             return (
