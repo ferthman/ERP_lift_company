@@ -1,6 +1,7 @@
 import logging
+from urllib.parse import urlparse
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, redirect, render_template
 from flask_login import login_user, login_required, logout_user, current_user
 from werkzeug.security import check_password_hash
 
@@ -11,6 +12,17 @@ from ..utils.rate_limit import check_rate_limit, get_client_ip
 
 bp = Blueprint("auth", __name__)
 logger = logging.getLogger("liftcrm.auth")
+
+
+def is_safe_next(next_url):
+    if not next_url:
+        return False
+    if not next_url.startswith("/") or next_url.startswith("//"):
+        return False
+    parsed = urlparse(next_url)
+    if parsed.scheme or parsed.netloc:
+        return False
+    return True
 
 
 @login_manager.user_loader
@@ -75,6 +87,66 @@ def api_login():
             "is_active": bool(getattr(user, "is_active", 1)),
         }
     )
+
+
+@bp.post("/login")
+def login_form():
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+    next_url = request.form.get("next") or request.form.get("redirect_to") or "/"
+    if not is_safe_next(next_url):
+        next_url = "/"
+    ip = get_client_ip(request)
+    rate_key = f"login:{ip}:{username}"
+    allowed, info = check_rate_limit(rate_key, limit=10, window_seconds=600)
+    if not allowed:
+        logger.warning(
+            "login_rate_limited",
+            extra={"username": username, "ip": ip, "reset_in_seconds": info["reset_in_seconds"]},
+        )
+        response = render_template(
+            "mobile_login.html",
+            next_url=next_url,
+            error="Слишком много попыток входа. Попробуйте позже.",
+        )
+        return response, 429
+    with SessionLocal() as db:
+        user = db.query(User).filter_by(username=username).first()
+        if not user or not check_password_hash(user.password_hash, password):
+            logger.info(
+                "login_attempt",
+                extra={"username": username, "ip": ip, "success": False, "remaining": info["remaining"]},
+            )
+            return render_template(
+                "mobile_login.html",
+                next_url=next_url,
+                error="Неверный логин или пароль",
+            ), 400
+        if not getattr(user, "is_active", 1):
+            logger.info(
+                "login_attempt",
+                extra={
+                    "username": username,
+                    "ip": ip,
+                    "success": False,
+                    "remaining": info["remaining"],
+                    "disabled": True,
+                },
+            )
+            return render_template(
+                "mobile_login.html",
+                next_url=next_url,
+                error="Аккаунт отключен",
+            ), 403
+        if user.role != normalize_role(user.role):
+            user.role = normalize_role(user.role)
+            db.commit()
+    login_user(user)
+    logger.info(
+        "login_attempt",
+        extra={"username": username, "ip": ip, "success": True, "remaining": info["remaining"]},
+    )
+    return redirect(next_url)
 
 
 @bp.post("/api/logout")

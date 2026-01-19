@@ -85,6 +85,11 @@ def create_app():
     @app.get("/")
     def index():
         from .tickets.service import CancelReason
+        from flask_login import current_user
+        from .utils.roles import is_technician
+
+        if current_user.is_authenticated and is_technician(current_user.role):
+            return redirect("/mobile")
 
         return render_template(
             "index.html",
@@ -97,10 +102,10 @@ def create_app():
         from .utils.roles import is_technician
 
         if not current_user.is_authenticated:
-            return redirect(url_for("index"))
+            return render_template("mobile_login.html", next_url="/mobile")
         if not is_technician(current_user.role):
-            return render_template("mobile.html", not_technician=True, username=current_user.username)
-        return render_template("mobile.html", not_technician=False, username=current_user.username)
+            return render_template("mobile_not_technician.html")
+        return render_template("mobile.html", username=current_user.username)
 
     from .auth.routes import bp as auth_bp
     from .access.routes import bp as access_bp

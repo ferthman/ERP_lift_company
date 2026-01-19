@@ -22,33 +22,26 @@
       </div>
     </header>
 
-    {% if not_technician %}
-      <div class="bg-white rounded-2xl shadow p-4">
-        <p class="text-sm text-slate-700">Этот раздел доступен только для учетных записей мастера.</p>
-        <a href="/" class="inline-block mt-3 text-sm text-slate-900 underline">Перейти в основную панель</a>
+    <section class="bg-white rounded-2xl shadow p-4 space-y-3">
+      <div class="flex items-center justify-between">
+        <h2 class="font-semibold">Мои заявки</h2>
+        <span id="last-sync" class="text-xs text-slate-500">—</span>
       </div>
-    {% else %}
-      <section class="bg-white rounded-2xl shadow p-4 space-y-3">
-        <div class="flex items-center justify-between">
-          <h2 class="font-semibold">Мои заявки</h2>
-          <span id="last-sync" class="text-xs text-slate-500">—</span>
-        </div>
-        <div id="tickets-list" class="space-y-2"></div>
-      </section>
+      <div id="tickets-list" class="space-y-2"></div>
+    </section>
 
-      <section class="bg-white rounded-2xl shadow p-4 space-y-3">
-        <div class="flex items-center justify-between">
-          <h2 class="font-semibold">Детали заявки</h2>
-          <span id="ticket-status" class="text-xs text-slate-500">—</span>
-        </div>
-        <div id="ticket-detail" class="text-sm text-slate-700">Выберите заявку в списке.</div>
-      </section>
-    {% endif %}
+    <section class="bg-white rounded-2xl shadow p-4 space-y-3">
+      <div class="flex items-center justify-between">
+        <h2 class="font-semibold">Детали заявки</h2>
+        <span id="ticket-status" class="text-xs text-slate-500">—</span>
+      </div>
+      <div id="ticket-detail" class="text-sm text-slate-700">Выберите заявку в списке.</div>
+    </section>
   </main>
 
   <script>
     window.MOBILE_BOOTSTRAP = {
-      notTechnician: {{ 'true' if not_technician else 'false' }},
+      notTechnician: false,
       username: {{ (username or '')|tojson }}
     };
   </script>
