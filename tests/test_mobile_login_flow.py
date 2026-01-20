@@ -45,6 +45,15 @@ class MobileLoginFlowTest(unittest.TestCase):
                     is_active=1,
                 )
                 db.add(dispatcher_user)
+            admin_user = db.query(User).filter_by(username="admin_login_test").first()
+            if admin_user is None:
+                admin_user = User(
+                    username="admin_login_test",
+                    password_hash=generate_password_hash("adminpass"),
+                    role="admin",
+                    is_active=1,
+                )
+                db.add(admin_user)
             db.commit()
 
     def setUp(self):
@@ -55,12 +64,22 @@ class MobileLoginFlowTest(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         return res
 
-    def test_mobile_unauthenticated_shows_login(self):
-        res = self.client.get("/mobile")
+    def test_login_page_renders_unified_ui(self):
+        res = self.client.get("/login")
         self.assertEqual(res.status_code, 200)
         body = res.get_data(as_text=True)
-        self.assertIn("Вход для мастеров", body)
-        self.assertIn("name=\"username\"", body)
+        self.assertIn("Вход", body)
+        self.assertIn("Если у вас нет доступа, обратитесь к администратору.", body)
+
+    def test_mobile_unauthenticated_redirects_to_login(self):
+        res = self.client.get("/mobile")
+        self.assertEqual(res.status_code, 302)
+        self.assertEqual(res.headers.get("Location"), "/login?next=/mobile")
+
+    def test_admin_unauthenticated_redirects_to_login(self):
+        res = self.client.get("/admin")
+        self.assertEqual(res.status_code, 302)
+        self.assertEqual(res.headers.get("Location"), "/login?next=/admin")
 
     def test_technician_redirects_from_root_and_sees_mobile(self):
         self.login_api("tech_mobile_test", "techpass")
@@ -116,24 +135,39 @@ class MobileLoginFlowTest(unittest.TestCase):
         self.login_api("tech_mobile_test", "techpass")
         logout_res = self.client.post("/logout")
         self.assertEqual(logout_res.status_code, 302)
-        self.assertEqual(logout_res.headers.get("Location"), "/mobile")
+        self.assertEqual(logout_res.headers.get("Location"), "/login")
         res = self.client.get("/api/me")
         payload = res.get_json()
         self.assertFalse(payload["authenticated"])
 
-    def test_login_next_redirect_is_safe(self):
+    def test_login_technician_redirects_to_mobile(self):
         res = self.client.post(
             "/login",
-            data={"username": "tech_mobile_test", "password": "techpass", "next": "/mobile"},
+            data={"username": "tech_mobile_test", "password": "techpass", "next": "/admin"},
         )
         self.assertEqual(res.status_code, 302)
         self.assertEqual(res.headers.get("Location"), "/mobile")
 
+    def test_login_admin_redirects_to_admin(self):
+        res = self.client.post(
+            "/login",
+            data={"username": "admin_login_test", "password": "adminpass", "next": "/admin"},
+        )
+        self.assertEqual(res.status_code, 302)
+        self.assertEqual(res.headers.get("Location"), "/admin")
+
+        res = self.client.post(
+            "/login",
+            data={"username": "admin_login_test", "password": "adminpass", "next": "/mobile"},
+        )
+        self.assertEqual(res.status_code, 302)
+        self.assertEqual(res.headers.get("Location"), "/admin")
+
         res = self.client.post(
             "/login",
             data={
-                "username": "tech_mobile_test",
-                "password": "techpass",
+                "username": "admin_login_test",
+                "password": "adminpass",
                 "next": "/%2F%2Fevil.com",
             },
         )
@@ -142,28 +176,28 @@ class MobileLoginFlowTest(unittest.TestCase):
 
         res = self.client.post(
             "/login",
-            data={"username": "tech_mobile_test", "password": "techpass", "next": "/\\evil.com"},
+            data={"username": "admin_login_test", "password": "adminpass", "next": "/\\evil.com"},
         )
         self.assertEqual(res.status_code, 302)
         self.assertEqual(res.headers.get("Location"), "/")
 
         res = self.client.post(
             "/login",
-            data={"username": "tech_mobile_test", "password": "techpass", "next": "//evil.com"},
+            data={"username": "admin_login_test", "password": "adminpass", "next": "//evil.com"},
         )
         self.assertEqual(res.status_code, 302)
         self.assertEqual(res.headers.get("Location"), "/")
 
         res = self.client.post(
             "/login",
-            data={"username": "tech_mobile_test", "password": "techpass", "next": "https://evil.com"},
+            data={"username": "admin_login_test", "password": "adminpass", "next": "https://evil.com"},
         )
         self.assertEqual(res.status_code, 302)
         self.assertEqual(res.headers.get("Location"), "/")
 
         res = self.client.post(
             "/login",
-            data={"username": "tech_mobile_test", "password": "techpass", "next": " /mobile "},
+            data={"username": "admin_login_test", "password": "adminpass", "next": " /mobile "},
         )
         self.assertEqual(res.status_code, 302)
-        self.assertEqual(res.headers.get("Location"), "/mobile")
+        self.assertEqual(res.headers.get("Location"), "/admin")

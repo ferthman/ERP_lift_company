@@ -41,7 +41,8 @@ class DatabaseInitTest(unittest.TestCase):
             app.config["TESTING"] = True
             client = app.test_client()
             res = client.get("/")
-            self.assertEqual(res.status_code, 200)
+            self.assertEqual(res.status_code, 302)
+            self.assertEqual(res.headers.get("Location"), "/login?next=/")
 
     def test_auto_assign_requires_linked_technician(self):
         with tempfile.TemporaryDirectory() as tmpdir:
