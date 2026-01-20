@@ -171,6 +171,13 @@ def api_logout():
     return jsonify({"ok": True})
 
 
+@bp.post("/logout")
+@login_required
+def logout_form():
+    logout_user()
+    return redirect("/mobile")
+
+
 @bp.get("/api/me")
 def api_me():
     if not current_user.is_authenticated:

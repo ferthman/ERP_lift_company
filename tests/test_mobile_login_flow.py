@@ -114,8 +114,9 @@ class MobileLoginFlowTest(unittest.TestCase):
 
     def test_logout_action_clears_session(self):
         self.login_api("tech_mobile_test", "techpass")
-        logout_res = self.client.post("/api/logout")
-        self.assertEqual(logout_res.status_code, 200)
+        logout_res = self.client.post("/logout")
+        self.assertEqual(logout_res.status_code, 302)
+        self.assertEqual(logout_res.headers.get("Location"), "/mobile")
         res = self.client.get("/api/me")
         payload = res.get_json()
         self.assertFalse(payload["authenticated"])

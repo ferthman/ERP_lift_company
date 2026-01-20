@@ -35,6 +35,7 @@ Admin/dispatcher UI must continue to work as before.
 - [x] (2025-02-14 13:30Z) Add admin escape hatch and UI preference cookie to avoid technician redirect traps.
 - [x] (2025-02-14 14:05Z) Add technician desktop banner on /admin with a link back to /mobile.
 - [x] (2025-02-14 14:20Z) Expand technician banner with guidance text and logout action.
+- [x] (2025-02-14 14:35Z) Add human logout redirect to /mobile for technician banner UX.
 
 ## Surprises & Discoveries
 
@@ -86,6 +87,9 @@ Record every decision made while working on this plan.
   Date/Author: 2025-02-14 / codex
 - Decision: Add guidance text and a logout action to the technician banner using existing `/api/logout`.
   Rationale: Provide clearer next steps without changing permissions.
+  Date/Author: 2025-02-14 / codex
+- Decision: Add a POST `/logout` handler that reuses logout behavior and redirects to `/mobile`.
+  Rationale: Avoid showing raw JSON after logout while keeping API logout intact.
   Date/Author: 2025-02-14 / codex
 
 (Keep adding entries as decisions occur.)
