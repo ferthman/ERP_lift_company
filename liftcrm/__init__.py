@@ -82,14 +82,52 @@ def create_app():
 
         _db_initialized["done"] = True
 
+    from flask import request, make_response
+
+    def _get_ui_preference():
+        value = (request.cookies.get("ui_preference") or "").strip().lower()
+        if value in {"admin", "mobile"}:
+            return value
+        return ""
+
+    def _maybe_set_ui_preference(response):
+        ui = (request.args.get("ui") or "").strip().lower()
+        if ui in {"admin", "mobile"}:
+            response.set_cookie("ui_preference", ui, samesite="Lax")
+        return response
+
     @app.get("/")
     def index():
         from .tickets.service import CancelReason
+        from flask_login import current_user
+        from .utils.roles import is_technician
 
-        return render_template(
-            "index.html",
-            cancel_reasons=[reason.value for reason in CancelReason],
+        if current_user.is_authenticated and is_technician(current_user.role):
+            if _get_ui_preference() != "admin":
+                return redirect("/mobile")
+
+        response = make_response(
+            render_template(
+                "index.html",
+                cancel_reasons=[reason.value for reason in CancelReason],
+                user_role=getattr(current_user, "role", None),
+            )
         )
+        return _maybe_set_ui_preference(response)
+
+    @app.get("/admin")
+    def admin():
+        from .tickets.service import CancelReason
+        from flask_login import current_user
+
+        response = make_response(
+            render_template(
+                "index.html",
+                cancel_reasons=[reason.value for reason in CancelReason],
+                user_role=getattr(current_user, "role", None),
+            )
+        )
+        return _maybe_set_ui_preference(response)
 
     @app.get("/mobile")
     def mobile():
@@ -97,10 +135,13 @@ def create_app():
         from .utils.roles import is_technician
 
         if not current_user.is_authenticated:
-            return redirect(url_for("index"))
+            response = make_response(render_template("mobile_login.html", next_url="/mobile"))
+            return _maybe_set_ui_preference(response)
         if not is_technician(current_user.role):
-            return render_template("mobile.html", not_technician=True, username=current_user.username)
-        return render_template("mobile.html", not_technician=False, username=current_user.username)
+            response = make_response(render_template("mobile_not_technician.html"))
+            return _maybe_set_ui_preference(response)
+        response = make_response(render_template("mobile.html", username=current_user.username))
+        return _maybe_set_ui_preference(response)
 
     from .auth.routes import bp as auth_bp
     from .access.routes import bp as access_bp

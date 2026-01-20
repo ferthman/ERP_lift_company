@@ -30,6 +30,12 @@ Admin/dispatcher UI must continue to work as before.
 - [x] (2026-01-19 12:45Z) Add automated tests for permissions, idempotency, conflicts, and status transitions.
 - [ ] Manual verification: prove offline works using browser offline mode and a real phone install.
 - [x] (2026-01-19 12:55Z) Update README with clear technician PWA usage and troubleshooting.
+- [x] (2025-02-14 12:20Z) Add `/mobile` login gate + non-technician page, safe post-login redirect, technician auto-redirect from `/`, and tests for the flow.
+- [x] (2025-02-14 13:05Z) Harden safe redirect normalization with a strict allowlist and add open-redirect regression tests.
+- [x] (2025-02-14 13:30Z) Add admin escape hatch and UI preference cookie to avoid technician redirect traps.
+- [x] (2025-02-14 14:05Z) Add technician desktop banner on /admin with a link back to /mobile.
+- [x] (2025-02-14 14:20Z) Expand technician banner with guidance text and logout action.
+- [x] (2025-02-14 14:35Z) Add human logout redirect to /mobile for technician banner UX.
 
 ## Surprises & Discoveries
 
@@ -37,6 +43,8 @@ Document unexpected behaviors, constraints, or bugs discovered during implementa
 
 - Observation: No blocking surprises during implementation; backend migrations required a one-time run before ad-hoc DB scripting.
   Evidence: Local scripting failed until `ensure_migrations()` executed.
+- Observation: Existing login flow only supported JSON `/api/login`, so a dedicated HTML `/login` handler was added for the `/mobile` form.
+  Evidence: `liftcrm/auth/routes.py` only exposed `/api/login` before the change.
 
 ## Decision Log
 
@@ -65,6 +73,24 @@ Record every decision made while working on this plan.
 - Decision: When a technician uses the legacy `/arrive` endpoint from `ASSIGNED`, the backend auto-records `accepted_at` and transitions through `ACCEPTED` for backward compatibility.
   Rationale: Avoid breaking existing technician workflows while introducing the ACCEPTED state.
   Date/Author: 2026-01-19 / codex
+- Decision: Implemented a small HTML `/login` handler with a strict `next` allowlist (paths starting with `/`) for mobile login redirects.
+  Rationale: Meets `/mobile` UX without opening open-redirect vulnerabilities.
+  Date/Author: 2025-02-14 / codex
+- Decision: Normalize and allowlist post-login redirect targets to only `/` and `/mobile`.
+  Rationale: Prevent encoded/backslash open-redirect bypasses while keeping mobile UX intact.
+  Date/Author: 2025-02-14 / codex
+- Decision: Add `/admin` route with an optional `ui` preference cookie to let technicians reach the desktop UI without disabling the default `/` redirect.
+  Rationale: Preserve default mobile-first routing while providing a reliable escape hatch.
+  Date/Author: 2025-02-14 / codex
+- Decision: Show a technician-only banner on `/admin` to clarify limited desktop access and offer a one-click return to `/mobile`.
+  Rationale: Reduce confusion when technicians open the desktop UI for navigation/testing.
+  Date/Author: 2025-02-14 / codex
+- Decision: Add guidance text and a logout action to the technician banner using existing `/api/logout`.
+  Rationale: Provide clearer next steps without changing permissions.
+  Date/Author: 2025-02-14 / codex
+- Decision: Add a POST `/logout` handler that reuses logout behavior and redirects to `/mobile`.
+  Rationale: Avoid showing raw JSON after logout while keeping API logout intact.
+  Date/Author: 2025-02-14 / codex
 
 (Keep adding entries as decisions occur.)
 
@@ -73,6 +99,7 @@ Record every decision made while working on this plan.
 At major milestones or completion, summarize what was achieved, what remains, and lessons learned. Compare outcomes to the “Purpose / Big Picture” section.
 
 - Outcome (2026-01-19): Delivered backend versioning + sync endpoint, mobile PWA UI with offline cache/outbox/photo queue, and added automated sync tests + README docs. Manual offline verification on a real device remains.
+- Outcome (2025-02-14): Added `/mobile` login UX gating, technician auto-redirect from `/`, and safe redirect handling with automated coverage.
 
 ## Context and Orientation
 
@@ -423,3 +450,6 @@ When you edit this plan during implementation, append a short note here:
 - Change: Updated progress, decisions, outcomes, and notes for technician PWA backend + mobile implementation.
   Reason: Track completed milestones and decisions made during implementation.
   Date/Author: 2026-01-19 / codex
+- Change: Added progress/decision/outcome notes for `/mobile` login UX + safe redirects and tests.
+  Reason: Track the focused routing/login UX improvements.
+  Date/Author: 2025-02-14 / codex

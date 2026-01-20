@@ -52,6 +52,7 @@
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
       <h1 class="text-2xl font-bold">🚀 Lift CRM</h1>
       <nav class="flex items-center gap-2">
+        <a href="/mobile?ui=mobile" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Приложение мастера</a>
         <button id="tab-admin" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white">Панель</button>
         <button id="tab-ops" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Контроль этапов</button>
         <button id="tab-tech" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Приложение мастера</button>
@@ -66,6 +67,26 @@
         <button id="btn-logout" class="hidden px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Выйти</button>
       </div>
     </div>
+    {% if user_role == 'technician' %}
+      <div class="border-t border-slate-200 bg-amber-50">
+        <div class="max-w-6xl mx-auto px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div class="text-sm text-amber-900 space-y-1">
+            <p>Вы вошли как мастер. В админке доступ ограничен.</p>
+            <p>Если вам нужна админка — войдите под диспетчером/админом.</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <a href="/mobile?ui=mobile" class="inline-flex items-center justify-center px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold">
+              Вернуться в приложение мастера
+            </a>
+            <form method="post" action="/logout">
+              <button type="submit" class="px-4 py-2 rounded-xl bg-white ring-1 ring-slate-200 text-sm">
+                Выйти
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    {% endif %}
   </header>
 
   <main class="max-w-6xl mx-auto p-4">
