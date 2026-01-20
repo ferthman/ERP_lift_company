@@ -783,7 +783,7 @@
       const data = await res.json(); if (!res.ok) return alert(data.error||'Ошибка входа');
       await refreshMe(); await loadTicketFilters(); await loadTickets(); await loadKanban(); await loadMyTickets(); loadAccessMasters(); loadDashboard(); loadMetrics();
     };
-    btnLogout.onclick = async () => { await fetch('/api/logout',{method:'POST'}); me = null; renderAuth(); };
+    btnLogout.onclick = () => { window.location.href = '/logout'; };
     async function refreshMe(){ const res=await fetch('/api/me'); me=await res.json(); renderAuth(); }
     function renderAuth(){
       if (!me||!me.authenticated){ loginState.textContent='Не вошли'; btnLogin.classList.remove('hidden'); btnLogout.classList.add('hidden'); tabSuper.classList.add('hidden'); tabAssets.classList.add('hidden');

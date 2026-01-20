@@ -36,6 +36,8 @@ Admin/dispatcher UI must continue to work as before.
 - [x] (2025-02-14 14:05Z) Add technician desktop banner on /admin with a link back to /mobile.
 - [x] (2025-02-14 14:20Z) Expand technician banner with guidance text and logout action.
 - [x] (2025-02-14 14:35Z) Add human logout redirect to /mobile for technician banner UX.
+- [x] (2025-02-15 10:45Z) Unify login UX into a shared `/login` page with role-based redirects and updated tests.
+- [x] (2025-02-15 11:30Z) Route all human-facing logout flows to `/login` and ensure protected pages redirect after logout.
 
 ## Surprises & Discoveries
 
@@ -45,6 +47,8 @@ Document unexpected behaviors, constraints, or bugs discovered during implementa
   Evidence: Local scripting failed until `ensure_migrations()` executed.
 - Observation: Existing login flow only supported JSON `/api/login`, so a dedicated HTML `/login` handler was added for the `/mobile` form.
   Evidence: `liftcrm/auth/routes.py` only exposed `/api/login` before the change.
+- Observation: Unified login required expanding safe redirect allowlist to include `/admin` while preserving strict path validation.
+  Evidence: Updated `safe_next_target` to validate parsed path and restrict to `/`, `/admin`, and `/mobile`.
 
 ## Decision Log
 
@@ -91,6 +95,15 @@ Record every decision made while working on this plan.
 - Decision: Add a POST `/logout` handler that reuses logout behavior and redirects to `/mobile`.
   Rationale: Avoid showing raw JSON after logout while keeping API logout intact.
   Date/Author: 2025-02-14 / codex
+- Decision: Route both desktop and mobile login through a shared `/login` template and apply role-based redirects after form login.
+  Rationale: Ensures consistent UX while preventing technicians from landing in admin UI via `next`.
+  Date/Author: 2025-02-15 / codex
+- Decision: Redirect human-facing logout to `/login` to keep users in the unified entrypoint.
+  Rationale: Avoids dumping users on the mobile shell and matches the new shared login UX.
+  Date/Author: 2025-02-15 / codex
+- Decision: Use `/logout` as the only human-facing logout target and update desktop UI to avoid `/api/logout`.
+  Rationale: Prevents raw JSON responses and ensures the browser navigates back to the unified login page.
+  Date/Author: 2025-02-15 / codex
 
 (Keep adding entries as decisions occur.)
 
@@ -100,6 +113,8 @@ At major milestones or completion, summarize what was achieved, what remains, an
 
 - Outcome (2026-01-19): Delivered backend versioning + sync endpoint, mobile PWA UI with offline cache/outbox/photo queue, and added automated sync tests + README docs. Manual offline verification on a real device remains.
 - Outcome (2025-02-14): Added `/mobile` login UX gating, technician auto-redirect from `/`, and safe redirect handling with automated coverage.
+- Outcome (2025-02-15): Unified `/login` UI for desktop and mobile with role-based redirects, updated unauthenticated redirects, and expanded test coverage.
+- Outcome (2025-02-15): Updated logout UX to always return users to `/login` and added coverage for logout redirects.
 
 ## Context and Orientation
 
@@ -453,3 +468,9 @@ When you edit this plan during implementation, append a short note here:
 - Change: Added progress/decision/outcome notes for `/mobile` login UX + safe redirects and tests.
   Reason: Track the focused routing/login UX improvements.
   Date/Author: 2025-02-14 / codex
+- Change: Documented unified login UX and role-based redirect updates.
+  Reason: Track shared `/login` routing changes and redirect policy updates.
+  Date/Author: 2025-02-15 / codex
+- Change: Recorded logout UX redirect fix to `/login`.
+  Reason: Track the human-facing logout navigation and redirect verification updates.
+  Date/Author: 2025-02-15 / codex

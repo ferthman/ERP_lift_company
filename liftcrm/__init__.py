@@ -36,7 +36,7 @@ def create_app():
 
     CORS(app, supports_credentials=True)
     login_manager.init_app(app)
-    login_manager.login_view = "index"
+    login_manager.login_view = "auth.login_page"
 
     # Lazily initialize DB/files on first request to match original behavior.
     _db_initialized = {"done": False}
@@ -102,6 +102,9 @@ def create_app():
         from flask_login import current_user
         from .utils.roles import is_technician
 
+        if not current_user.is_authenticated:
+            response = redirect("/login?next=/")
+            return _maybe_set_ui_preference(response)
         if current_user.is_authenticated and is_technician(current_user.role):
             if _get_ui_preference() != "admin":
                 return redirect("/mobile")
@@ -120,6 +123,9 @@ def create_app():
         from .tickets.service import CancelReason
         from flask_login import current_user
 
+        if not current_user.is_authenticated:
+            response = redirect("/login?next=/admin")
+            return _maybe_set_ui_preference(response)
         response = make_response(
             render_template(
                 "index.html",
@@ -135,7 +141,7 @@ def create_app():
         from .utils.roles import is_technician
 
         if not current_user.is_authenticated:
-            response = make_response(render_template("mobile_login.html", next_url="/mobile"))
+            response = redirect("/login?next=/mobile")
             return _maybe_set_ui_preference(response)
         if not is_technician(current_user.role):
             response = make_response(render_template("mobile_not_technician.html"))
@@ -172,7 +178,7 @@ def create_app():
             )
             return _json_error(401, "Unauthorized"), 401
         target = login_manager.login_view or "index"
-        return redirect(url_for(target, next=request.url))
+        return redirect(url_for(target, next=request.path))
 
     @app.errorhandler(HTTPException)
     def handle_http_error(err):

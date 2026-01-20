@@ -15,7 +15,7 @@ bp = Blueprint("auth", __name__)
 logger = logging.getLogger("liftcrm.auth")
 
 
-_ALLOWED_NEXT_PATHS = {"/", "/mobile"}
+_ALLOWED_NEXT_PATHS = {"/", "/admin", "/mobile"}
 
 
 def normalize_next(next_url):
@@ -36,9 +36,22 @@ def safe_next_target(next_url):
         return "/"
     if ":" in candidate.split("/", 1)[0]:
         return "/"
-    if candidate not in _ALLOWED_NEXT_PATHS:
+    if parsed.path not in _ALLOWED_NEXT_PATHS:
         return "/"
-    return candidate
+    if parsed.query:
+        return f"{parsed.path}?{parsed.query}"
+    return parsed.path
+
+
+def role_redirect_target(user, next_url):
+    safe_next = safe_next_target(next_url)
+    if normalize_role(user.role) == "technician":
+        if urlparse(safe_next).path == "/mobile":
+            return safe_next
+        return "/mobile"
+    if urlparse(safe_next).path == "/mobile":
+        return "/admin"
+    return safe_next
 
 
 @login_manager.user_loader
@@ -120,7 +133,7 @@ def login_form():
             extra={"username": username, "ip": ip, "reset_in_seconds": info["reset_in_seconds"]},
         )
         response = render_template(
-            "mobile_login.html",
+            "login.html",
             next_url=next_url,
             error="Слишком много попыток входа. Попробуйте позже.",
         )
@@ -133,7 +146,7 @@ def login_form():
                 extra={"username": username, "ip": ip, "success": False, "remaining": info["remaining"]},
             )
             return render_template(
-                "mobile_login.html",
+                "login.html",
                 next_url=next_url,
                 error="Неверный логин или пароль",
             ), 400
@@ -149,7 +162,7 @@ def login_form():
                 },
             )
             return render_template(
-                "mobile_login.html",
+                "login.html",
                 next_url=next_url,
                 error="Аккаунт отключен",
             ), 403
@@ -161,7 +174,13 @@ def login_form():
         "login_attempt",
         extra={"username": username, "ip": ip, "success": True, "remaining": info["remaining"]},
     )
-    return redirect(next_url)
+    return redirect(role_redirect_target(user, next_url))
+
+
+@bp.get("/login")
+def login_page():
+    next_url = request.args.get("next") or "/"
+    return render_template("login.html", next_url=safe_next_target(next_url))
 
 
 @bp.post("/api/logout")
@@ -171,11 +190,16 @@ def api_logout():
     return jsonify({"ok": True})
 
 
+@bp.get("/logout")
+def logout_page():
+    logout_user()
+    return redirect("/login")
+
+
 @bp.post("/logout")
-@login_required
 def logout_form():
     logout_user()
-    return redirect("/mobile")
+    return redirect("/login")
 
 
 @bp.get("/api/me")
