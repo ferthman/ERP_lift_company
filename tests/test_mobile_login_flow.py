@@ -162,6 +162,13 @@ class MobileLoginFlowTest(unittest.TestCase):
         self.assertEqual(res.status_code, 302)
         self.assertEqual(res.headers.get("Location"), "/mobile")
 
+        res = self.client.post(
+            "/login",
+            data={"username": "tech_mobile_test", "password": "techpass", "next": "/mobile?ui=mobile"},
+        )
+        self.assertEqual(res.status_code, 302)
+        self.assertEqual(res.headers.get("Location"), "/mobile?ui=mobile")
+
     def test_login_admin_redirects_to_admin(self):
         res = self.client.post(
             "/login",
@@ -173,6 +180,13 @@ class MobileLoginFlowTest(unittest.TestCase):
         res = self.client.post(
             "/login",
             data={"username": "admin_login_test", "password": "adminpass", "next": "/mobile"},
+        )
+        self.assertEqual(res.status_code, 302)
+        self.assertEqual(res.headers.get("Location"), "/admin")
+
+        res = self.client.post(
+            "/login",
+            data={"username": "admin_login_test", "password": "adminpass", "next": "/mobile?foo=bar"},
         )
         self.assertEqual(res.status_code, 302)
         self.assertEqual(res.headers.get("Location"), "/admin")

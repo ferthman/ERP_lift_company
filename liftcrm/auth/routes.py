@@ -46,8 +46,10 @@ def safe_next_target(next_url):
 def role_redirect_target(user, next_url):
     safe_next = safe_next_target(next_url)
     if normalize_role(user.role) == "technician":
+        if urlparse(safe_next).path == "/mobile":
+            return safe_next
         return "/mobile"
-    if safe_next == "/mobile":
+    if urlparse(safe_next).path == "/mobile":
         return "/admin"
     return safe_next
 
