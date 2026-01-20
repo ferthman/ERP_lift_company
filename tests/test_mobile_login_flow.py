@@ -133,12 +133,26 @@ class MobileLoginFlowTest(unittest.TestCase):
 
     def test_logout_action_clears_session(self):
         self.login_api("tech_mobile_test", "techpass")
-        logout_res = self.client.post("/logout")
+        logout_res = self.client.get("/logout")
         self.assertEqual(logout_res.status_code, 302)
         self.assertEqual(logout_res.headers.get("Location"), "/login")
         res = self.client.get("/api/me")
         payload = res.get_json()
         self.assertFalse(payload["authenticated"])
+        admin_res = self.client.get("/admin")
+        self.assertEqual(admin_res.status_code, 302)
+        self.assertEqual(admin_res.headers.get("Location"), "/login?next=/admin")
+        mobile_res = self.client.get("/mobile")
+        self.assertEqual(mobile_res.status_code, 302)
+        self.assertEqual(mobile_res.headers.get("Location"), "/login?next=/mobile")
+
+    def test_desktop_template_uses_logout_route(self):
+        self.login_api("dispatcher_mobile_test", "disppass")
+        res = self.client.get("/admin")
+        self.assertEqual(res.status_code, 200)
+        body = res.get_data(as_text=True)
+        self.assertIn("/logout", body)
+        self.assertNotIn("/api/logout", body)
 
     def test_login_technician_redirects_to_mobile(self):
         res = self.client.post(

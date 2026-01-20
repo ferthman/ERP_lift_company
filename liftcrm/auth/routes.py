@@ -188,8 +188,13 @@ def api_logout():
     return jsonify({"ok": True})
 
 
+@bp.get("/logout")
+def logout_page():
+    logout_user()
+    return redirect("/login")
+
+
 @bp.post("/logout")
-@login_required
 def logout_form():
     logout_user()
     return redirect("/login")
