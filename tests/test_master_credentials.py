@@ -81,12 +81,15 @@ class MasterCredentialsTest(unittest.TestCase):
             self.assertEqual(user.username, data["username"])
             self.assertTrue(check_password_hash(user.password_hash, data["temp_password"]))
 
-    def test_reset_password_forbidden_for_non_admin(self):
+    def test_change_password_forbidden_for_non_admin(self):
         self.login(config.ADMIN_USERNAME, config.ADMIN_PASSWORD)
         created = self.create_master("Тестовый мастер D")
         access = self.assign_role(created["id"])
         self.logout()
 
         self.login(config.DISPATCHER_USERNAME, config.DISPATCHER_PASSWORD)
-        res = self.client.post(f"/api/users/{access['user_id']}/reset-password")
+        res = self.client.post(
+            f"/api/users/{access['user_id']}/password",
+            json={"password": "forbidden-pass"},
+        )
         self.assertEqual(res.status_code, 403)

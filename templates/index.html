@@ -474,6 +474,32 @@
     </div>
   </div>
 
+  <div id="change-password-modal" class="modal">
+    <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-md">
+      <div class="flex items-center justify-between">
+        <h3 class="font-semibold">Сменить пароль</h3>
+        <button id="change-password-close" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-sm">Закрыть</button>
+      </div>
+      <p class="text-sm text-slate-600 mt-2">Пользователь: <span id="change-password-username" class="font-mono"></span></p>
+      <form id="change-password-form" class="mt-4 space-y-3 text-sm">
+        <input type="hidden" id="change-password-user-id">
+        <div>
+          <label class="block text-xs text-slate-500">Новый пароль</label>
+          <input id="change-password-new" type="password" class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200" minlength="8" required>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-500">Подтвердите пароль</label>
+          <input id="change-password-confirm" type="password" class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200" minlength="8" required>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="change-password-cancel" type="button" class="px-4 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Отмена</button>
+          <button class="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm">Сохранить</button>
+          <span id="change-password-msg" class="text-xs text-slate-500"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div id="assign-role-modal" class="modal">
     <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-md">
       <div class="flex items-center justify-between">
@@ -571,6 +597,10 @@
     </div>
   </div>
 
+  <div id="toast" class="fixed bottom-6 right-6 z-[80] hidden">
+    <div id="toast-message" class="px-4 py-3 rounded-xl bg-slate-900 text-white text-sm shadow-lg"></div>
+  </div>
+
   <script>
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/static/sw.js");
   </script>
@@ -661,6 +691,17 @@
       return fallback;
     }
 
+    let toastTimer = null;
+    function showToast(message) {
+      if (!toast || !toastMessage) return;
+      toastMessage.textContent = message;
+      toast.classList.remove('hidden');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 2500);
+    }
+
     const tabAdmin = document.getElementById('tab-admin');
     const tabOps = document.getElementById('tab-ops');
     const tabSuper = document.getElementById('tab-super');
@@ -688,6 +729,8 @@
     const objectsMapModal = document.getElementById('objects-map-modal');
     const objectsMapModalBody = document.getElementById('objects-map-modal-body');
     const objectsMapModalClose = document.getElementById('objects-map-modal-close');
+    const toast = document.getElementById('toast');
+    const toastMessage = document.getElementById('toast-message');
     const objectsSearchInput = document.getElementById('objects-search');
     const objectsSearchClear = document.getElementById('objects-search-clear');
     const objectsSuggestions = document.getElementById('objects-suggestions');
@@ -707,6 +750,15 @@
     const tempPasswordCopy = document.getElementById('temp-password-copy');
     const tempPasswordCopyMsg = document.getElementById('temp-password-copy-msg');
     const tempPasswordClose = document.getElementById('temp-password-close');
+    const changePasswordModal = document.getElementById('change-password-modal');
+    const changePasswordForm = document.getElementById('change-password-form');
+    const changePasswordUserId = document.getElementById('change-password-user-id');
+    const changePasswordUsername = document.getElementById('change-password-username');
+    const changePasswordNew = document.getElementById('change-password-new');
+    const changePasswordConfirm = document.getElementById('change-password-confirm');
+    const changePasswordMsg = document.getElementById('change-password-msg');
+    const changePasswordClose = document.getElementById('change-password-close');
+    const changePasswordCancel = document.getElementById('change-password-cancel');
     const assignRoleModal = document.getElementById('assign-role-modal');
     const assignRoleForm = document.getElementById('assign-role-form');
     const assignRoleMasterId = document.getElementById('assign-role-master-id');
@@ -915,6 +967,59 @@
       tempPasswordCopyMsg.textContent = '';
       tempPasswordModal.classList.add('open');
     }
+
+    let activeChangePasswordUserId = null;
+
+    function closeChangePasswordModal() {
+      if (!changePasswordModal) return;
+      changePasswordModal.classList.remove('open');
+      changePasswordMsg.textContent = '';
+      changePasswordForm?.reset();
+      activeChangePasswordUserId = null;
+    }
+
+    changePasswordClose.onclick = closeChangePasswordModal;
+    changePasswordCancel.onclick = closeChangePasswordModal;
+
+    function openChangePasswordModal(user) {
+      if (!changePasswordModal) return;
+      changePasswordForm.reset();
+      activeChangePasswordUserId = user.id;
+      changePasswordUserId.value = user.id;
+      changePasswordUsername.textContent = user.username || '';
+      changePasswordMsg.textContent = '';
+      changePasswordModal.classList.add('open');
+      changePasswordNew.focus();
+    }
+
+    changePasswordForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      changePasswordMsg.textContent = '';
+      const password = changePasswordNew.value || '';
+      const confirmPassword = changePasswordConfirm.value || '';
+      if (password.length < 8) {
+        changePasswordMsg.textContent = 'Пароль должен быть не короче 8 символов';
+        return;
+      }
+      if (password !== confirmPassword) {
+        changePasswordMsg.textContent = 'Пароли не совпадают';
+        return;
+      }
+      changePasswordMsg.textContent = 'Сохраняю...';
+      const targetUserId = activeChangePasswordUserId || changePasswordUserId.value;
+      const res = await fetch(`/api/users/${targetUserId}/password`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({password}),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        changePasswordMsg.textContent = extractErrorMessage(data, 'Ошибка');
+        return;
+      }
+      closeChangePasswordModal();
+      showToast('Пароль обновлён');
+    });
 
     function openTicketModal(ticket) {
       if (!ticket) return;
@@ -1599,7 +1704,7 @@
           <td class="py-2 px-2">${masterLabel}</td>
           <td class="py-2 px-2">
             <div class="flex flex-wrap gap-2">
-              <button class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white" data-user-reset="${u.id}">Сбросить пароль</button>
+              <button class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white" data-user-password="${u.id}">Сменить пароль</button>
               <button class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" data-user-toggle="${u.id}" data-active="${u.is_active ? '1' : '0'}">${u.is_active ? 'Отключить' : 'Включить'}</button>
               <button class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" data-user-role="${u.id}">Изменить роль</button>
             </div>
@@ -1608,14 +1713,12 @@
       });
       html += '</tbody></table>';
       usersTable.innerHTML = html;
-      usersTable.querySelectorAll('[data-user-reset]').forEach(btn=>{
-        btn.onclick = async ()=>{
-          const id = btn.getAttribute('data-user-reset');
-          if(!confirm('Сбросить пароль пользователя #' + id + '?')) return;
-          const res = await fetch(`/api/users/${id}/reset-password`, {method:'POST'});
-          const data = await res.json();
-          if(!res.ok){ alert(extractErrorMessage(data,'Ошибка')); return; }
-          openTempPasswordModal('Новый пароль', data.username, data.temp_password);
+      usersTable.querySelectorAll('[data-user-password]').forEach(btn=>{
+        btn.onclick = ()=>{
+          const id = btn.getAttribute('data-user-password');
+          const user = accessUsersCache.find(u => String(u.id) === String(id));
+          if (!user) return;
+          openChangePasswordModal(user);
         };
       });
       usersTable.querySelectorAll('[data-user-toggle]').forEach(btn=>{
@@ -1663,7 +1766,7 @@
           <td class="py-2 px-2 font-mono">${m.username || '—'}</td>
           <td class="py-2 px-2">
             <div class="flex flex-wrap gap-2">
-              ${m.user_id ? `<button class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white" data-master-reset="${m.user_id}">Сбросить пароль</button>` :
+              ${m.user_id ? '' :
                 `<button class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white" data-master-assign="${m.id}">Назначить роль</button>`}
               <button class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" data-master-replace="${m.id}">Замена сотрудника</button>
               <button class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" data-master-toggle="${m.id}">${m.is_active ? 'Деактивировать' : 'Активировать'}</button>
@@ -1677,16 +1780,6 @@
         btn.onclick = ()=>{
           const id = btn.getAttribute('data-master-assign');
           openAssignRoleModal(id);
-        };
-      });
-      mastersTable.querySelectorAll('[data-master-reset]').forEach(btn=>{
-        btn.onclick = async ()=>{
-          const id = btn.getAttribute('data-master-reset');
-          if(!confirm('Сбросить пароль пользователя #' + id + '?')) return;
-          const res = await fetch(`/api/users/${id}/reset-password`, {method:'POST'});
-          const data = await res.json();
-          if(!res.ok){ alert(extractErrorMessage(data,'Ошибка')); return; }
-          openTempPasswordModal('Новый пароль', data.username, data.temp_password);
         };
       });
       mastersTable.querySelectorAll('[data-master-toggle]').forEach(btn=>{
