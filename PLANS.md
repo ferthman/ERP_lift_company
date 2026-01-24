@@ -38,7 +38,8 @@ Admin/dispatcher UI must continue to work as before.
 - [x] (2025-02-14 14:35Z) Add human logout redirect to /mobile for technician banner UX.
 - [x] (2025-02-15 10:45Z) Unify login UX into a shared `/login` page with role-based redirects and updated tests.
 - [x] (2025-02-15 11:30Z) Route all human-facing logout flows to `/login` and ensure protected pages redirect after logout.
-- [x] (2025-03-10 10:52Z) Add admin change-password endpoint, modal UI, and tests; remove reset-password UI.
+- [x] (2025-02-16 10:05Z) Harden desktop navigation rendering by role and add coverage for admin/dispatcher/technician menu visibility.
+- [x] (2025-02-16 11:05Z) Guard admin JS initialization and conditionally omit it for technician /admin to avoid map/kanban errors.
 
 ## Surprises & Discoveries
 
@@ -105,9 +106,12 @@ Record every decision made while working on this plan.
 - Decision: Use `/logout` as the only human-facing logout target and update desktop UI to avoid `/api/logout`.
   Rationale: Prevents raw JSON responses and ensures the browser navigates back to the unified login page.
   Date/Author: 2025-02-15 / codex
-- Decision: Keep the legacy reset-password endpoint but remove its UI, adding an admin-only change-password endpoint and modal instead.
-  Rationale: Preserve existing API behavior while shifting the admin flow to explicit password setting.
-  Date/Author: 2025-03-10 / codex
+- Decision: Render desktop navigation and admin-only sections server-side based on role to keep unauthorized items out of the DOM.
+  Rationale: Ensures UI hardening aligns with security expectations and role-specific navigation tests.
+  Date/Author: 2025-02-16 / codex
+- Decision: Skip loading admin JS for technician /admin and add defensive guards around map init/kanban polling.
+  Rationale: Prevents runtime errors when technician banner-only HTML omits admin DOM nodes.
+  Date/Author: 2025-02-16 / codex
 
 (Keep adding entries as decisions occur.)
 
@@ -119,6 +123,8 @@ At major milestones or completion, summarize what was achieved, what remains, an
 - Outcome (2025-02-14): Added `/mobile` login UX gating, technician auto-redirect from `/`, and safe redirect handling with automated coverage.
 - Outcome (2025-02-15): Unified `/login` UI for desktop and mobile with role-based redirects, updated unauthenticated redirects, and expanded test coverage.
 - Outcome (2025-02-15): Updated logout UX to always return users to `/login` and added coverage for logout redirects.
+- Outcome (2025-02-16): Restricted desktop navigation and admin-only sections by role, with tests validating role-specific HTML output.
+- Outcome (2025-02-16): Prevented admin JS from running on technician banner-only pages and added tests for script omission.
 
 ## Context and Orientation
 
@@ -478,9 +484,9 @@ When you edit this plan during implementation, append a short note here:
 - Change: Recorded logout UX redirect fix to `/login`.
   Reason: Track the human-facing logout navigation and redirect verification updates.
   Date/Author: 2025-02-15 / codex
-- Change: Added progress and decision log entry for admin change-password endpoint + UI and tests.
-  Reason: Track new access-management change-password flow implementation.
-  Date/Author: 2025-03-10 / codex
-- Change: Recorded follow-up fix for change-password modal user id preservation in the admin change-password ExecPlan.
-  Reason: Documented UI bugfix handling in execution plan artifacts.
-  Date/Author: 2025-03-10 / codex
+- Change: Logged role-based desktop navigation rendering and tests.
+  Reason: Track UI hardening to keep unauthorized nav items out of the DOM.
+  Date/Author: 2025-02-16 / codex
+- Change: Recorded technician banner JS guards and conditional admin script inclusion.
+  Reason: Track regression fix for admin JS running without required DOM.
+  Date/Author: 2025-02-16 / codex
