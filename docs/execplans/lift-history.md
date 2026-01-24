@@ -94,6 +94,7 @@ Validation:
 ## Artifacts and Notes
 
 - Tests: `pytest` (60 passed).
+- Manual validation: open `/lifts/<id>` history page and confirm timeline items load.
 
 ## End-of-plan Change Log
 
@@ -102,4 +103,7 @@ Validation:
   Date/Author: 2025-02-16 / codex
 - Change: Completed lift history milestones with API, UI, and tests; recorded outcomes and artifacts.
   Reason: Track delivered work and verification.
+  Date/Author: 2025-02-16 / codex
+- Change: Documented manual validation note for history page load.
+  Reason: Track the boot-order bug fix verification step.
   Date/Author: 2025-02-16 / codex

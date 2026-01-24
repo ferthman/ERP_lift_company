@@ -29,7 +29,7 @@
     </div>
   </header>
 
-  <main class="max-w-5xl mx-auto px-4 py-6 space-y-6">
+  <main class="max-w-5xl mx-auto px-4 py-6 space-y-6" data-asset-id="{{ asset_id }}">
     <section class="bg-white rounded-2xl shadow p-4">
       <div id="lift-header" class="grid gap-2 text-sm text-slate-600">
         <div class="animate-pulse text-slate-400">Загружаем данные лифта...</div>
@@ -64,8 +64,5 @@
   </main>
 
   <script src="/static/lift_history.js"></script>
-  <script>
-    window.LIFT_HISTORY_ASSET_ID = {{ asset_id }};
-  </script>
 </body>
 </html>

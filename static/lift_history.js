@@ -1,5 +1,5 @@
 (() => {
-  const assetId = window.LIFT_HISTORY_ASSET_ID;
+  const assetId = document.querySelector("[data-asset-id]")?.getAttribute("data-asset-id");
   const headerEl = document.getElementById("lift-header");
   const listEl = document.getElementById("history-items");
   const stateEl = document.getElementById("history-state");
