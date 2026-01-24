@@ -105,6 +105,23 @@ def reset_user_password(user_id):
         return jsonify({"ok": True, "username": user.username, "temp_password": temp_password})
 
 
+@bp.post("/api/users/<int:user_id>/password")
+@login_required
+@role_required("admin")
+def change_user_password(user_id):
+    data = request.get_json() or {}
+    password = data.get("password")
+    if not isinstance(password, str) or len(password) < 8:
+        return jsonify({"error": "Пароль должен быть не короче 8 символов"}), 400
+    with SessionLocal() as db:
+        user = db.get(User, user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        user.password_hash = generate_password_hash(password)
+        db.commit()
+        return jsonify({"ok": True})
+
+
 @bp.post("/api/masters/<int:master_id>/assign-role")
 @login_required
 @role_required("admin")

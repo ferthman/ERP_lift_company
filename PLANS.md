@@ -38,6 +38,7 @@ Admin/dispatcher UI must continue to work as before.
 - [x] (2025-02-14 14:35Z) Add human logout redirect to /mobile for technician banner UX.
 - [x] (2025-02-15 10:45Z) Unify login UX into a shared `/login` page with role-based redirects and updated tests.
 - [x] (2025-02-15 11:30Z) Route all human-facing logout flows to `/login` and ensure protected pages redirect after logout.
+- [x] (2025-03-10 10:52Z) Add admin change-password endpoint, modal UI, and tests; remove reset-password UI.
 
 ## Surprises & Discoveries
 
@@ -104,6 +105,9 @@ Record every decision made while working on this plan.
 - Decision: Use `/logout` as the only human-facing logout target and update desktop UI to avoid `/api/logout`.
   Rationale: Prevents raw JSON responses and ensures the browser navigates back to the unified login page.
   Date/Author: 2025-02-15 / codex
+- Decision: Keep the legacy reset-password endpoint but remove its UI, adding an admin-only change-password endpoint and modal instead.
+  Rationale: Preserve existing API behavior while shifting the admin flow to explicit password setting.
+  Date/Author: 2025-03-10 / codex
 
 (Keep adding entries as decisions occur.)
 
@@ -474,3 +478,6 @@ When you edit this plan during implementation, append a short note here:
 - Change: Recorded logout UX redirect fix to `/login`.
   Reason: Track the human-facing logout navigation and redirect verification updates.
   Date/Author: 2025-02-15 / codex
+- Change: Added progress and decision log entry for admin change-password endpoint + UI and tests.
+  Reason: Track new access-management change-password flow implementation.
+  Date/Author: 2025-03-10 / codex
