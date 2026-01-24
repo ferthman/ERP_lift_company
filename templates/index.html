@@ -940,11 +940,14 @@
       tempPasswordModal.classList.add('open');
     }
 
+    let activeChangePasswordUserId = null;
+
     function closeChangePasswordModal() {
       if (!changePasswordModal) return;
       changePasswordModal.classList.remove('open');
       changePasswordMsg.textContent = '';
       changePasswordForm?.reset();
+      activeChangePasswordUserId = null;
     }
 
     changePasswordClose.onclick = closeChangePasswordModal;
@@ -952,10 +955,11 @@
 
     function openChangePasswordModal(user) {
       if (!changePasswordModal) return;
+      changePasswordForm.reset();
+      activeChangePasswordUserId = user.id;
       changePasswordUserId.value = user.id;
       changePasswordUsername.textContent = user.username || '';
       changePasswordMsg.textContent = '';
-      changePasswordForm.reset();
       changePasswordModal.classList.add('open');
       changePasswordNew.focus();
     }
@@ -974,7 +978,8 @@
         return;
       }
       changePasswordMsg.textContent = 'Сохраняю...';
-      const res = await fetch(`/api/users/${changePasswordUserId.value}/password`, {
+      const targetUserId = activeChangePasswordUserId || changePasswordUserId.value;
+      const res = await fetch(`/api/users/${targetUserId}/password`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({password}),

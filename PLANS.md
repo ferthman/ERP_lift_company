@@ -481,3 +481,6 @@ When you edit this plan during implementation, append a short note here:
 - Change: Added progress and decision log entry for admin change-password endpoint + UI and tests.
   Reason: Track new access-management change-password flow implementation.
   Date/Author: 2025-03-10 / codex
+- Change: Recorded follow-up fix for change-password modal user id preservation in the admin change-password ExecPlan.
+  Reason: Documented UI bugfix handling in execution plan artifacts.
+  Date/Author: 2025-03-10 / codex

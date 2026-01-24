@@ -14,20 +14,25 @@ Enable administrators to set a specific password for any user account (e.g., tec
 - [x] (2025-03-10 10:36Z) Update tests for admin/non-admin and validation cases.
 - [x] (2025-03-10 10:52Z) Run pytest and capture results.
 - [x] (2025-03-10 10:36Z) Update PLANS.md progress + decision log entries for this feature.
+- [x] (2025-03-10 11:20Z) Fix change-password modal to preserve selected user id when resetting the form.
 
 ## Surprises & Discoveries
 
-- None yet.
+- Observation: `form.reset()` clears the hidden user id field, leading to requests without the target user id.
+  Evidence: Change-password modal submission hit `/api/users//password` with a 404.
 
 ## Decision Log
 
 - Decision: Reuse existing password hashing via `werkzeug.security.generate_password_hash` for the new endpoint.
   Rationale: Keeps behavior consistent with login and user creation flows.
   Date/Author: 2025-03-10 / codex
+- Decision: Track the change-password target user id in a dedicated JS variable to avoid `form.reset()` clearing the hidden field.
+  Rationale: Keeps the selected id stable across form resets and avoids invalid API calls.
+  Date/Author: 2025-03-10 / codex
 
 ## Outcomes & Retrospective
 
-- Outcome (2025-03-10): Admins can set a specific password via the new `/api/users/<id>/password` endpoint and the change-password modal; reset-password UI removed; tests cover admin success, non-admin forbidden, and validation failures.
+- Outcome (2025-03-10): Admins can set a specific password via the new `/api/users/<id>/password` endpoint and the change-password modal; reset-password UI removed; tests cover admin success, non-admin forbidden, validation failures, and the modal preserves the selected user id after reset.
 
 ## Plan of Work
 
