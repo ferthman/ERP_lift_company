@@ -38,6 +38,7 @@ Admin/dispatcher UI must continue to work as before.
 - [x] (2025-02-14 14:35Z) Add human logout redirect to /mobile for technician banner UX.
 - [x] (2025-02-15 10:45Z) Unify login UX into a shared `/login` page with role-based redirects and updated tests.
 - [x] (2025-02-15 11:30Z) Route all human-facing logout flows to `/login` and ensure protected pages redirect after logout.
+- [x] (2025-02-16 10:05Z) Harden desktop navigation rendering by role and add coverage for admin/dispatcher/technician menu visibility.
 
 ## Surprises & Discoveries
 
@@ -104,6 +105,9 @@ Record every decision made while working on this plan.
 - Decision: Use `/logout` as the only human-facing logout target and update desktop UI to avoid `/api/logout`.
   Rationale: Prevents raw JSON responses and ensures the browser navigates back to the unified login page.
   Date/Author: 2025-02-15 / codex
+- Decision: Render desktop navigation and admin-only sections server-side based on role to keep unauthorized items out of the DOM.
+  Rationale: Ensures UI hardening aligns with security expectations and role-specific navigation tests.
+  Date/Author: 2025-02-16 / codex
 
 (Keep adding entries as decisions occur.)
 
@@ -115,6 +119,7 @@ At major milestones or completion, summarize what was achieved, what remains, an
 - Outcome (2025-02-14): Added `/mobile` login UX gating, technician auto-redirect from `/`, and safe redirect handling with automated coverage.
 - Outcome (2025-02-15): Unified `/login` UI for desktop and mobile with role-based redirects, updated unauthenticated redirects, and expanded test coverage.
 - Outcome (2025-02-15): Updated logout UX to always return users to `/login` and added coverage for logout redirects.
+- Outcome (2025-02-16): Restricted desktop navigation and admin-only sections by role, with tests validating role-specific HTML output.
 
 ## Context and Orientation
 
@@ -474,3 +479,6 @@ When you edit this plan during implementation, append a short note here:
 - Change: Recorded logout UX redirect fix to `/login`.
   Reason: Track the human-facing logout navigation and redirect verification updates.
   Date/Author: 2025-02-15 / codex
+- Change: Logged role-based desktop navigation rendering and tests.
+  Reason: Track UI hardening to keep unauthorized nav items out of the DOM.
+  Date/Author: 2025-02-16 / codex
