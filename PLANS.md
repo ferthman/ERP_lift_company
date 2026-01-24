@@ -41,6 +41,7 @@ Admin/dispatcher UI must continue to work as before.
 - [x] (2025-02-16 10:05Z) Harden desktop navigation rendering by role and add coverage for admin/dispatcher/technician menu visibility.
 - [x] (2025-02-16 11:05Z) Guard admin JS initialization and conditionally omit it for technician /admin to avoid map/kanban errors.
 - [x] (2025-02-17 09:45Z) Add 2GIS web link button in `/mobile` ticket details and expose lat/lng in ticket payload with tests.
+- [x] (2025-02-17 10:05Z) Fix 2GIS coord parsing to avoid null/empty values mapping to 0,0.
 
 ## Surprises & Discoveries
 
@@ -130,6 +131,7 @@ At major milestones or completion, summarize what was achieved, what remains, an
 - Outcome (2025-02-16): Restricted desktop navigation and admin-only sections by role, with tests validating role-specific HTML output.
 - Outcome (2025-02-16): Prevented admin JS from running on technician banner-only pages and added tests for script omission.
 - Outcome (2025-02-17): Added a 2GIS web button in mobile ticket details and ensured ticket payloads surface lat/lng for link generation.
+- Outcome (2025-02-17): Hardened 2GIS URL coord parsing to require non-empty, in-range coordinates before using `m=` links.
 
 ## Context and Orientation
 
@@ -497,4 +499,7 @@ When you edit this plan during implementation, append a short note here:
   Date/Author: 2025-02-16 / codex
 - Change: Documented 2GIS button addition, payload tweaks, and tests.
   Reason: Track mobile ticket detail navigation enhancement.
+  Date/Author: 2025-02-17 / codex
+- Change: Logged fix for 2GIS coord parsing to avoid null/empty values mapping to 0,0.
+  Reason: Ensure address fallback when coords are missing or invalid.
   Date/Author: 2025-02-17 / codex
