@@ -575,6 +575,7 @@
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/static/sw.js");
   </script>
 
+  {% if user_role != 'technician' %}
   <script>
     const API = location.origin;
     let me = null;
@@ -2232,11 +2233,16 @@
     }
 
     // Init
-    initCreateMap();
+    if (document.getElementById('map-create')) {
+      initCreateMap();
+    }
     if (document.getElementById('view-admin')) {
       refreshMe().then(()=>{ loadTicketFilters(); loadTickets(); });
     }
-    setInterval(()=>{ if(!viewOps.classList.contains('hidden')) loadKanban(); }, 5000);
+    if (viewOps) {
+      setInterval(()=>{ if(!viewOps.classList.contains('hidden')) loadKanban(); }, 5000);
+    }
   </script>
+  {% endif %}
 </body>
 </html>

@@ -98,6 +98,7 @@ class DesktopNavRbacTest(unittest.TestCase):
         body = res.get_data(as_text=True)
         for label in ["Панель", "Контроль этапов", "Лифты", "Объекты", "Админ", "Пользователи и допуск"]:
             self.assertNotIn(label, body)
+        self.assertNotIn("const API = location.origin", body)
         self.assertIn("Вернуться в приложение мастера", body)
         self.assertIn("/mobile", body)
         self.assertIn("/logout", body)
