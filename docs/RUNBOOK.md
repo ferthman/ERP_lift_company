@@ -38,6 +38,12 @@
 - Экспорт `GET /api/archive` выгружает все заявки (активные + архив) и отдельные столбцы `archived_at` и `close_reason` в XLSX.【F:liftcrm/tickets/routes.py†L390-L433】
 - При запуске выполняется миграция SQLite: колонка `archived_at` добавляется автоматически, если её ещё нет.【F:liftcrm/db.py†L107-L125】
 
+## Аудит и история изменений заявок
+- Таблица `audit_log` хранит историю изменений (ticket/master/attachment) с diff JSON (`old/new/changed`).【F:liftcrm/db.py†L97-L116】【F:liftcrm/utils/audit.py†L1-L68】
+- API истории: `GET /api/tickets/{id}/history?limit=50` → список событий (newest → oldest) с actor и diff.【F:liftcrm/tickets/routes.py†L1235-L1297】
+- RBAC: admin/dispatcher видят историю любой заявки; техник — только назначенной ему. Для чужих заявок — 403.【F:liftcrm/tickets/routes.py†L1245-L1273】
+- UI: откройте карточку заявки → блок «История» отрисует таймлайн (даты, актор, изменения).【F:templates/index.html†L873-L1034】
+
 ## Реестр лифтов (Assets)
 - CRUD доступен для admin/dispatcher: `GET/POST/PATCH /api/assets`.【F:liftcrm/assets/routes.py†L1-L129】
 - Экспорт реестра: `GET /api/assets/export.xlsx` и `GET /api/assets/export.csv`.【F:liftcrm/assets/routes.py†L132-L176】
@@ -110,6 +116,12 @@
 8. Скачивание архива (`GET /api/archive`) отдаёт `archive.xlsx` с колонкой priority.
 9. Вкладка «Объекты» грузит точки из SQL-реестра (`GET /api/assets`), `/api/objects` остаётся алиасом.
 10. SLA отображается: создание тикета, ожидание > SLA (или ручная правка времени) → флаги «overdue» в таблице/канбане/дашборде и рост счётчиков в `/api/metrics`.
+11. История: открыть карточку заявки и убедиться, что таймлайн отображает изменения статуса/назначения/архивации.
+
+## Команды проверки
+- `python -m compileall liftcrm`
+- `python -m unittest -v`
+
 
 ### Важно: не менять правила автоназначения/перераспределения без решения продукта
 Текущее поведение фиксировано: активные мастера, минимальная нагрузка (`NEW/ASSIGNED/IN_PROGRESS`), перераспределение при деактивации/удалении. Любые изменения требуют отдельного продуктового решения.

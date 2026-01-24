@@ -82,6 +82,7 @@ class AuditLogTest(unittest.TestCase):
         self.assertEqual(payload["old"], {})
         self.assertIn("object_name", payload["new"])
         self.assertIn("status", payload["new"])
+        self.assertIn("object_name", payload["changed"])
 
     def test_assign_audit(self):
         self.login(config.ADMIN_USERNAME, config.ADMIN_PASSWORD)
@@ -96,6 +97,7 @@ class AuditLogTest(unittest.TestCase):
         payload = json.loads(entries[-1].diff_json)
         self.assertIn("assigned_master_id", payload["new"])
         self.assertIn("status", payload["new"])
+        self.assertIn("assigned_master_id", payload["changed"])
 
     def test_status_change_audit(self):
         self.login(config.ADMIN_USERNAME, config.ADMIN_PASSWORD)
@@ -121,6 +123,7 @@ class AuditLogTest(unittest.TestCase):
         self.assertGreaterEqual(len(entries), 2)
         payload = json.loads(entries[-1].diff_json)
         self.assertIn("status", payload["new"])
+        self.assertIn("status", payload["changed"])
 
     def test_archive_cancel_audit(self):
         self.login(config.ADMIN_USERNAME, config.ADMIN_PASSWORD)
@@ -141,6 +144,7 @@ class AuditLogTest(unittest.TestCase):
         payload = json.loads(cancel_entries[-1].diff_json)
         self.assertIn("close_reason", payload["new"])
         self.assertIn("close_comment", payload["new"])
+        self.assertIn("close_reason", payload["changed"])
         self.logout()
 
     def test_history_rbac(self):
@@ -158,6 +162,10 @@ class AuditLogTest(unittest.TestCase):
         self.login(self.tech_users[0]["username"], self.master_password)
         res = self.client.get(f"/api/tickets/{ticket_id}/history")
         self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertIsInstance(data, list)
+        if data:
+            self.assertIn("actor", data[0])
         self.logout()
 
     def test_history_on_archived_ticket(self):

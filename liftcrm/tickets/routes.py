@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, jsonify, request, send_from_directory
 from flask_login import login_required, current_user
 from werkzeug.security import generate_password_hash
+from sqlalchemy import and_, or_
 
 from .service import (
     apply_in_progress_arrival,
@@ -81,6 +82,16 @@ def create_master():
     with SessionLocal() as db:
         m = Master(name=name, phone=phone, is_active=1)
         db.add(m)
+        db.flush()
+        log_audit(
+            db,
+            entity_type="master",
+            entity_id=m.id,
+            action="CREATE",
+            actor_user_id=current_user.id,
+            old={},
+            new={"name": m.name, "is_active": bool(m.is_active)},
+        )
         db.commit()
         db.refresh(m)
         return jsonify({"id": m.id, "name": m.name, "phone": m.phone}), 201
@@ -138,15 +149,35 @@ def delete_master(master_id):
         for mid, cnt in rows:
             counts[mid] = cnt
         for t in open_tickets:
+            old_status = t.status
+            old_assigned = t.assigned_master_id
             new_id = min(counts, key=lambda k: (counts[k], k))
             t.assigned_master_id = new_id
             t.assigned_at = datetime.now(timezone.utc)
             if t.status in ["NEW", "ASSIGNED"]:
                 t.status = "ASSIGNED"
             bump_ticket_version(t)
+            log_audit(
+                db,
+                entity_type="ticket",
+                entity_id=t.id,
+                action="ASSIGN",
+                actor_user_id=current_user.id,
+                old={"assigned_master_id": old_assigned, "status": old_status},
+                new={"assigned_master_id": t.assigned_master_id, "status": t.status},
+            )
             counts[new_id] += 1
         for u in db.query(User).filter(User.master_id == master_id).all():
             db.delete(u)
+        log_audit(
+            db,
+            entity_type="master",
+            entity_id=m.id,
+            action="EDIT",
+            actor_user_id=current_user.id,
+            old={"name": m.name, "is_active": bool(m.is_active)},
+            new={},
+        )
         db.delete(m)
         db.commit()
         return jsonify({"ok": True, "reassigned": len(open_tickets)})
@@ -160,6 +191,7 @@ def toggle_master_active(master_id):
         m = db.get(Master, master_id)
         if not m:
             return jsonify({"error": "Master not found"}), 404
+        old_snapshot = {"name": m.name, "is_active": bool(m.is_active)}
         m.is_active = 0 if m.is_active else 1
         reassigned = 0
         if m.is_active == 0:
@@ -190,14 +222,36 @@ def toggle_master_active(master_id):
             for mid, cnt in rows:
                 counts[mid] = cnt
             for t in open_tickets:
+                old_status = t.status
+                old_assigned = t.assigned_master_id
                 new_id = min(counts, key=lambda k: (counts[k], k))
                 t.assigned_master_id = new_id
                 t.assigned_at = datetime.now(timezone.utc)
                 if t.status in ["NEW", "ASSIGNED"]:
                     t.status = "ASSIGNED"
                 bump_ticket_version(t)
+                log_audit(
+                    db,
+                    entity_type="ticket",
+                    entity_id=t.id,
+                    action="ASSIGN",
+                    actor_user_id=current_user.id,
+                    old={"assigned_master_id": old_assigned, "status": old_status},
+                    new={"assigned_master_id": t.assigned_master_id, "status": t.status},
+                )
                 counts[new_id] += 1
             reassigned = len(open_tickets)
+        old, new = changed_fields(old_snapshot, m, ["name", "is_active"])
+        if old or new:
+            log_audit(
+                db,
+                entity_type="master",
+                entity_id=m.id,
+                action="EDIT",
+                actor_user_id=current_user.id,
+                old=old,
+                new=new,
+            )
         db.commit()
         return jsonify({"ok": True, "is_active": bool(m.is_active), "reassigned": reassigned})
 
@@ -889,15 +943,6 @@ def sync_events():
                     db.add(comment)
                     db.flush()
                     bump_ticket_version(ticket)
-                    log_audit(
-                        db,
-                        entity_type="ticket_comment",
-                        entity_id=comment.id,
-                        action="CREATE",
-                        actor_user_id=current_user.id,
-                        old={},
-                        new={"ticket_id": ticket.id, "body": body},
-                    )
                 else:
                     results.append(
                         {
@@ -1149,7 +1194,7 @@ def upload_file(ticket_id):
             db,
             entity_type="attachment",
             entity_id=a.id,
-            action="CREATE",
+            action="UPLOAD",
             actor_user_id=current_user.id,
             old={},
             new={"ticket_id": ticket_id, "filename": unique, "orig_name": fname},
@@ -1304,26 +1349,43 @@ def ticket_history(ticket_id):
         elif normalize_role(current_user.role) not in {"admin", "dispatcher"}:
             return jsonify({"error": "Forbidden"}), 403
         rows = (
-            db.query(AuditLog, User.username)
+            db.query(AuditLog, User)
             .outerjoin(User, User.id == AuditLog.actor_user_id)
-            .filter(AuditLog.entity_type == "ticket", AuditLog.entity_id == ticket_id)
+            .outerjoin(
+                Attachment,
+                and_(AuditLog.entity_type == "attachment", Attachment.id == AuditLog.entity_id),
+            )
+            .filter(
+                or_(
+                    and_(AuditLog.entity_type == "ticket", AuditLog.entity_id == ticket_id),
+                    and_(AuditLog.entity_type == "attachment", Attachment.ticket_id == ticket_id),
+                )
+            )
             .order_by(AuditLog.created_at.desc())
             .limit(limit)
             .offset(offset)
             .all()
         )
         items = []
-        for log_entry, username in rows:
+        for log_entry, actor in rows:
             try:
                 diff = json.loads(log_entry.diff_json) if log_entry.diff_json else {}
             except json.JSONDecodeError:
                 diff = {"raw": log_entry.diff_json}
+            if log_entry.actor_user_id:
+                actor_payload = {
+                    "id": log_entry.actor_user_id,
+                    "username": actor.username if actor else None,
+                    "role": actor.role if actor else None,
+                }
+            else:
+                actor_payload = None
             items.append(
                 {
+                    "id": log_entry.id,
                     "action": log_entry.action,
                     "created_at": log_entry.created_at,
-                    "actor_user_id": log_entry.actor_user_id,
-                    "actor_username": username,
+                    "actor": actor_payload,
                     "diff": diff,
                 }
             )

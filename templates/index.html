@@ -591,17 +591,22 @@
     const ROLE_LABELS = { admin: 'Админ', dispatcher: 'Диспетчер', technician: 'Техник' };
     const ROLE_ORDER = ['admin', 'dispatcher', 'technician'];
     const HISTORY_ACTION_LABELS = {
-      CREATE: 'Создание',
-      ASSIGN: 'Назначение',
-      STATUS_CHANGE: 'Изменение статуса',
-      EDIT: 'Редактирование',
-      ARCHIVE: 'Архивирование',
-      UNARCHIVE: 'Возврат из архива',
-      CANCEL: 'Отмена',
+      CREATE: 'Создана',
+      ASSIGN: 'Назначен мастер',
+      STATUS_CHANGE: 'Статус изменён',
+      EDIT: 'Изменено',
+      ARCHIVE: 'В архив',
+      UNARCHIVE: 'Из архива',
+      CANCEL: 'Отменена',
+      UPLOAD: 'Файл добавлен',
     };
     const HISTORY_FIELD_LABELS = {
       status: 'Статус',
       assigned_master_id: 'Мастер',
+      object_name: 'Объект',
+      address: 'Адрес',
+      lat: 'Широта',
+      lon: 'Долгота',
       priority: 'Приоритет',
       description: 'Описание',
       custom_sla_response_minutes: 'SLA ответа (мин)',
@@ -927,6 +932,16 @@
     function renderHistoryDiff(diff){
       if (!diff || typeof diff !== 'object') return '';
       const changes = [];
+      const changed = diff.changed || null;
+      if (changed && typeof changed === 'object') {
+        Object.keys(changed).forEach((field) => {
+          const label = HISTORY_FIELD_LABELS[field] || field;
+          const oldVal = formatHistoryValue(changed[field]?.old);
+          const newVal = formatHistoryValue(changed[field]?.new);
+          changes.push(`<div><span class="text-slate-400">${label}:</span> ${oldVal} → ${newVal}</div>`);
+        });
+        return changes.join('');
+      }
       const oldData = diff.old || {};
       const newData = diff.new || {};
       const fields = new Set([...Object.keys(oldData), ...Object.keys(newData)]);
@@ -1011,7 +1026,7 @@
         statusEl.textContent = '';
         listEl.innerHTML = data.map(item => {
           const actionLabel = HISTORY_ACTION_LABELS[item.action] || item.action;
-          const actor = item.actor_username || (item.actor_user_id ? `user#${item.actor_user_id}` : 'Система');
+          const actor = item.actor?.username || (item.actor?.id ? `user#${item.actor.id}` : 'Система');
           const timeLabel = item.created_at ? new Date(item.created_at).toLocaleString('ru-RU') : '';
           const diffHtml = renderHistoryDiff(item.diff || {});
           return `
