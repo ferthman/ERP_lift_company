@@ -40,6 +40,7 @@ Admin/dispatcher UI must continue to work as before.
 - [x] (2025-02-15 11:30Z) Route all human-facing logout flows to `/login` and ensure protected pages redirect after logout.
 - [x] (2025-02-16 10:05Z) Harden desktop navigation rendering by role and add coverage for admin/dispatcher/technician menu visibility.
 - [x] (2025-02-16 11:05Z) Guard admin JS initialization and conditionally omit it for technician /admin to avoid map/kanban errors.
+- [x] (2025-02-16 13:10Z) Started Lift History ExecPlan at `docs/execplans/lift-history.md` and began delivery.
 
 ## Surprises & Discoveries
 
@@ -111,6 +112,12 @@ Record every decision made while working on this plan.
   Date/Author: 2025-02-16 / codex
 - Decision: Skip loading admin JS for technician /admin and add defensive guards around map init/kanban polling.
   Rationale: Prevents runtime errors when technician banner-only HTML omits admin DOM nodes.
+  Date/Author: 2025-02-16 / codex
+- Decision: Implement lift history using the existing Asset model and `tickets.asset_id` linkage instead of adding a new `lift_id`.
+  Rationale: The repo already models lifts as assets; reuse avoids migrations and keeps scope safe.
+  Date/Author: 2025-02-16 / codex
+- Decision: Add a `ticket_id` query param on `/admin` to open ticket details from history links.
+  Rationale: Provides a direct path from lift history entries to ticket details without new pages.
   Date/Author: 2025-02-16 / codex
 
 (Keep adding entries as decisions occur.)
