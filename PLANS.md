@@ -40,6 +40,7 @@ Admin/dispatcher UI must continue to work as before.
 - [x] (2025-02-15 11:30Z) Route all human-facing logout flows to `/login` and ensure protected pages redirect after logout.
 - [x] (2025-02-16 10:05Z) Harden desktop navigation rendering by role and add coverage for admin/dispatcher/technician menu visibility.
 - [x] (2025-02-16 11:05Z) Guard admin JS initialization and conditionally omit it for technician /admin to avoid map/kanban errors.
+- [x] (2025-02-17 09:45Z) Add 2GIS web link button in `/mobile` ticket details and expose lat/lng in ticket payload with tests.
 
 ## Surprises & Discoveries
 
@@ -112,6 +113,9 @@ Record every decision made while working on this plan.
 - Decision: Skip loading admin JS for technician /admin and add defensive guards around map init/kanban polling.
   Rationale: Prevents runtime errors when technician banner-only HTML omits admin DOM nodes.
   Date/Author: 2025-02-16 / codex
+- Decision: Use a 2GIS web URL with `m=<lng,lat>` plus optional `query` hint, and open it in the same tab from the PWA.
+  Rationale: Keeps navigation consistent in the PWA while allowing the OS to offer “Open in app” on mobile.
+  Date/Author: 2025-02-17 / codex
 
 (Keep adding entries as decisions occur.)
 
@@ -125,6 +129,7 @@ At major milestones or completion, summarize what was achieved, what remains, an
 - Outcome (2025-02-15): Updated logout UX to always return users to `/login` and added coverage for logout redirects.
 - Outcome (2025-02-16): Restricted desktop navigation and admin-only sections by role, with tests validating role-specific HTML output.
 - Outcome (2025-02-16): Prevented admin JS from running on technician banner-only pages and added tests for script omission.
+- Outcome (2025-02-17): Added a 2GIS web button in mobile ticket details and ensured ticket payloads surface lat/lng for link generation.
 
 ## Context and Orientation
 
@@ -490,3 +495,6 @@ When you edit this plan during implementation, append a short note here:
 - Change: Recorded technician banner JS guards and conditional admin script inclusion.
   Reason: Track regression fix for admin JS running without required DOM.
   Date/Author: 2025-02-16 / codex
+- Change: Documented 2GIS button addition, payload tweaks, and tests.
+  Reason: Track mobile ticket detail navigation enhancement.
+  Date/Author: 2025-02-17 / codex

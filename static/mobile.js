@@ -37,6 +37,25 @@ function formatDate(value) {
   }
 }
 
+function build2gisWebUrl(ticket) {
+  if (!ticket) return null;
+  const lat = Number(ticket.lat);
+  const lng = Number(ticket.lng ?? ticket.lon);
+  const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
+  const address = (ticket.address || "").trim();
+  const objectName = (ticket.object_name || "").trim();
+  const hint = [objectName, address].filter(Boolean).join(", ");
+  if (hasCoords) {
+    const coordText = `${lng},${lat}`;
+    const query = hint ? `&query=${encodeURIComponent(hint)}` : "";
+    return `https://2gis.ru/geo?m=${encodeURIComponent(coordText)}${query}`;
+  }
+  if (hint) {
+    return `https://2gis.ru/search/${encodeURIComponent(hint)}`;
+  }
+  return null;
+}
+
 function uid() {
   if (crypto?.randomUUID) return crypto.randomUUID();
   return `evt_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -205,6 +224,10 @@ function renderDetail(ticket) {
     return;
   }
   updateTicketStatusBadge(ticket);
+  const mapUrl = build2gisWebUrl(ticket);
+  const mapButton = mapUrl
+    ? `<button id="btn-2gis" class="mt-2 w-full px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Открыть в 2GIS</button>`
+    : "";
   const comments = (ticket.comments || [])
     .map(
       (c) =>
@@ -217,6 +240,7 @@ function renderDetail(ticket) {
     <div class="space-y-2">
       <div><span class="font-semibold">Объект:</span> ${ticket.object_name || "—"}</div>
       <div><span class="font-semibold">Адрес:</span> ${ticket.address || "—"}</div>
+      ${mapButton}
       <div><span class="font-semibold">Описание:</span> ${ticket.description || "—"}</div>
       <div class="text-xs text-slate-500">Назначено: ${ticket.assigned_at ? formatDate(ticket.assigned_at) : "—"}</div>
     </div>
@@ -258,6 +282,7 @@ function renderDetail(ticket) {
   const btnWaiting = document.getElementById("btn-waiting");
   const btnDone = document.getElementById("btn-done");
   const btnComment = document.getElementById("btn-comment");
+  const btn2gis = document.getElementById("btn-2gis");
   const photoInput = document.getElementById("photo-input");
   const waitingReason = document.getElementById("waiting-reason");
   const commentBody = document.getElementById("comment-body");
@@ -284,6 +309,11 @@ function renderDetail(ticket) {
     const body = commentBody.value.trim();
     queueEvent(ticket, "TICKET_ADD_COMMENT", { body });
   });
+  if (btn2gis && mapUrl) {
+    btn2gis.addEventListener("click", () => {
+      window.location.assign(mapUrl);
+    });
+  }
   photoInput.addEventListener("change", async () => {
     const file = photoInput.files?.[0];
     if (!file) return;
