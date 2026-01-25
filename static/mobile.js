@@ -275,7 +275,25 @@ function renderDetail(ticket) {
   btnWaiting.disabled = ticket.status !== "IN_PROGRESS";
   btnDone.disabled = ticket.status !== "IN_PROGRESS";
 
-  btnAccept.addEventListener("click", () => queueEvent(ticket, "TICKET_ACCEPT", {}));
+  btnAccept.addEventListener("click", () => {
+    if (!navigator.geolocation) {
+      alert("Нужно разрешить геолокацию, чтобы принять заявку (радиус 500м).");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const coords = position.coords || {};
+        queueEvent(ticket, "TICKET_ACCEPT", {
+          current_lat: coords.latitude,
+          current_lng: coords.longitude,
+        });
+      },
+      () => {
+        alert("Нужно разрешить геолокацию, чтобы принять заявку (радиус 500м).");
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+    );
+  });
   btnProgress.addEventListener("click", () => queueEvent(ticket, "TICKET_IN_PROGRESS", {}));
   btnWaiting.addEventListener("click", () => {
     const reason = waitingReason.value.trim();
@@ -465,9 +483,19 @@ async function syncEvents() {
       }
     } else {
       local.status = "error";
-      local.error = result.error;
+      local.error = { code: result.code, message: result.message };
       await putOutboxEvent(local);
-      if (result.error?.code === "CONFLICT" && result.error?.server_version && state.online) {
+      if (result.code === "OUT_OF_RANGE") {
+        const distance = Number.isFinite(result.distance_m) ? result.distance_m : "—";
+        alert(`Вы слишком далеко. Нужно быть в радиусе 500м. Сейчас: ${distance}м`);
+      }
+      if (result.code === "NO_TARGET_COORDS") {
+        alert("У заявки нет координат объекта. Принять нельзя.");
+      }
+      if (result.code === "NO_TECH_COORDS") {
+        alert("Не удалось получить геолокацию. Разрешите доступ и попробуйте снова.");
+      }
+      if (result.code === "CONFLICT" && result.server_version && state.online) {
         await openTicket(local.ticket_id);
       }
     }

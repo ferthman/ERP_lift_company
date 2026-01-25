@@ -4,7 +4,7 @@ import re
 import shutil
 from enum import Enum
 from datetime import datetime, timezone
-from math import radians, sin, cos, atan2, sqrt
+from math import radians, sin, cos, atan2, sqrt, isfinite
 
 from . import repository
 from ..db import Master, Ticket, User
@@ -13,7 +13,10 @@ from ..utils.time import to_utc
 from .. import config
 
 
-def haversine_m(lat1, lon1, lat2, lon2):
+GEOFENCE_RADIUS_M = 500
+
+
+def haversine_distance_m(lat1, lon1, lat2, lon2):
     R = 6371000.0
     phi1, phi2 = radians(lat1), radians(lat2)
     dphi = radians(lat2 - lat1)
@@ -21,6 +24,16 @@ def haversine_m(lat1, lon1, lat2, lon2):
     a = sin(dphi / 2) ** 2 + cos(phi1) * cos(phi2) * sin(dl / 2) ** 2
     c = 2 * atan2(sqrt(a), sqrt(1 - a))
     return R * c
+
+
+def haversine_m(lat1, lon1, lat2, lon2):
+    return haversine_distance_m(lat1, lon1, lat2, lon2)
+
+
+def is_within_radius(tech_lat, tech_lon, target_lat, target_lon, radius_m=GEOFENCE_RADIUS_M):
+    if not all(isfinite(value) for value in (tech_lat, tech_lon, target_lat, target_lon)):
+        return False
+    return haversine_distance_m(tech_lat, tech_lon, target_lat, target_lon) <= radius_m
 
 
 def auto_assign_master(db):
