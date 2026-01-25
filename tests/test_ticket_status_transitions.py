@@ -192,6 +192,16 @@ class TicketStatusTransitionTest(unittest.TestCase):
         self.assertEqual(data["status"], "COMPLETED")
         self.assertIsNotNone(data["completed_at"])
 
+    def test_ticket_details_include_lat_lng(self):
+        self.login(config.ADMIN_USERNAME, config.ADMIN_PASSWORD)
+        ticket_id = self.create_ticket()
+        res = self.client.get(f"/api/tickets/{ticket_id}")
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertEqual(data["lat"], 43.238949)
+        self.assertEqual(data["lon"], 76.889709)
+        self.assertEqual(data["lng"], 76.889709)
+
     def test_archived_immutability_on_state_changes(self):
         self.login(config.ADMIN_USERNAME, config.ADMIN_PASSWORD)
         ticket_id = self.create_ticket()

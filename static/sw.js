@@ -6,6 +6,7 @@ self.addEventListener('install', (e) => {
         '/mobile',
         '/static/manifest.webmanifest',
         '/static/manifest.mobile.webmanifest',
+        '/static/mobile-2gis.js',
         '/static/mobile.js',
         '/static/icons/icon-192.png',
         '/static/icons/icon-512.png',

@@ -40,6 +40,12 @@ Admin/dispatcher UI must continue to work as before.
 - [x] (2025-02-15 11:30Z) Route all human-facing logout flows to `/login` and ensure protected pages redirect after logout.
 - [x] (2025-02-16 10:05Z) Harden desktop navigation rendering by role and add coverage for admin/dispatcher/technician menu visibility.
 - [x] (2025-02-16 11:05Z) Guard admin JS initialization and conditionally omit it for technician /admin to avoid map/kanban errors.
+- [x] (2025-02-17 09:45Z) Add 2GIS web link button in `/mobile` ticket details and expose lat/lng in ticket payload with tests.
+- [x] (2025-02-17 10:05Z) Fix 2GIS coord parsing to avoid null/empty values mapping to 0,0.
+- [x] (2025-02-17 10:40Z) Update 2GIS links to route search (lon,lat) and add URL builder test.
+- [x] (2025-02-17 11:05Z) Switch 2GIS routing to dgis deeplink with 2gis.kz web fallback and update tests.
+- [x] (2025-02-17 11:30Z) Ensure /api/me/tickets and details include lat/lng and add mobile coordinate tests.
+- [x] (2025-02-17 12:05Z) Switch 2GIS routing to geo lon/lat URLs and gate debug logging behind a flag.
 
 ## Surprises & Discoveries
 
@@ -112,6 +118,9 @@ Record every decision made while working on this plan.
 - Decision: Skip loading admin JS for technician /admin and add defensive guards around map init/kanban polling.
   Rationale: Prevents runtime errors when technician banner-only HTML omits admin DOM nodes.
   Date/Author: 2025-02-16 / codex
+- Decision: Use a 2GIS web URL with `m=<lng,lat>` plus optional `query` hint, and open it in the same tab from the PWA.
+  Rationale: Keeps navigation consistent in the PWA while allowing the OS to offer “Open in app” on mobile.
+  Date/Author: 2025-02-17 / codex
 
 (Keep adding entries as decisions occur.)
 
@@ -125,6 +134,12 @@ At major milestones or completion, summarize what was achieved, what remains, an
 - Outcome (2025-02-15): Updated logout UX to always return users to `/login` and added coverage for logout redirects.
 - Outcome (2025-02-16): Restricted desktop navigation and admin-only sections by role, with tests validating role-specific HTML output.
 - Outcome (2025-02-16): Prevented admin JS from running on technician banner-only pages and added tests for script omission.
+- Outcome (2025-02-17): Added a 2GIS web button in mobile ticket details and ensured ticket payloads surface lat/lng for link generation.
+- Outcome (2025-02-17): Hardened 2GIS URL coord parsing to require non-empty, in-range coordinates before using `m=` links.
+- Outcome (2025-02-17): Switched 2GIS URLs to routeSearch (lon,lat) destinations and added a URL builder test.
+- Outcome (2025-02-17): Added dgis deeplink routing with a 2gis.kz fallback and aligned URL builder tests.
+- Outcome (2025-02-17): Verified mobile endpoints return lat/lng values and added coverage for ticket list/detail payloads.
+- Outcome (2025-02-17): Updated 2GIS links to /almaty/geo lon,lat URLs and gated debug output.
 
 ## Context and Orientation
 
@@ -490,3 +505,21 @@ When you edit this plan during implementation, append a short note here:
 - Change: Recorded technician banner JS guards and conditional admin script inclusion.
   Reason: Track regression fix for admin JS running without required DOM.
   Date/Author: 2025-02-16 / codex
+- Change: Documented 2GIS button addition, payload tweaks, and tests.
+  Reason: Track mobile ticket detail navigation enhancement.
+  Date/Author: 2025-02-17 / codex
+- Change: Logged fix for 2GIS coord parsing to avoid null/empty values mapping to 0,0.
+  Reason: Ensure address fallback when coords are missing or invalid.
+  Date/Author: 2025-02-17 / codex
+- Change: Noted 2GIS routeSearch URL switch and added URL builder test coverage.
+  Reason: Ensure navigation links set a destination and enforce lon,lat ordering.
+  Date/Author: 2025-02-17 / codex
+- Change: Recorded dgis deeplink routing + kz fallback update and test adjustments.
+  Reason: Ensure app deeplink opens navigation and web fallback works in Kazakhstan.
+  Date/Author: 2025-02-17 / codex
+- Change: Recorded mobile endpoint lat/lng payload check and added tests.
+  Reason: Ensure /mobile has coordinates for 2GIS routing.
+  Date/Author: 2025-02-17 / codex
+- Change: Logged switch to 2GIS geo URLs and debug flag for URL logging.
+  Reason: Ensure destination pins render reliably with lon,lat ordering.
+  Date/Author: 2025-02-17 / codex
