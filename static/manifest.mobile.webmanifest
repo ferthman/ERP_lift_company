@@ -1,6 +1,6 @@
 {
-  "name": "Lift CRM Technician",
-  "short_name": "LiftCRM Tech",
+  "name": "PremierLift CRM",
+  "short_name": "PremierLift CRM",
   "start_url": "/mobile",
   "display": "standalone",
   "theme_color": "#0f172a",

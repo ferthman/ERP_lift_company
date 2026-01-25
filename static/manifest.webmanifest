@@ -1,6 +1,6 @@
 {
-  "name": "Lift CRM",
-  "short_name": "LiftCRM",
+  "name": "PremierLift CRM",
+  "short_name": "PremierLift CRM",
   "start_url": "/",
   "display": "standalone",
   "theme_color": "#0f172a",
