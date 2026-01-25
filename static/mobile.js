@@ -292,6 +292,14 @@ function renderDetail(ticket) {
   });
   if (btn2gis && mapUrl) {
     btn2gis.addEventListener("click", () => {
+      const appUrl = build2gisAppUrl(ticket);
+      if (appUrl) {
+        window.location.assign(appUrl);
+        window.setTimeout(() => {
+          window.location.assign(mapUrl);
+        }, 900);
+        return;
+      }
       window.location.assign(mapUrl);
     });
   }
