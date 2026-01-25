@@ -167,3 +167,13 @@ class LiftHistoryApiTest(unittest.TestCase):
             self.assertGreaterEqual(ts.date(), datetime.fromisoformat(start_date).date())
             self.assertLessEqual(ts.date(), datetime.fromisoformat(end_date).date())
         self.assertTrue(any("Замена троса" in (item["text"] or "") for item in date_items))
+
+    def test_history_page_includes_asset_id_data_attribute(self):
+        asset_id, _, _, _, _ = self.create_asset_with_tickets()
+        self.login(config.ADMIN_USERNAME, config.ADMIN_PASSWORD)
+
+        res = self.client.get(f"/lifts/{asset_id}")
+        self.assertEqual(res.status_code, 200)
+        body = res.get_data(as_text=True)
+        self.assertIn(f'data-asset-id="{asset_id}"', body)
+        self.assertIn("/static/lift_history.js", body)
