@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lift CRM — Лифт</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <header class="border-b border-slate-200 bg-white/90 backdrop-blur">
+    <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div class="space-y-1">
+        <p class="text-sm text-slate-500">Лифты → Лифт</p>
+        <h1 class="text-2xl font-bold">Карточка лифта</h1>
+      </div>
+      <a href="/admin?ui=admin&tab=assets" class="px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">← Назад в Лифты</a>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 py-6 space-y-6" data-lift-id="{{ asset_id }}">
+    <section class="bg-white rounded-2xl shadow p-5">
+      <div id="lift-header" class="grid gap-2 text-sm text-slate-600">
+        <div class="animate-pulse text-slate-400">Загружаем данные лифта...</div>
+      </div>
+    </section>
+
+    <section class="bg-white rounded-2xl shadow p-5 space-y-6">
+      <div class="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
+        <button data-tab="info" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Инфо</button>
+        <button data-tab="history" class="px-3 py-2 rounded-xl text-sm font-semibold">История</button>
+      </div>
+
+      <div id="lift-tab-info" data-tab-content="info" class="space-y-3 text-sm text-slate-600 hidden">
+        <p>Раздел для дополнительной информации о лифте.</p>
+        <p class="text-slate-500">Используйте вкладку «История», чтобы увидеть заявки и подробные события.</p>
+      </div>
+
+      <div id="lift-tab-history" data-tab-content="history" class="space-y-4">
+        <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h2 class="text-lg font-semibold">История работ</h2>
+            <p class="text-sm text-slate-500">Список заявок по лифту с метриками и детализацией событий.</p>
+          </div>
+          <form id="history-filters" class="flex flex-wrap gap-2 items-end">
+            <label class="text-xs text-slate-500 flex flex-col">
+              С
+              <input id="history-from" type="date" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
+            </label>
+            <label class="text-xs text-slate-500 flex flex-col">
+              По
+              <input id="history-to" type="date" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
+            </label>
+            <label class="text-xs text-slate-500 flex flex-col">
+              Поиск
+              <input id="history-q" placeholder="Название заявки, комментарий" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
+            </label>
+            <button class="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold">Применить</button>
+          </form>
+        </div>
+        <div id="history-state" class="text-sm text-slate-500"></div>
+        <div id="history-items" class="space-y-4"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/lift_detail.js"></script>
+</body>
+</html>

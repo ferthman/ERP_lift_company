@@ -6,6 +6,7 @@ from werkzeug.security import generate_password_hash
 
 from liftcrm import create_app, config
 from liftcrm.db import SessionLocal, Asset, Ticket, TicketComment, User, Master, init_db
+from liftcrm.utils.audit import log_audit
 from liftcrm.utils.rate_limit import clear_rate_limits
 
 
@@ -75,23 +76,25 @@ class LiftHistoryApiTest(unittest.TestCase):
             db.commit()
             db.refresh(asset)
 
+            ticket_one_created = now - timedelta(days=5)
+            ticket_two_created = now - timedelta(days=20)
             ticket_one = Ticket(
                 object_name=f"Ticket A {token}",
                 address=asset.address,
                 lat=43.2,
                 lon=76.9,
-                status="NEW",
+                status="COMPLETED",
                 asset_id=asset.id,
-                created_at=now - timedelta(days=20),
+                created_at=ticket_one_created,
             )
             ticket_two = Ticket(
                 object_name=f"Ticket B {token}",
                 address=asset.address,
                 lat=43.2,
                 lon=76.9,
-                status="NEW",
+                status="CANCELLED",
                 asset_id=asset.id,
-                created_at=now - timedelta(days=19),
+                created_at=ticket_two_created,
             )
             db.add_all([ticket_one, ticket_two])
             db.commit()
@@ -113,10 +116,65 @@ class LiftHistoryApiTest(unittest.TestCase):
             db.add_all([comment_recent, comment_old])
             db.commit()
 
-            return asset.id, ticket_one.id, ticket_two.id, comment_recent.created_at, comment_old.created_at
+            accepted_at = ticket_one_created + timedelta(minutes=20)
+            in_progress_at = ticket_one_created + timedelta(minutes=40)
+            waiting_at = ticket_one_created + timedelta(minutes=60)
+            resumed_at = ticket_one_created + timedelta(minutes=120)
+            completed_at = ticket_one_created + timedelta(minutes=180)
+            ticket_one.accepted_at = accepted_at
+            ticket_one.waiting_at = waiting_at
+            ticket_one.completed_at = completed_at
+            db.commit()
+
+            def add_status_event(ts, old_status, new_status, waiting_reason=None, ticket_id=None):
+                entry = log_audit(
+                    db,
+                    entity_type="ticket",
+                    entity_id=ticket_id or ticket_one.id,
+                    action="STATUS_CHANGE",
+                    actor_user_id=admin.id,
+                    old={"status": old_status},
+                    new={"status": new_status, "waiting_reason": waiting_reason},
+                )
+                entry.created_at = ts.isoformat()
+
+            add_status_event(in_progress_at, "NEW", "IN_PROGRESS")
+            add_status_event(waiting_at, "IN_PROGRESS", "WAITING", waiting_reason="Ожидание запчастей")
+            add_status_event(resumed_at, "WAITING", "IN_PROGRESS")
+            add_status_event(completed_at, "IN_PROGRESS", "COMPLETED")
+            waiting_two_at = ticket_two_created + timedelta(hours=1)
+            cancelled_two_at = ticket_two_created + timedelta(hours=3)
+            add_status_event(
+                waiting_two_at,
+                "NEW",
+                "WAITING",
+                waiting_reason="Ожидаем доступ",
+                ticket_id=ticket_two.id,
+            )
+            cancel_entry = log_audit(
+                db,
+                entity_type="ticket",
+                entity_id=ticket_two.id,
+                action="CANCEL",
+                actor_user_id=admin.id,
+                old={"status": "WAITING"},
+                new={"close_reason": "NO_ACCESS"},
+            )
+            cancel_entry.created_at = cancelled_two_at.isoformat()
+            db.commit()
+
+            return (
+                asset.id,
+                ticket_one.id,
+                ticket_two.id,
+                ticket_one_created,
+                ticket_two_created,
+                comment_recent.created_at,
+                comment_old.created_at,
+            )
 
     def test_permissions(self):
-        asset_id, _, _, _, _ = self.create_asset_with_tickets()
+        asset_id, _, _, _, _, _, _ = self.create_asset_with_tickets()
 
         self.login(config.ADMIN_USERNAME, config.ADMIN_PASSWORD)
         admin_res = self.client.get(f"/api/lifts/{asset_id}/history")
@@ -133,47 +191,52 @@ class LiftHistoryApiTest(unittest.TestCase):
         self.assertEqual(tech_res.status_code, 403)
 
     def test_history_ordering_and_contains_tickets(self):
-        asset_id, ticket_one, ticket_two, _, _ = self.create_asset_with_tickets()
+        asset_id, ticket_one, ticket_two, _, _, _, _ = self.create_asset_with_tickets()
         self.login(config.ADMIN_USERNAME, config.ADMIN_PASSWORD)
 
         res = self.client.get(f"/api/lifts/{asset_id}/history")
         self.assertEqual(res.status_code, 200)
         payload = res.get_json()
-        items = payload["items"]
-        self.assertGreater(len(items), 1)
-        ids = {item["ticket"]["id"] for item in items}
+        tickets = payload["tickets"]
+        self.assertGreater(len(tickets), 1)
+        ids = {item["ticket"]["id"] for item in tickets}
         self.assertIn(ticket_one, ids)
         self.assertIn(ticket_two, ids)
-
-        timestamps = [item["ts"] for item in items]
-        self.assertEqual(timestamps, sorted(timestamps, reverse=True))
+        self.assertEqual(tickets[0]["ticket"]["id"], ticket_one)
+        metrics = tickets[0]["summary"]["metrics"]
+        self.assertIn("response_seconds", metrics)
+        self.assertIn("repair_seconds", metrics)
+        self.assertIn("downtime_seconds", metrics)
+        self.assertIsNotNone(metrics["response_seconds"])
+        ticket_two_entry = next(item for item in tickets if item["ticket"]["id"] == ticket_two)
+        other_metrics = ticket_two_entry["summary"]["metrics"]
+        self.assertIn("response_seconds", other_metrics)
+        self.assertEqual(other_metrics["downtime_seconds"], 2 * 60 * 60)
 
     def test_filters_q_and_date_range(self):
-        asset_id, _, _, recent_ts, old_ts = self.create_asset_with_tickets()
+        asset_id, ticket_one, _, ticket_one_created, _, _, _ = self.create_asset_with_tickets()
         self.login(config.ADMIN_USERNAME, config.ADMIN_PASSWORD)
 
         q_res = self.client.get(f"/api/lifts/{asset_id}/history?q=троса")
         self.assertEqual(q_res.status_code, 200)
-        q_items = q_res.get_json()["items"]
-        self.assertTrue(all("троса" in (item["text"] or "").lower() for item in q_items))
+        q_items = q_res.get_json()["tickets"]
+        self.assertEqual(len(q_items), 1)
+        self.assertEqual(q_items[0]["ticket"]["id"], ticket_one)
 
-        start_date = (recent_ts - timedelta(days=1)).date().isoformat()
-        end_date = (recent_ts + timedelta(days=1)).date().isoformat()
+        start_date = (ticket_one_created - timedelta(days=1)).date().isoformat()
+        end_date = (ticket_one_created + timedelta(days=1)).date().isoformat()
         date_res = self.client.get(f"/api/lifts/{asset_id}/history?from={start_date}&to={end_date}")
         self.assertEqual(date_res.status_code, 200)
-        date_items = date_res.get_json()["items"]
-        for item in date_items:
-            ts = datetime.fromisoformat(item["ts"])
-            self.assertGreaterEqual(ts.date(), datetime.fromisoformat(start_date).date())
-            self.assertLessEqual(ts.date(), datetime.fromisoformat(end_date).date())
-        self.assertTrue(any("Замена троса" in (item["text"] or "") for item in date_items))
+        date_items = date_res.get_json()["tickets"]
+        self.assertTrue(all(item["ticket"]["id"] == ticket_one for item in date_items))
 
     def test_history_page_includes_asset_id_data_attribute(self):
-        asset_id, _, _, _, _ = self.create_asset_with_tickets()
+        asset_id, _, _, _, _, _, _ = self.create_asset_with_tickets()
         self.login(config.ADMIN_USERNAME, config.ADMIN_PASSWORD)
 
         res = self.client.get(f"/lifts/{asset_id}")
         self.assertEqual(res.status_code, 200)
         body = res.get_data(as_text=True)
-        self.assertIn(f'data-asset-id="{asset_id}"', body)
-        self.assertIn("/static/lift_history.js", body)
+        self.assertIn(f'data-lift-id="{asset_id}"', body)
+        self.assertIn("История", body)
+        self.assertIn("/static/lift_detail.js", body)

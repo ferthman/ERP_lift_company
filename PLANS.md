@@ -4,6 +4,103 @@ This PLANS.md file is a living execution plan. The sections `Progress`, `Surpris
 
 Treat the reader as a complete beginner to this repository. The only context they have is the working tree and this file. Do not assume any prior conversation.
 
+---
+
+# Lift History UX Hierarchy — ExecPlan
+
+## Purpose / Big Picture
+
+Rework lift history UX so users navigate from the lifts list → lift detail → history tab → ticket cards → expandable per-ticket logs. The API must return grouped ticket history with computed metrics for consistent rendering.
+
+## Progress
+
+- [x] (2025-03-01 09:10Z) Review current lift history endpoint, templates, and JS flow; inventory required changes for lift detail page + grouped history payload.
+- [x] (2025-03-01 10:05Z) Backend: update `/api/lifts/<id>/history` to return grouped ticket histories with metrics and filtering.
+- [x] (2025-03-01 10:30Z) Frontend: add lift detail page with history tab + ticket cards + expandable logs; update lift list links.
+- [x] (2025-03-01 11:15Z) Tests: update lift history tests for grouped response + permissions + page markup.
+- [x] (2025-03-01 11:20Z) Validation: run pytest and capture output.
+- [x] (2025-03-01 12:10Z) Fix: count waiting downtime when tickets cancel out of WAITING (metrics + tests).
+
+## Surprises & Discoveries
+
+- None yet.
+
+## Decision Log
+
+- Decision: Keep `/lifts/<id>` as the lift detail entrypoint and replace the standalone history page with a tabbed detail template.
+  Rationale: Matches requested navigation while minimizing route churn.
+  Date/Author: 2025-03-01 / codex
+- Decision: Auto-expand the newest ticket card by default in the history tab.
+  Rationale: Highlights the most recent activity without extra clicks while still allowing collapse.
+  Date/Author: 2025-03-01 / codex
+- Decision: Close WAITING downtime on any non-WAITING status (including CANCELLED) and cap open WAITING at the last event timestamp.
+  Rationale: Ensures downtime metrics are stable for cancelled tickets without guessing future timestamps.
+  Date/Author: 2025-03-01 / codex
+
+## Outcomes & Retrospective
+
+- Outcome (2025-03-01): Lift detail page now hosts the history tab with ticket cards + expandable logs, and the lift history API groups tickets with metrics; tests updated and passing.
+- Outcome (2025-03-01): Downtime metrics now include WAITING segments that end in cancellation, with test coverage for cancelled flow.
+
+## Plan of Work
+
+### Milestone 1 — Backend grouped history + metrics
+
+Goal: serve grouped ticket history with computed metrics and ordering.
+
+Work:
+
+- Update `liftcrm/assets/routes.py` `/api/lifts/<id>/history` to return `{lift, tickets:[{ticket, events, summary}]}`.
+- Compute metrics (`response_seconds`, `repair_seconds`, `downtime_seconds`) using ticket timestamps + audit events.
+- Keep filtering by date range (`ticket.created_at`) and search (`ticket title/description`, optional event text).
+- Keep RBAC unchanged (admin/dispatcher only).
+
+Validation:
+
+- Request `/api/lifts/<id>/history` and confirm grouped payload with metrics keys present (nullable).
+- Verify newest activity ticket first.
+
+### Milestone 2 — Lift detail page + history tab
+
+Goal: replace standalone lift history page with lift detail page containing tabs.
+
+Work:
+
+- Create/update `templates/lift_detail.html` with lift header card and tabs (Инфо, История).
+- Load a new JS module (e.g., `static/lift_detail.js`) that renders ticket cards and expandable logs.
+- Update lift list actions to link to `/lifts/<id>#history` (shortcut) or `/lifts/<id>`.
+
+Validation:
+
+- Load `/lifts/<id>` and ensure lift card and history tab render.
+- Expand/collapse details for a ticket and verify only one open at a time.
+
+### Milestone 3 — Tests
+
+Goal: update pytest coverage for new API and page markup.
+
+Work:
+
+- Update `tests/test_lift_history.py` to assert grouped response shape and metrics keys.
+- Ensure permissions and ordering tests align with grouped payload.
+- Ensure lift detail page includes data-lift-id and history tab markup.
+
+Validation:
+
+- Run `pytest` and confirm passing.
+
+## End-of-plan change log
+
+- Change: Added Lift History UX ExecPlan with milestones and validation steps.
+  Reason: Required for multi-file backend + frontend changes.
+  Date/Author: 2025-03-01 / codex
+- Change: Updated progress, decisions, and outcomes for lift history UX implementation.
+  Reason: Track milestone completion and validation status.
+  Date/Author: 2025-03-01 / codex
+- Change: Added downtime-cancellation fix entries to progress and decisions.
+  Reason: Track metrics correction and follow-up validation work.
+  Date/Author: 2025-03-01 / codex
+
 ## Purpose / Big Picture
 
 We will add a mobile-first “Technician App” that runs on the same domain as the existing LiftCRM web app and can be installed on a phone as a PWA. It must work offline and sync changes when internet returns.

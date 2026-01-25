@@ -72,6 +72,65 @@ def _format_close_text(reason, comment):
     return reason or comment or "Заявка закрыта"
 
 
+def _format_iso(dt_value):
+    if not dt_value:
+        return None
+    return to_utc(dt_value).isoformat()
+
+
+def _first_status_ts(status_events, status):
+    for ts, state in status_events:
+        if state == status:
+            return ts
+    return None
+
+
+def _compute_ticket_metrics(ticket, status_events):
+    created_at = to_utc(ticket.created_at) if ticket.created_at else None
+    response_ts = None
+    if ticket.arrived_at:
+        response_ts = to_utc(ticket.arrived_at)
+    elif ticket.accepted_at:
+        response_ts = to_utc(ticket.accepted_at)
+    else:
+        response_ts = _first_status_ts(status_events, "IN_PROGRESS")
+
+    response_seconds = None
+    if created_at and response_ts and response_ts >= created_at:
+        response_seconds = int((response_ts - created_at).total_seconds())
+
+    in_progress_ts = _first_status_ts(status_events, "IN_PROGRESS")
+    completed_ts = to_utc(ticket.completed_at) if ticket.completed_at else _first_status_ts(status_events, "COMPLETED")
+    repair_seconds = None
+    if in_progress_ts and completed_ts and completed_ts >= in_progress_ts:
+        repair_seconds = int((completed_ts - in_progress_ts).total_seconds())
+
+    downtime_seconds = None
+    waiting_durations = []
+    waiting_start = None
+    last_ts = None
+    for ts, status in status_events:
+        last_ts = ts
+        if status == "WAITING":
+            if waiting_start is None:
+                waiting_start = ts
+        else:
+            if waiting_start is not None:
+                waiting_durations.append((ts - waiting_start).total_seconds())
+                waiting_start = None
+    if waiting_start is not None and last_ts is not None:
+        waiting_durations.append((last_ts - waiting_start).total_seconds())
+        waiting_start = None
+    if waiting_durations:
+        downtime_seconds = int(sum(waiting_durations))
+
+    return {
+        "response_seconds": response_seconds,
+        "repair_seconds": repair_seconds,
+        "downtime_seconds": downtime_seconds,
+    }
+
+
 def _ensure_unique_serial(db, serial_no, asset_id=None):
     if not serial_no:
         return None
@@ -198,7 +257,7 @@ def delete_asset(asset_id):
 @login_required
 @role_required("admin", "dispatcher")
 def lift_history(asset_id):
-    q = (request.args.get("q") or "").strip().lower()
+    q = normalize_text(request.args.get("q") or "")
     from_param = request.args.get("from")
     to_param = request.args.get("to")
     try:
@@ -246,54 +305,40 @@ def lift_history(asset_id):
         users = db.query(User).filter(User.id.in_(user_ids)).all() if user_ids else []
         users_by_id = {u.id: u for u in users}
 
-        master_ids = set()
-        for entry in audits:
-            try:
-                payload = json.loads(entry.diff_json or "{}")
-            except json.JSONDecodeError:
-                continue
-            new = payload.get("new") or {}
-            old = payload.get("old") or {}
-            for key in ("assigned_master_id",):
-                if new.get(key):
-                    master_ids.add(new.get(key))
-                if old.get(key):
-                    master_ids.add(old.get(key))
+        master_ids = {t.assigned_master_id for t in tickets if t.assigned_master_id}
         masters = db.query(Master).filter(Master.id.in_(master_ids)).all() if master_ids else []
         masters_by_id = {m.id: m for m in masters}
+        master_users = db.query(User).filter(User.master_id.in_(master_ids)).all() if master_ids else []
+        users_by_master_id = {u.master_id: u for u in master_users if u.master_id}
 
+        events_by_ticket = {t.id: [] for t in tickets}
+        status_events_by_ticket = {t.id: [] for t in tickets}
+        last_ts_by_ticket = {t.id: to_utc(t.created_at) if t.created_at else None for t in tickets}
         ticket_map = {t.id: t for t in tickets}
-        items = []
 
-        def add_item(ts_dt, kind, actor_id, ticket_id, text, meta=None):
+        def add_event(ts_dt, kind, actor_id, ticket_id, text, meta=None):
             if ts_dt is None:
                 return
-            if ts_dt < from_dt or ts_dt > to_dt:
+            ticket_events = events_by_ticket.get(ticket_id)
+            if ticket_events is None:
                 return
-            if q:
-                haystack = (text or "").lower()
-                if q not in haystack:
-                    return
-            ticket = ticket_map.get(ticket_id)
-            if not ticket:
-                return
-            items.append(
+            ticket_events.append(
                 {
                     "ts": ts_dt.isoformat(),
                     "kind": kind,
                     "actor": _serialize_actor(users_by_id.get(actor_id)),
-                    "ticket": {
-                        "id": ticket.id,
-                        "status": ticket.status,
-                        "title": ticket.object_name,
-                    },
                     "text": text,
                     "meta": meta or {},
                 }
             )
+            last_ts = last_ts_by_ticket.get(ticket_id)
+            if last_ts is None or ts_dt > last_ts:
+                last_ts_by_ticket[ticket_id] = ts_dt
 
         for entry in audits:
             ts_dt = _parse_iso_ts(entry.created_at)
+            if ts_dt is None:
+                continue
             try:
                 payload = json.loads(entry.diff_json or "{}")
             except json.JSONDecodeError:
@@ -307,6 +352,7 @@ def lift_history(asset_id):
             if action == "CREATE":
                 kind = "CREATE"
                 text = "Создана заявка"
+                status_events_by_ticket.get(entry.entity_id, []).append((ts_dt, new.get("status") or "NEW"))
             elif action == "ASSIGN":
                 kind = "ASSIGN"
                 master_id = new.get("assigned_master_id")
@@ -318,9 +364,13 @@ def lift_history(asset_id):
             elif action == "CANCEL":
                 kind = "CLOSE"
                 text = _format_close_text(new.get("close_reason"), new.get("close_comment"))
+                status_events_by_ticket.get(entry.entity_id, []).append((ts_dt, "CANCELLED"))
             elif action == "STATUS_CHANGE":
                 new_status = new.get("status")
                 old_status = old.get("status")
+                meta.update({"status": new_status, "old_status": old_status})
+                if new_status:
+                    status_events_by_ticket.get(entry.entity_id, []).append((ts_dt, new_status))
                 if new_status == "WAITING" or new.get("waiting_reason"):
                     kind = "WAITING"
                     text = new.get("waiting_reason") or _format_status_change(old_status, new_status)
@@ -335,13 +385,13 @@ def lift_history(asset_id):
                 changed = ", ".join(new.keys()) if isinstance(new, dict) else ""
                 text = f"Обновлены поля: {changed}" if changed else "Обновление заявки"
             if kind:
-                add_item(ts_dt, kind, entry.actor_user_id, entry.entity_id, text, meta=meta)
+                add_event(ts_dt, kind, entry.actor_user_id, entry.entity_id, text, meta=meta)
 
         audited_create = {entry.entity_id for entry in audits if entry.action == "CREATE"}
         for ticket in tickets:
             if ticket.id in audited_create:
                 continue
-            add_item(
+            add_event(
                 to_utc(ticket.created_at),
                 "CREATE",
                 None,
@@ -350,7 +400,7 @@ def lift_history(asset_id):
             )
 
         for comment in comments:
-            add_item(
+            add_event(
                 to_utc(comment.created_at),
                 "COMMENT",
                 comment.user_id,
@@ -359,7 +409,7 @@ def lift_history(asset_id):
             )
 
         for attachment in attachments:
-            add_item(
+            add_event(
                 to_utc(attachment.created_at),
                 "ATTACHMENT",
                 None,
@@ -368,9 +418,77 @@ def lift_history(asset_id):
                 meta={"filename": attachment.filename, "id": attachment.id},
             )
 
-        items.sort(key=lambda x: x["ts"], reverse=True)
+        def matches_query(ticket, ticket_events):
+            if not q:
+                return True
+            haystack = normalize_text(
+                f"{ticket.object_name or ''} {ticket.description or ''}"
+            )
+            if q in haystack:
+                return True
+            for ev in ticket_events:
+                if q in normalize_text(ev.get("text") or ""):
+                    return True
+            return False
 
-        return jsonify({"lift": serialize_asset(asset), "items": items})
+        tickets_payload = []
+        for ticket in tickets:
+            created_at = to_utc(ticket.created_at) if ticket.created_at else None
+            if created_at and (created_at < from_dt or created_at > to_dt):
+                continue
+            ticket_events = events_by_ticket.get(ticket.id, [])
+            if not matches_query(ticket, ticket_events):
+                continue
+            status_events = sorted(
+                status_events_by_ticket.get(ticket.id, []),
+                key=lambda x: x[0] or datetime.min.replace(tzinfo=timezone.utc),
+            )
+            metrics = _compute_ticket_metrics(ticket, status_events)
+            last_ts = last_ts_by_ticket.get(ticket.id) or created_at
+            master = masters_by_id.get(ticket.assigned_master_id)
+            master_user = users_by_master_id.get(ticket.assigned_master_id)
+            assigned = None
+            if master or master_user:
+                assigned = {
+                    "id": master.id if master else None,
+                    "name": master.name if master else None,
+                    "username": master_user.username if master_user else None,
+                }
+            ticket_events_sorted = sorted(
+                ticket_events,
+                key=lambda x: x["ts"],
+                reverse=True,
+            )
+            tickets_payload.append(
+                {
+                    "ticket": {
+                        "id": ticket.id,
+                        "title": ticket.object_name,
+                        "description": ticket.description,
+                        "status": ticket.status,
+                        "created_at": _format_iso(ticket.created_at),
+                        "completed_at": _format_iso(ticket.completed_at),
+                        "accepted_at": _format_iso(ticket.accepted_at),
+                        "arrived_at": _format_iso(ticket.arrived_at),
+                        "waiting_at": _format_iso(ticket.waiting_at),
+                        "waiting_reason": ticket.waiting_reason,
+                        "assigned": assigned,
+                    },
+                    "events": ticket_events_sorted,
+                    "summary": {
+                        "last_ts": last_ts.isoformat() if last_ts else None,
+                        "events_count": len(ticket_events_sorted),
+                        "metrics": metrics,
+                    },
+                }
+            )
+
+        tickets_payload.sort(
+            key=lambda entry: entry["summary"]["last_ts"] or "",
+            reverse=True,
+        )
+
+        return jsonify({"lift": serialize_asset(asset), "tickets": tickets_payload})
 
 
 @bp.get("/api/assets/export.xlsx")
