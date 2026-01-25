@@ -101,14 +101,14 @@ class MobileLoginFlowTest(unittest.TestCase):
         res = self.client.get("/")
         self.assertEqual(res.status_code, 200)
         body = res.get_data(as_text=True)
-        self.assertIn("Lift CRM", body)
+        self.assertIn("PremierLift CRM", body)
 
     def test_admin_route_not_redirected(self):
         self.login_api("tech_mobile_test", "techpass")
         res = self.client.get("/admin")
         self.assertEqual(res.status_code, 200)
         body = res.get_data(as_text=True)
-        self.assertIn("Lift CRM", body)
+        self.assertIn("PremierLift CRM", body)
         self.assertIn("Вы вошли как мастер. В админке доступ ограничен.", body)
         self.assertIn("Если вам нужна админка — войдите под диспетчером/админом.", body)
         self.assertIn("/mobile?ui=mobile", body)
@@ -127,7 +127,7 @@ class MobileLoginFlowTest(unittest.TestCase):
         res = self.client.get("/")
         self.assertEqual(res.status_code, 200)
         body = res.get_data(as_text=True)
-        self.assertIn("Lift CRM", body)
+        self.assertIn("PremierLift CRM", body)
         self.assertNotIn("Вы вошли как мастер. В админке доступ ограничен.", body)
         self.assertNotIn("Если вам нужна админка — войдите под диспетчером/админом.", body)
 
