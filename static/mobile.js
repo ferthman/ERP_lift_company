@@ -205,6 +205,10 @@ function renderDetail(ticket) {
     return;
   }
   updateTicketStatusBadge(ticket);
+  const mapUrl = build2gisWebUrl(ticket);
+  const mapButton = mapUrl
+    ? `<button id="btn-2gis" class="mt-2 w-full px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Открыть в 2GIS</button>`
+    : "";
   const comments = (ticket.comments || [])
     .map(
       (c) =>
@@ -217,6 +221,7 @@ function renderDetail(ticket) {
     <div class="space-y-2">
       <div><span class="font-semibold">Объект:</span> ${ticket.object_name || "—"}</div>
       <div><span class="font-semibold">Адрес:</span> ${ticket.address || "—"}</div>
+      ${mapButton}
       <div><span class="font-semibold">Описание:</span> ${ticket.description || "—"}</div>
       <div class="text-xs text-slate-500">Назначено: ${ticket.assigned_at ? formatDate(ticket.assigned_at) : "—"}</div>
     </div>
@@ -258,6 +263,7 @@ function renderDetail(ticket) {
   const btnWaiting = document.getElementById("btn-waiting");
   const btnDone = document.getElementById("btn-done");
   const btnComment = document.getElementById("btn-comment");
+  const btn2gis = document.getElementById("btn-2gis");
   const photoInput = document.getElementById("photo-input");
   const waitingReason = document.getElementById("waiting-reason");
   const commentBody = document.getElementById("comment-body");
@@ -284,6 +290,20 @@ function renderDetail(ticket) {
     const body = commentBody.value.trim();
     queueEvent(ticket, "TICKET_ADD_COMMENT", { body });
   });
+  if (btn2gis && mapUrl) {
+    btn2gis.addEventListener("click", () => {
+      if (window.MOBILE_BOOTSTRAP?.debug2gis) {
+        const debugLat = typeof parse2gisCoord === "function" ? parse2gisCoord(ticket.lat) : ticket.lat;
+        const debugLon =
+          typeof parse2gisCoord === "function"
+            ? parse2gisCoord(ticket.lng ?? ticket.lon)
+            : ticket.lng ?? ticket.lon;
+        console.info("2GIS coords", { ticketId: ticket.id, lat: debugLat, lng: debugLon });
+        console.info("2GIS url", mapUrl);
+      }
+      window.location.assign(mapUrl);
+    });
+  }
   photoInput.addEventListener("change", async () => {
     const file = photoInput.files?.[0];
     if (!file) return;

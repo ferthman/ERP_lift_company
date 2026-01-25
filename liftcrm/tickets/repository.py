@@ -53,12 +53,18 @@ def compute_sla_fields(t: Ticket):
 
 def serialize_ticket(t: Ticket):
     sla = compute_sla_fields(t)
+    lat = t.lat
+    lon = t.lon
+    if (lat is None or lon is None) and t.asset:
+        lat = lat if lat is not None else t.asset.lat
+        lon = lon if lon is not None else t.asset.lon
     return {
         "id": t.id,
         "object_name": t.object_name,
         "address": t.address,
-        "lat": t.lat,
-        "lon": t.lon,
+        "lat": lat,
+        "lon": lon,
+        "lng": lon,
         "description": t.description,
         "priority": t.priority or "MEDIUM",
         "email": t.email,
