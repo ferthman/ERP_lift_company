@@ -1,4 +1,5 @@
 import logging
+import math
 import os
 import json
 from datetime import datetime, timezone
@@ -11,7 +12,9 @@ from .service import (
     apply_in_progress_arrival,
     auto_assign_master,
     bump_ticket_version,
-    haversine_m,
+    GEOFENCE_RADIUS_M,
+    haversine_distance_m,
+    is_within_radius,
     send_report,
     validate_status_transition,
 )
@@ -584,6 +587,31 @@ def sync_events():
         return jsonify({"error": {"code": "MISSING_MASTER", "message": "Missing master profile"}}), 403
     results = []
     with SessionLocal() as db:
+        def event_result(event_id, ok, code, message=None, **extra):
+            result = {"id": event_id, "ok": ok, "code": code}
+            if message:
+                result["message"] = message
+            result.update(extra)
+            return result
+
+        def has_valid_coords(lat, lon):
+            if lat is None or lon is None:
+                return False
+            lat_value = float(lat)
+            lon_value = float(lon)
+            if not (math.isfinite(lat_value) and math.isfinite(lon_value)):
+                return False
+            if lat_value == 0 and lon_value == 0:
+                return False
+            return -90 <= lat_value <= 90 and -180 <= lon_value <= 180
+
+        def resolve_target_coords(ticket):
+            if has_valid_coords(ticket.lat, ticket.lon):
+                return float(ticket.lat), float(ticket.lon)
+            if ticket.asset and has_valid_coords(ticket.asset.lat, ticket.asset.lon):
+                return float(ticket.asset.lat), float(ticket.asset.lon)
+            return None, None
+
         for event in events:
             event_id = (event or {}).get("id")
             event_type = (event or {}).get("type")
@@ -592,83 +620,123 @@ def sync_events():
             payload = (event or {}).get("payload") or {}
             if not event_id or not event_type or not ticket_id or expected_version is None:
                 results.append(
-                    {
-                        "id": event_id,
-                        "ok": False,
-                        "error": {"code": "INVALID_EVENT", "message": "Missing required event fields"},
-                    }
+                    event_result(
+                        event_id,
+                        False,
+                        "INVALID_EVENT",
+                        "Missing required event fields",
+                    )
                 )
                 continue
             existing = db.query(AppliedEvent).filter(AppliedEvent.event_id == event_id).first()
             if existing:
                 ticket = db.get(Ticket, ticket_id)
                 results.append(
-                    {
-                        "id": event_id,
-                        "ok": True,
-                        "status": "duplicate",
-                        "ticket": {
+                    event_result(
+                        event_id,
+                        True,
+                        "OK",
+                        status="duplicate",
+                        ticket={
                             "id": ticket.id if ticket else ticket_id,
                             "status": ticket.status if ticket else None,
                             "version": ticket.version if ticket else None,
                         },
-                    }
+                    )
                 )
                 continue
             ticket = db.get(Ticket, ticket_id)
             if not ticket:
-                results.append(
-                    {
-                        "id": event_id,
-                        "ok": False,
-                        "error": {"code": "NOT_FOUND", "message": "Ticket not found"},
-                    }
-                )
+                results.append(event_result(event_id, False, "NOT_FOUND", "Ticket not found"))
                 continue
             if ticket.archived_at:
-                results.append(
-                    {
-                        "id": event_id,
-                        "ok": False,
-                        "error": {"code": "ARCHIVED", "message": "Ticket archived"},
-                    }
-                )
+                results.append(event_result(event_id, False, "ARCHIVED", "Ticket archived"))
                 continue
             if ticket.assigned_master_id != current_user.master_id:
-                results.append(
-                    {
-                        "id": event_id,
-                        "ok": False,
-                        "error": {"code": "FORBIDDEN", "message": "Ticket not assigned to you"},
-                    }
-                )
+                results.append(event_result(event_id, False, "FORBIDDEN", "Ticket not assigned to you"))
                 continue
             if ticket.version != expected_version:
                 results.append(
-                    {
-                        "id": event_id,
-                        "ok": False,
-                        "error": {
-                            "code": "CONFLICT",
-                            "message": "Ticket version mismatch",
-                            "server_version": ticket.version,
-                            "server_status": ticket.status,
-                        },
-                    }
+                    event_result(
+                        event_id,
+                        False,
+                        "CONFLICT",
+                        "Ticket version mismatch",
+                        server_version=ticket.version,
+                        server_status=ticket.status,
+                    )
                 )
                 continue
             if ticket.status in {"COMPLETED", "CANCELLED"} and event_type != "TICKET_ADD_COMMENT":
-                results.append(
-                    {
-                        "id": event_id,
-                        "ok": False,
-                        "error": {"code": "IMMUTABLE", "message": "Ticket is closed"},
-                    }
-                )
+                results.append(event_result(event_id, False, "IMMUTABLE", "Ticket is closed"))
                 continue
             try:
                 old_status = ticket.status
                 if event_type == "TICKET_ACCEPT":
+                    tech_lat = payload.get("current_lat")
+                    tech_lon = payload.get("current_lng")
+                    if tech_lat is None or tech_lon is None:
+                        results.append(
+                            event_result(
+                                event_id,
+                                False,
+                                "NO_TECH_COORDS",
+                                "Missing technician coordinates",
+                            )
+                        )
+                        db.rollback()
+                        continue
+                    target_lat, target_lon = resolve_target_coords(ticket)
+                    if target_lat is None or target_lon is None:
+                        results.append(
+                            event_result(
+                                event_id,
+                                False,
+                                "NO_TARGET_COORDS",
+                                "Missing target coordinates",
+                            )
+                        )
+                        db.rollback()
+                        continue
+                    try:
+                        tech_lat_value = float(tech_lat)
+                        tech_lon_value = float(tech_lon)
+                    except (TypeError, ValueError):
+                        results.append(
+                            event_result(
+                                event_id,
+                                False,
+                                "NO_TECH_COORDS",
+                                "Invalid technician coordinates",
+                            )
+                        )
+                        db.rollback()
+                        continue
+                    distance_m = haversine_distance_m(
+                        tech_lat_value,
+                        tech_lon_value,
+                        target_lat,
+                        target_lon,
+                    )
+                    if not is_within_radius(
+                        tech_lat_value,
+                        tech_lon_value,
+                        target_lat,
+                        target_lon,
+                        GEOFENCE_RADIUS_M,
+                    ):
+                        results.append(
+                            event_result(
+                                event_id,
+                                False,
+                                "OUT_OF_RANGE",
+                                "Outside geofence",
+                                distance_m=int(distance_m),
+                                radius_m=GEOFENCE_RADIUS_M,
+                            )
+                        )
+                        db.rollback()
+                        continue
                     old_accept = ticket.accepted_at
                     ticket.accepted_at = datetime.now(timezone.utc)
                     ticket.status = "ACCEPTED"
@@ -680,7 +748,7 @@ def sync_events():
                         payload,
                     )
                     if not ok:
-                        results.append({"id": event_id, "ok": False, "error": {"code": code, "message": message}})
+                        results.append(event_result(event_id, False, code, message))
                         db.rollback()
                         continue
                     old, new = changed_fields(
@@ -725,7 +793,7 @@ def sync_events():
                             payload,
                         )
                     if not ok:
-                        results.append({"id": event_id, "ok": False, "error": {"code": code, "message": message}})
+                        results.append(event_result(event_id, False, code, message))
                         db.rollback()
                         continue
                     apply_in_progress_arrival(ticket, payload)
@@ -770,11 +838,12 @@ def sync_events():
                     reason = (payload.get("waiting_reason") or "").strip()
                     if not reason:
                         results.append(
-                            {
-                                "id": event_id,
-                                "ok": False,
-                                "error": {"code": "VALIDATION_ERROR", "message": "waiting_reason is required"},
-                            }
+                            event_result(
+                                event_id,
+                                False,
+                                "VALIDATION_ERROR",
+                                "waiting_reason is required",
+                            )
                         )
                         db.rollback()
                         continue
@@ -791,7 +860,7 @@ def sync_events():
                         payload,
                     )
                     if not ok:
-                        results.append({"id": event_id, "ok": False, "error": {"code": code, "message": message}})
+                        results.append(event_result(event_id, False, code, message))
                         db.rollback()
                         continue
                     old, new = changed_fields(
@@ -815,21 +884,23 @@ def sync_events():
                     close_comment = payload.get("close_comment")
                     if not close_reason:
                         results.append(
-                            {
-                                "id": event_id,
-                                "ok": False,
-                                "error": {"code": "VALIDATION_ERROR", "message": "close_reason is required"},
-                            }
+                            event_result(
+                                event_id,
+                                False,
+                                "VALIDATION_ERROR",
+                                "close_reason is required",
+                            )
                         )
                         db.rollback()
                         continue
                     if close_reason not in CLOSE_REASONS:
                         results.append(
-                            {
-                                "id": event_id,
-                                "ok": False,
-                                "error": {"code": "VALIDATION_ERROR", "message": "Invalid close_reason"},
-                            }
+                            event_result(
+                                event_id,
+                                False,
+                                "VALIDATION_ERROR",
+                                "Invalid close_reason",
+                            )
                         )
                         db.rollback()
                         continue
@@ -849,7 +920,7 @@ def sync_events():
                         payload,
                     )
                     if not ok:
-                        results.append({"id": event_id, "ok": False, "error": {"code": code, "message": message}})
+                        results.append(event_result(event_id, False, code, message))
                         db.rollback()
                         continue
                     old, new = changed_fields(
@@ -877,11 +948,12 @@ def sync_events():
                     body = (payload.get("body") or "").strip()
                     if not body:
                         results.append(
-                            {
-                                "id": event_id,
-                                "ok": False,
-                                "error": {"code": "VALIDATION_ERROR", "message": "Comment body is required"},
-                            }
+                            event_result(
+                                event_id,
+                                False,
+                                "VALIDATION_ERROR",
+                                "Comment body is required",
+                            )
                         )
                         db.rollback()
                         continue
@@ -900,11 +972,12 @@ def sync_events():
                     )
                 else:
                     results.append(
-                        {
-                            "id": event_id,
-                            "ok": False,
-                            "error": {"code": "INVALID_EVENT", "message": "Unknown event type"},
-                        }
+                        event_result(
+                            event_id,
+                            False,
+                            "INVALID_EVENT",
+                            "Unknown event type",
+                        )
                     )
                     db.rollback()
                     continue
@@ -916,21 +989,16 @@ def sync_events():
                 db.add(applied)
                 db.commit()
                 results.append(
-                    {
-                        "id": event_id,
-                        "ok": True,
-                        "ticket": {"id": ticket.id, "status": ticket.status, "version": ticket.version},
-                    }
+                    event_result(
+                        event_id,
+                        True,
+                        "OK",
+                        ticket={"id": ticket.id, "status": ticket.status, "version": ticket.version},
+                    )
                 )
             except Exception as exc:
                 db.rollback()
-                results.append(
-                    {
-                        "id": event_id,
-                        "ok": False,
-                        "error": {"code": "SERVER_ERROR", "message": str(exc)},
-                    }
-                )
+                results.append(event_result(event_id, False, "SERVER_ERROR", str(exc)))
     return jsonify({"results": results})
 
 
@@ -965,9 +1033,9 @@ def arrive_ticket(ticket_id):
             return jsonify({"error": "Ticket not assigned to you"}), 403
         if lat is None or lon is None:
             return jsonify({"error": "lat/lon required"}), 400
-        dist = haversine_m(float(lat), float(lon), t.lat, t.lon)
-        if dist > 500:
-            return jsonify({"error": f"Outside geofence ({int(dist)} m > 500 m)"}), 403
+        dist = haversine_distance_m(float(lat), float(lon), t.lat, t.lon)
+        if dist > GEOFENCE_RADIUS_M:
+            return jsonify({"error": f"Outside geofence ({int(dist)} m > {GEOFENCE_RADIUS_M} m)"}), 403
         old_status = t.status
         old_arrived = t.arrived_at
         old_arrival_lat = t.arrival_lat
@@ -1057,9 +1125,9 @@ def complete_ticket(ticket_id):
             return jsonify({"error": "close_reason is required"}), 400
         if close_reason not in CLOSE_REASONS:
             return jsonify({"error": "Invalid close_reason"}), 400
-        dist = haversine_m(float(lat), float(lon), t.lat, t.lon)
-        if dist > 500:
-            return jsonify({"error": f"Outside geofence ({int(dist)} m > 500 m)"}), 403
+        dist = haversine_distance_m(float(lat), float(lon), t.lat, t.lon)
+        if dist > GEOFENCE_RADIUS_M:
+            return jsonify({"error": f"Outside geofence ({int(dist)} m > {GEOFENCE_RADIUS_M} m)"}), 403
         old_status = t.status
         old_completed = t.completed_at
         old_reason = t.close_reason

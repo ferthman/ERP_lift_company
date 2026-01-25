@@ -46,6 +46,7 @@ Admin/dispatcher UI must continue to work as before.
 - [x] (2025-02-17 11:05Z) Switch 2GIS routing to dgis deeplink with 2gis.kz web fallback and update tests.
 - [x] (2025-02-17 11:30Z) Ensure /api/me/tickets and details include lat/lng and add mobile coordinate tests.
 - [x] (2025-02-17 12:05Z) Switch 2GIS routing to geo lon/lat URLs and gate debug logging behind a flag.
+- [x] (2025-02-20 10:15Z) Enforce geofence on sync TICKET_ACCEPT and request geolocation only on mobile accept.
 
 ## Surprises & Discoveries
 
@@ -57,6 +58,8 @@ Document unexpected behaviors, constraints, or bugs discovered during implementa
   Evidence: `liftcrm/auth/routes.py` only exposed `/api/login` before the change.
 - Observation: Unified login required expanding safe redirect allowlist to include `/admin` while preserving strict path validation.
   Evidence: Updated `safe_next_target` to validate parsed path and restrict to `/`, `/admin`, and `/mobile`.
+- Observation: Sync event results now return top-level codes for mobile error handling.
+  Evidence: `/api/sync/events` returns `{id, ok, code}` per event and includes geofence error metadata.
 
 ## Decision Log
 
@@ -121,6 +124,9 @@ Record every decision made while working on this plan.
 - Decision: Use a 2GIS web URL with `m=<lng,lat>` plus optional `query` hint, and open it in the same tab from the PWA.
   Rationale: Keeps navigation consistent in the PWA while allowing the OS to offer “Open in app” on mobile.
   Date/Author: 2025-02-17 / codex
+- Decision: Enforce 500m geofence on sync `TICKET_ACCEPT` and require technician coordinates for accept events.
+  Rationale: Close the mobile sync bypass while keeping location prompts limited to the accept action.
+  Date/Author: 2025-02-20 / codex
 
 (Keep adding entries as decisions occur.)
 
@@ -140,6 +146,7 @@ At major milestones or completion, summarize what was achieved, what remains, an
 - Outcome (2025-02-17): Added dgis deeplink routing with a 2gis.kz fallback and aligned URL builder tests.
 - Outcome (2025-02-17): Verified mobile endpoints return lat/lng values and added coverage for ticket list/detail payloads.
 - Outcome (2025-02-17): Updated 2GIS links to /almaty/geo lon,lat URLs and gated debug output.
+- Outcome (2025-02-20): Added geofence enforcement to sync accept events and mobile accept now requests geolocation on demand.
 
 ## Context and Orientation
 
@@ -523,3 +530,6 @@ When you edit this plan during implementation, append a short note here:
 - Change: Logged switch to 2GIS geo URLs and debug flag for URL logging.
   Reason: Ensure destination pins render reliably with lon,lat ordering.
   Date/Author: 2025-02-17 / codex
+- Change: Updated sync accept geofence enforcement and mobile accept geolocation flow notes.
+  Reason: Track the security fix across backend and mobile UI.
+  Date/Author: 2025-02-20 / codex
