@@ -254,6 +254,58 @@ class SyncEventsTest(unittest.TestCase):
             self.assertEqual(ticket.status, "ASSIGNED")
         self.logout()
 
+    def test_accept_rejects_nan_coords(self):
+        ticket_id = self.create_ticket(self.master_id, lat=43.245472, lon=76.885244)
+        self.login(self.tech_username, self.tech_password)
+        payload = {
+            "events": [
+                {
+                    "id": str(uuid.uuid4()),
+                    "type": "TICKET_ACCEPT",
+                    "ticket_id": ticket_id,
+                    "expected_version": 1,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "payload": {"current_lat": "nan", "current_lng": "nan"},
+                }
+            ]
+        }
+        res = self.client.post("/api/sync/events", json=payload)
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        result = data["results"][0]
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["code"], "NO_TECH_COORDS")
+        with SessionLocal() as db:
+            ticket = db.get(Ticket, ticket_id)
+            self.assertEqual(ticket.status, "ASSIGNED")
+        self.logout()
+
+    def test_accept_rejects_infinite_coords(self):
+        ticket_id = self.create_ticket(self.master_id, lat=43.245472, lon=76.885244)
+        self.login(self.tech_username, self.tech_password)
+        payload = {
+            "events": [
+                {
+                    "id": str(uuid.uuid4()),
+                    "type": "TICKET_ACCEPT",
+                    "ticket_id": ticket_id,
+                    "expected_version": 1,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "payload": {"current_lat": "inf", "current_lng": "-inf"},
+                }
+            ]
+        }
+        res = self.client.post("/api/sync/events", json=payload)
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        result = data["results"][0]
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["code"], "NO_TECH_COORDS")
+        with SessionLocal() as db:
+            ticket = db.get(Ticket, ticket_id)
+            self.assertEqual(ticket.status, "ASSIGNED")
+        self.logout()
+
     def test_happy_path_transitions(self):
         ticket_id = self.create_ticket(self.master_id)
         self.login(self.tech_username, self.tech_password)

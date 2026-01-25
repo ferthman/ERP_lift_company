@@ -594,22 +594,26 @@ def sync_events():
             result.update(extra)
             return result
 
-        def has_valid_coords(lat, lon):
-            if lat is None or lon is None:
-                return False
-            lat_value = float(lat)
-            lon_value = float(lon)
+        def parse_coord_pair(lat, lon):
+            try:
+                lat_value = float(lat)
+                lon_value = float(lon)
+            except (TypeError, ValueError):
+                return None
             if not (math.isfinite(lat_value) and math.isfinite(lon_value)):
-                return False
-            if lat_value == 0 and lon_value == 0:
-                return False
-            return -90 <= lat_value <= 90 and -180 <= lon_value <= 180
+                return None
+            if not (-90 <= lat_value <= 90 and -180 <= lon_value <= 180):
+                return None
+            return lat_value, lon_value
 
         def resolve_target_coords(ticket):
-            if has_valid_coords(ticket.lat, ticket.lon):
-                return float(ticket.lat), float(ticket.lon)
-            if ticket.asset and has_valid_coords(ticket.asset.lat, ticket.asset.lon):
-                return float(ticket.asset.lat), float(ticket.asset.lon)
+            pair = parse_coord_pair(ticket.lat, ticket.lon)
+            if pair and not (pair[0] == 0 and pair[1] == 0):
+                return pair
+            if ticket.asset:
+                pair = parse_coord_pair(ticket.asset.lat, ticket.asset.lon)
+                if pair and not (pair[0] == 0 and pair[1] == 0):
+                    return pair
             return None, None
 
         for event in events:
@@ -698,10 +702,8 @@ def sync_events():
                         )
                         db.rollback()
                         continue
-                    try:
-                        tech_lat_value = float(tech_lat)
-                        tech_lon_value = float(tech_lon)
-                    except (TypeError, ValueError):
+                    tech_pair = parse_coord_pair(tech_lat, tech_lon)
+                    if not tech_pair:
                         results.append(
                             event_result(
                                 event_id,
@@ -712,12 +714,24 @@ def sync_events():
                         )
                         db.rollback()
                         continue
+                    tech_lat_value, tech_lon_value = tech_pair
                     distance_m = haversine_distance_m(
                         tech_lat_value,
                         tech_lon_value,
                         target_lat,
                         target_lon,
                     )
+                    if not math.isfinite(distance_m):
+                        results.append(
+                            event_result(
+                                event_id,
+                                False,
+                                "NO_TECH_COORDS",
+                                "Invalid technician coordinates",
+                            )
+                        )
+                        db.rollback()
+                        continue
                     if not is_within_radius(
                         tech_lat_value,
                         tech_lon_value,
