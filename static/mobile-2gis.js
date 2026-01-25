@@ -24,7 +24,7 @@
     // - null/empty coords -> use address search
     // - "0"/0 coords remain valid (0,0) unless business rules change
     if (hasCoords) {
-      return `https://2gis.kz/routeSearch/rsType/car/to/${encodeURIComponent(`${lon},${lat}`)}`;
+      return `https://2gis.kz/routeSearch/rsType/car/to/${lon},${lat}`;
     }
     if (hint) {
       return `https://2gis.kz/search/${encodeURIComponent(hint)}`;

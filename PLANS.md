@@ -44,6 +44,7 @@ Admin/dispatcher UI must continue to work as before.
 - [x] (2025-02-17 10:05Z) Fix 2GIS coord parsing to avoid null/empty values mapping to 0,0.
 - [x] (2025-02-17 10:40Z) Update 2GIS links to route search (lon,lat) and add URL builder test.
 - [x] (2025-02-17 11:05Z) Switch 2GIS routing to dgis deeplink with 2gis.kz web fallback and update tests.
+- [x] (2025-02-17 11:30Z) Ensure /api/me/tickets and details include lat/lng and add mobile coordinate tests.
 
 ## Surprises & Discoveries
 
@@ -136,6 +137,7 @@ At major milestones or completion, summarize what was achieved, what remains, an
 - Outcome (2025-02-17): Hardened 2GIS URL coord parsing to require non-empty, in-range coordinates before using `m=` links.
 - Outcome (2025-02-17): Switched 2GIS URLs to routeSearch (lon,lat) destinations and added a URL builder test.
 - Outcome (2025-02-17): Added dgis deeplink routing with a 2gis.kz fallback and aligned URL builder tests.
+- Outcome (2025-02-17): Verified mobile endpoints return lat/lng values and added coverage for ticket list/detail payloads.
 
 ## Context and Orientation
 
@@ -512,4 +514,7 @@ When you edit this plan during implementation, append a short note here:
   Date/Author: 2025-02-17 / codex
 - Change: Recorded dgis deeplink routing + kz fallback update and test adjustments.
   Reason: Ensure app deeplink opens navigation and web fallback works in Kazakhstan.
+  Date/Author: 2025-02-17 / codex
+- Change: Recorded mobile endpoint lat/lng payload check and added tests.
+  Reason: Ensure /mobile has coordinates for 2GIS routing.
   Date/Author: 2025-02-17 / codex

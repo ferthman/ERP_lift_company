@@ -205,6 +205,10 @@ function renderDetail(ticket) {
     return;
   }
   updateTicketStatusBadge(ticket);
+  const debugLat = typeof parse2gisCoord === "function" ? parse2gisCoord(ticket.lat) : ticket.lat;
+  const debugLon =
+    typeof parse2gisCoord === "function" ? parse2gisCoord(ticket.lng ?? ticket.lon) : ticket.lng ?? ticket.lon;
+  console.info("2GIS coords", { ticketId: ticket.id, lat: debugLat, lng: debugLon });
   const mapUrl = build2gisWebUrl(ticket);
   const mapButton = mapUrl
     ? `<button id="btn-2gis" class="mt-2 w-full px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Открыть в 2GIS</button>`
