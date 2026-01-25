@@ -108,15 +108,20 @@ def _compute_ticket_metrics(ticket, status_events):
     downtime_seconds = None
     waiting_durations = []
     waiting_start = None
+    last_ts = None
     for ts, status in status_events:
+        last_ts = ts
         if status == "WAITING":
             if waiting_start is None:
                 waiting_start = ts
-        elif status in {"IN_PROGRESS", "COMPLETED"}:
-            if waiting_start:
+        else:
+            if waiting_start is not None:
                 waiting_durations.append((ts - waiting_start).total_seconds())
                 waiting_start = None
-    if waiting_durations and waiting_start is None:
+    if waiting_start is not None and last_ts is not None:
+        waiting_durations.append((last_ts - waiting_start).total_seconds())
+        waiting_start = None
+    if waiting_durations:
         downtime_seconds = int(sum(waiting_durations))
 
     return {

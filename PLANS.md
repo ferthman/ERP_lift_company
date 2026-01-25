@@ -19,6 +19,7 @@ Rework lift history UX so users navigate from the lifts list → lift detail →
 - [x] (2025-03-01 10:30Z) Frontend: add lift detail page with history tab + ticket cards + expandable logs; update lift list links.
 - [x] (2025-03-01 11:15Z) Tests: update lift history tests for grouped response + permissions + page markup.
 - [x] (2025-03-01 11:20Z) Validation: run pytest and capture output.
+- [x] (2025-03-01 12:10Z) Fix: count waiting downtime when tickets cancel out of WAITING (metrics + tests).
 
 ## Surprises & Discoveries
 
@@ -32,10 +33,14 @@ Rework lift history UX so users navigate from the lifts list → lift detail →
 - Decision: Auto-expand the newest ticket card by default in the history tab.
   Rationale: Highlights the most recent activity without extra clicks while still allowing collapse.
   Date/Author: 2025-03-01 / codex
+- Decision: Close WAITING downtime on any non-WAITING status (including CANCELLED) and cap open WAITING at the last event timestamp.
+  Rationale: Ensures downtime metrics are stable for cancelled tickets without guessing future timestamps.
+  Date/Author: 2025-03-01 / codex
 
 ## Outcomes & Retrospective
 
 - Outcome (2025-03-01): Lift detail page now hosts the history tab with ticket cards + expandable logs, and the lift history API groups tickets with metrics; tests updated and passing.
+- Outcome (2025-03-01): Downtime metrics now include WAITING segments that end in cancellation, with test coverage for cancelled flow.
 
 ## Plan of Work
 
@@ -91,6 +96,9 @@ Validation:
   Date/Author: 2025-03-01 / codex
 - Change: Updated progress, decisions, and outcomes for lift history UX implementation.
   Reason: Track milestone completion and validation status.
+  Date/Author: 2025-03-01 / codex
+- Change: Added downtime-cancellation fix entries to progress and decisions.
+  Reason: Track metrics correction and follow-up validation work.
   Date/Author: 2025-03-01 / codex
 
 ## Purpose / Big Picture

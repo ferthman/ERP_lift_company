@@ -92,7 +92,7 @@ class LiftHistoryApiTest(unittest.TestCase):
                 address=asset.address,
                 lat=43.2,
                 lon=76.9,
-                status="NEW",
+                status="CANCELLED",
                 asset_id=asset.id,
                 created_at=ticket_two_created,
             )
@@ -126,11 +126,11 @@ class LiftHistoryApiTest(unittest.TestCase):
             ticket_one.completed_at = completed_at
             db.commit()
 
-            def add_status_event(ts, old_status, new_status, waiting_reason=None):
+            def add_status_event(ts, old_status, new_status, waiting_reason=None, ticket_id=None):
                 entry = log_audit(
                     db,
                     entity_type="ticket",
-                    entity_id=ticket_one.id,
+                    entity_id=ticket_id or ticket_one.id,
                     action="STATUS_CHANGE",
                     actor_user_id=admin.id,
                     old={"status": old_status},
@@ -142,6 +142,25 @@ class LiftHistoryApiTest(unittest.TestCase):
             add_status_event(waiting_at, "IN_PROGRESS", "WAITING", waiting_reason="Ожидание запчастей")
             add_status_event(resumed_at, "WAITING", "IN_PROGRESS")
             add_status_event(completed_at, "IN_PROGRESS", "COMPLETED")
+            waiting_two_at = ticket_two_created + timedelta(hours=1)
+            cancelled_two_at = ticket_two_created + timedelta(hours=3)
+            add_status_event(
+                waiting_two_at,
+                "NEW",
+                "WAITING",
+                waiting_reason="Ожидаем доступ",
+                ticket_id=ticket_two.id,
+            )
+            cancel_entry = log_audit(
+                db,
+                entity_type="ticket",
+                entity_id=ticket_two.id,
+                action="CANCEL",
+                actor_user_id=admin.id,
+                old={"status": "WAITING"},
+                new={"close_reason": "NO_ACCESS"},
+            )
+            cancel_entry.created_at = cancelled_two_at.isoformat()
             db.commit()
 
             return (
@@ -192,6 +211,7 @@ class LiftHistoryApiTest(unittest.TestCase):
         ticket_two_entry = next(item for item in tickets if item["ticket"]["id"] == ticket_two)
         other_metrics = ticket_two_entry["summary"]["metrics"]
         self.assertIn("response_seconds", other_metrics)
+        self.assertEqual(other_metrics["downtime_seconds"], 2 * 60 * 60)
 
     def test_filters_q_and_date_range(self):
         asset_id, ticket_one, _, ticket_one_created, _, _, _ = self.create_asset_with_tickets()
