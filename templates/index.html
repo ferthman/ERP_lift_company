@@ -1503,6 +1503,7 @@
           <td class="py-2 px-2">
             <div class="flex gap-2">
               <button class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" data-edit-asset="${asset.id}">Редактировать</button>
+              <a class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white" href="/lifts/${asset.id}">История</a>
             </div>
           </td>
         </tr>`;
@@ -2325,12 +2326,45 @@
       html += '</tbody></table>'; document.getElementById('metrics-masters').innerHTML = html;
     }
 
+    function getTicketIdFromQuery(){
+      const params = new URLSearchParams(window.location.search);
+      const raw = params.get('ticket_id');
+      if(!raw) return null;
+      const id = parseInt(raw, 10);
+      return Number.isNaN(id) ? null : id;
+    }
+
+    async function openTicketFromQuery(){
+      const ticketId = getTicketIdFromQuery();
+      if(!ticketId) return;
+      try{
+        const res = await fetch(`/api/tickets/${ticketId}`, { cache: 'no-store' });
+        if(!res.ok) return;
+        const ticket = await res.json();
+        openTicketModal(ticket);
+      }catch(err){
+        console.warn('Failed to open ticket from query', err);
+      }
+    }
+
+    function applyTabFromQuery(){
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab');
+      if(!tab) return;
+      if(tab === 'assets'){ loadAssets(); setTab('assets'); return; }
+      if(tab === 'objects'){ loadObjects(); setTab('objects'); return; }
+      if(tab === 'ops'){ loadKanban(); setTab('ops'); return; }
+      if(tab === 'super'){ loadDashboard(); loadMetrics(); setTab('super'); return; }
+      if(tab === 'access'){ loadUsers(); loadAccessMasters(); setAccessTab('users'); setTab('access'); return; }
+      if(tab === 'admin'){ setTab('admin'); return; }
+    }
+
     // Init
     if (document.getElementById('map-create')) {
       initCreateMap();
     }
     if (document.getElementById('view-admin')) {
-      refreshMe().then(()=>{ loadTicketFilters(); loadTickets(); });
+      refreshMe().then(()=>{ loadTicketFilters(); loadTickets().then(openTicketFromQuery).then(applyTabFromQuery); });
     }
     if (viewOps) {
       setInterval(()=>{ if(!viewOps.classList.contains('hidden')) loadKanban(); }, 5000);
