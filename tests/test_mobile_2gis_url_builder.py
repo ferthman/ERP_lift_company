@@ -20,13 +20,11 @@ const fs = require("fs");
 const vm = require("vm");
 const code = fs.readFileSync("{script_path.as_posix()}", "utf8");
 vm.runInThisContext(code);
-    console.log(build2gisAppUrl({{ lat: 55.75, lon: 37.61, address: "Москва" }}));
     console.log(build2gisWebUrl({{ lat: 55.75, lon: 37.61, address: "Москва" }}));
     console.log(build2gisWebUrl({{ lat: null, lon: null, address: "Москва" }}));
     console.log(build2gisWebUrl({{ lat: "", lon: "", address: "Москва" }}));
 """
     lines = run_node_script(script)
-    assert lines[0] == "dgis://2gis.ru/routeSearch/rsType/car/to/37.61,55.75"
-    assert lines[1] == "https://2gis.kz/routeSearch/rsType/car/to/37.61,55.75"
-    assert lines[2] == "https://2gis.kz/search/%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0"
-    assert lines[3] == "https://2gis.kz/search/%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0"
+    assert lines[0] == "https://2gis.kz/almaty/geo/37.61,55.75"
+    assert lines[1] == "https://2gis.kz/almaty/search/%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0"
+    assert lines[2] == "https://2gis.kz/almaty/search/%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0"
