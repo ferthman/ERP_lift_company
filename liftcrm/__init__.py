@@ -150,7 +150,7 @@ def create_app():
         return _maybe_set_ui_preference(response)
 
     @app.get("/lifts/<int:asset_id>")
-    def lift_history_page(asset_id):
+    def lift_detail_page(asset_id):
         from flask_login import current_user
 
         if not current_user.is_authenticated:
@@ -159,7 +159,7 @@ def create_app():
             return ("Forbidden", 403)
         return make_response(
             render_template(
-                "lift_history.html",
+                "lift_detail.html",
                 asset_id=asset_id,
                 user_role=getattr(current_user, "role", None),
             )
