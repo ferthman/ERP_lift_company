@@ -25,6 +25,12 @@
     #objects-map-shell{height:70vh;width:100%}
     @media (max-width:768px){ #objects-map-shell{height:60vh} }
     #objects-map-shell.objects-map-fullscreen{height:100%}
+    .kanban-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}
+    .kanban-column{flex:0 0 260px;min-width:260px;display:flex;flex-direction:column;max-height:calc(100vh - 280px);overflow:hidden}
+    .kanban-column-header{flex:0 0 auto}
+    .kanban-column-body{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;min-width:0}
+    .kanban-column-cards{display:flex;flex-direction:column;gap:8px;min-width:0}
+    .kanban-card{width:100%;box-sizing:border-box}
     .objects-search-overlay{
       position:absolute;
       top:12px;
@@ -1655,7 +1661,7 @@
         const slaBlock = slaInfo ? `<div class="text-[11px] mt-1">${slaInfo}</div>` : '';
         const reasonLine = t.close_reason ? `<div class="text-[11px] text-slate-600 mt-1">Причина: ${formatCloseReason(t.close_reason)}</div>` : '';
         const priorityBadge = renderPriorityBadge(t.priority);
-        const card=document.createElement('div'); card.className='p-3 rounded-xl ring-1 ring-slate-200 bg-white';
+        const card=document.createElement('div'); card.className='kanban-card p-3 rounded-xl ring-1 ring-slate-200 bg-white';
         card.innerHTML=`<div class="flex items-center justify-between"><div class="font-semibold">#${t.id} — ${t.object_name ?? ''}</div><div class="flex items-center gap-2 text-xs">${priorityBadge}${t.assigned_master_name ?? '—'}</div></div>
         <div class="text-xs text-slate-500 mt-1">Лифт: ${renderAssetSummary(t) || '—'}</div>
         <div class="text-xs text-slate-600 mt-1">${t.description ?? ''}</div>

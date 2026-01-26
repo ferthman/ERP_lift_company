@@ -6,6 +6,98 @@ Treat the reader as a complete beginner to this repository. The only context the
 
 ---
 
+# Ops Kanban History + Layout Fix — ExecPlan
+
+## Purpose / Big Picture
+
+Fix the “Контроль этапов” Kanban layout so cards stay inside columns, limit completed/cancelled columns to the latest four tickets with a “Вся история” link, and add a history page with date range filtering plus API support for admin/dispatcher roles.
+
+## Progress
+
+- [x] (2026-03-05 10:00Z) Review current Kanban template/CSS and backend ticket API feeding the board; document target files and fields.
+- [x] (2026-03-05 10:15Z) Update Kanban layout styles to constrain columns and cards; verify visually.
+- [x] (2026-03-05 10:45Z) Backend: limit COMPLETED/CANCELLED to last 4 tickets in Kanban API; add “Вся история” links.
+- [x] (2026-03-05 11:20Z) Add history page route + template and history API with date range filters and RBAC.
+- [x] (2026-03-05 12:05Z) Add pytest coverage for ops limits, history filtering, and RBAC.
+- [x] (2026-03-05 12:15Z) Run pytest and capture output.
+- [ ] (2026-03-05 00:00Z) Document manual validation steps and retrospective.
+
+## Surprises & Discoveries
+
+- None yet.
+
+## Decision Log
+
+- Decision: Use `/history` and `/api/tickets/history` for the ops history UI/API to keep URLs short and consistent with existing admin templates.
+  Rationale: Keeps navigation simple and avoids nesting under `/ops` while still gated by RBAC.
+  Date/Author: 2026-03-05 / codex
+
+## Outcomes & Retrospective
+
+- Outcome (2026-03-05): Kanban layout constrained, completed/cancelled columns limited with history links, and history page/API shipped with tests; manual validation remains. 
+
+## Plan of Work
+
+### Milestone 1 — Kanban layout constraints
+
+Goal: Ensure cards stay within columns and prevent overflow.
+
+Work:
+
+- Update `templates/index.html` and/or `static` CSS for the Kanban layout.
+- Apply `display:flex` with `gap` and `overflow-x:auto` for the board, fixed column width, and `min-width: 0` where needed.
+- Enforce card width `100%` with `box-sizing: border-box`.
+
+Validation:
+
+- Load the “Контроль этапов” board and confirm cards do not spill into adjacent columns.
+
+### Milestone 2 — Limit completed/cancelled + history links
+
+Goal: Show only the latest four completed/cancelled tickets and add history navigation.
+
+Work:
+
+- Update the backend API feeding the Kanban to limit COMPLETED/CANCELLED to the last four by closure timestamp (fallback updated_at).
+- Add a “Вся история” link under completed/cancelled columns pointing to `/history?status=COMPLETED` or `/history?status=CANCELLED`.
+
+Validation:
+
+- Confirm completed/cancelled columns show max 4 cards and render the history link.
+
+### Milestone 3 — History page + API
+
+Goal: Add /history page with date range filtering and supporting API.
+
+Work:
+
+- Add `GET /history` template + route gated to admin/dispatcher.
+- Add `GET /api/tickets/history` with status/date range filters, limit/offset, inclusive date_to handling, and closure timestamp fallback.
+- Render results list/table with required fields and filters.
+
+Validation:
+
+- Use the history page with date filters and confirm results match the date range and statuses.
+
+### Milestone 4 — Tests + validation
+
+Goal: Add pytest coverage for limits, filtering, and RBAC.
+
+Work:
+
+- Tests for Kanban API limits and history filters.
+- Tests for RBAC (technician blocked from /history and /api/tickets/history).
+
+Validation:
+
+- Run `pytest` and record output in this plan.
+
+## End-of-plan change log
+
+- Change: Added ExecPlan for Kanban history + layout fix.
+  Reason: Multi-file UI + API + tests work requires an execution plan.
+  Date/Author: 2026-03-05 / codex
+
 # Lift History UX Hierarchy — ExecPlan
 
 ## Purpose / Big Picture
