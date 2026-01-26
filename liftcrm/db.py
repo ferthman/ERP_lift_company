@@ -62,6 +62,7 @@ class Ticket(Base):
     waiting_at = Column(DateTime, nullable=True)
     waiting_reason = Column(Text, nullable=True)
     completed_at = Column(DateTime, nullable=True)
+    cancelled_at = Column(DateTime, nullable=True)
     archived_at = Column(DateTime, nullable=True)
     arrival_lat = Column(Float, nullable=True)
     arrival_lon = Column(Float, nullable=True)
@@ -243,6 +244,7 @@ def ensure_migrations():
         if _table_exists(cur, "tickets"):
             cur.execute("PRAGMA table_info(tickets)")
             tcols = [r[1] for r in cur.fetchall()]
+            cancelled_at_added = False
             if "version" not in tcols:
                 cur.execute("ALTER TABLE tickets ADD COLUMN version INTEGER DEFAULT 1")
                 conn.commit()
@@ -270,10 +272,20 @@ def ensure_migrations():
             if "close_comment" not in tcols:
                 cur.execute("ALTER TABLE tickets ADD COLUMN close_comment TEXT")
                 conn.commit()
+            if "cancelled_at" not in tcols:
+                cur.execute("ALTER TABLE tickets ADD COLUMN cancelled_at DATETIME")
+                conn.commit()
+                cancelled_at_added = True
             if "cancel_reason" in tcols and "close_reason" in tcols:
                 cur.execute(
                     "UPDATE tickets SET close_reason = cancel_reason "
                     "WHERE close_reason IS NULL AND cancel_reason IS NOT NULL"
+                )
+                conn.commit()
+            if "cancelled_at" in tcols or cancelled_at_added:
+                cur.execute(
+                    "UPDATE tickets SET cancelled_at = updated_at "
+                    "WHERE status = 'CANCELLED' AND cancelled_at IS NULL"
                 )
                 conn.commit()
             if "custom_sla_response_minutes" not in tcols:

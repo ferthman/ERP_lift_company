@@ -85,6 +85,7 @@ def serialize_ticket(t: Ticket):
         "waiting_at": (to_utc(t.waiting_at).isoformat() if t.waiting_at else None),
         "waiting_reason": t.waiting_reason,
         "completed_at": (to_utc(t.completed_at).isoformat() if t.completed_at else None),
+        "cancelled_at": (to_utc(t.cancelled_at).isoformat() if t.cancelled_at else None),
         "archived_at": (to_utc(t.archived_at).isoformat() if t.archived_at else None),
         "close_reason": t.close_reason,
         "close_comment": t.close_comment,
