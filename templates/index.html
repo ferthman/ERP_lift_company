@@ -230,52 +230,15 @@
     <!-- Operations / Stage Control -->
     <section id="view-ops" class="hidden space-y-4">
       <h2 class="text-lg font-semibold">Контроль этапов</h2>
-      <p class="text-sm text-slate-600">Статусы: <b>NEW → ASSIGNED → ACCEPTED → IN_PROGRESS → WAITING → COMPLETED</b> (или CANCELLED).</p>
-      <div id="kanban" class="kanban-board">
-        <div class="bg-white rounded-2xl shadow p-3 kanban-column">
-          <h3 class="font-semibold mb-2 kanban-column-header">NEW</h3>
-          <div class="kanban-column-body">
-            <div id="col-NEW" class="kanban-column-cards min-h-[120px]"></div>
-          </div>
-        </div>
-        <div class="bg-white rounded-2xl shadow p-3 kanban-column">
-          <h3 class="font-semibold mb-2 kanban-column-header">ASSIGNED</h3>
-          <div class="kanban-column-body">
-            <div id="col-ASSIGNED" class="kanban-column-cards min-h-[120px]"></div>
-          </div>
-        </div>
-        <div class="bg-white rounded-2xl shadow p-3 kanban-column">
-          <h3 class="font-semibold mb-2 kanban-column-header">ACCEPTED</h3>
-          <div class="kanban-column-body">
-            <div id="col-ACCEPTED" class="kanban-column-cards min-h-[120px]"></div>
-          </div>
-        </div>
-        <div class="bg-white rounded-2xl shadow p-3 kanban-column">
-          <h3 class="font-semibold mb-2 kanban-column-header">IN_PROGRESS</h3>
-          <div class="kanban-column-body">
-            <div id="col-IN_PROGRESS" class="kanban-column-cards min-h-[120px]"></div>
-          </div>
-        </div>
-        <div class="bg-white rounded-2xl shadow p-3 kanban-column">
-          <h3 class="font-semibold mb-2 kanban-column-header">WAITING</h3>
-          <div class="kanban-column-body">
-            <div id="col-WAITING" class="kanban-column-cards min-h-[120px]"></div>
-          </div>
-        </div>
-        <div class="bg-white rounded-2xl shadow p-3 kanban-column">
-          <h3 class="font-semibold mb-2 kanban-column-header">COMPLETED</h3>
-          <div class="kanban-column-body">
-            <div id="col-COMPLETED" class="kanban-column-cards min-h-[120px]"></div>
-          </div>
-          <a class="mt-2 text-xs text-slate-600 underline" href="/history?status=COMPLETED">Вся история</a>
-        </div>
-        <div class="bg-white rounded-2xl shadow p-3 kanban-column">
-          <h3 class="font-semibold mb-2 kanban-column-header">CANCELLED</h3>
-          <div class="kanban-column-body">
-            <div id="col-CANCELLED" class="kanban-column-cards min-h-[120px]"></div>
-          </div>
-          <a class="mt-2 text-xs text-slate-600 underline" href="/history?status=CANCELLED">Вся история</a>
-        </div>
+      <p class="text-sm text-slate-600">Статусы: <b>{{ STATUS_RU['NEW'] }} → {{ STATUS_RU['ASSIGNED'] }} → {{ STATUS_RU['ACCEPTED'] }} → {{ STATUS_RU['IN_PROGRESS'] }} → {{ STATUS_RU['WAITING'] }} → {{ STATUS_RU['COMPLETED'] }}</b> (или {{ STATUS_RU['CANCELLED'] }}).</p>
+      <div id="kanban" class="grid grid-cols-1 md:grid-cols-7 gap-3">
+        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">{{ STATUS_RU['NEW'] }}</h3><div id="col-NEW" class="space-y-2 min-h-[120px]"></div></div>
+        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">{{ STATUS_RU['ASSIGNED'] }}</h3><div id="col-ASSIGNED" class="space-y-2 min-h-[120px]"></div></div>
+        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">{{ STATUS_RU['ACCEPTED'] }}</h3><div id="col-ACCEPTED" class="space-y-2 min-h-[120px]"></div></div>
+        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">{{ STATUS_RU['IN_PROGRESS'] }}</h3><div id="col-IN_PROGRESS" class="space-y-2 min-h-[120px]"></div></div>
+        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">{{ STATUS_RU['WAITING'] }}</h3><div id="col-WAITING" class="space-y-2 min-h-[120px]"></div></div>
+        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">{{ STATUS_RU['COMPLETED'] }}</h3><div id="col-COMPLETED" class="space-y-2 min-h-[120px]"></div></div>
+        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">{{ STATUS_RU['CANCELLED'] }}</h3><div id="col-CANCELLED" class="space-y-2 min-h-[120px]"></div></div>
       </div>
     </section>
 
@@ -704,11 +667,17 @@
       close_reason: 'Причина закрытия',
       close_comment: 'Комментарий',
     };
+    const STATUS_RU = {{ STATUS_RU | tojson }};
+    const STATUS_ORDER = ['NEW','ASSIGNED','ACCEPTED','IN_PROGRESS','WAITING','COMPLETED','CANCELLED'];
 
     function normalizePriority(p){ return (p || 'MEDIUM').toString().toUpperCase(); }
     function normalizeRole(r){
       const raw = (r || '').toString().toLowerCase();
       return raw === 'master' ? 'technician' : raw;
+    }
+    function getStatusLabel(status){
+      if (!status) return '—';
+      return STATUS_RU[status] || status;
     }
     function renderRoleLabel(r){
       const key = normalizeRole(r);
@@ -1068,7 +1037,7 @@
       if (!ticket) return;
       const parts = [
         `<div class="text-lg font-semibold">#${ticket.id} — ${ticket.object_name ?? ''}</div>`,
-        `<div><span class="text-slate-500">Статус:</span> ${ticket.status}</div>`,
+        `<div><span class="text-slate-500">Статус:</span> ${getStatusLabel(ticket.status)}</div>`,
         `<div><span class="text-slate-500">Мастер:</span> ${ticket.assigned_master_name ?? '—'}</div>`,
         `<div><span class="text-slate-500">Лифт:</span> ${renderAssetSummary(ticket) || '—'}</div>`,
         `<div><span class="text-slate-500">Адрес:</span> ${ticket.address ?? '—'}</div>`,
@@ -1099,6 +1068,10 @@
       }
       return value;
     }
+    function formatHistoryFieldValue(field, value){
+      if (field === 'status') return getStatusLabel(value);
+      return formatHistoryValue(value);
+    }
 
     function renderHistoryDiff(diff){
       if (!diff || typeof diff !== 'object') return '';
@@ -1108,8 +1081,8 @@
       const fields = new Set([...Object.keys(oldData), ...Object.keys(newData)]);
       fields.forEach((field) => {
         const label = HISTORY_FIELD_LABELS[field] || field;
-        const oldVal = formatHistoryValue(oldData[field]);
-        const newVal = formatHistoryValue(newData[field]);
+        const oldVal = formatHistoryFieldValue(field, oldData[field]);
+        const newVal = formatHistoryFieldValue(field, newData[field]);
         if (oldData[field] === undefined) {
           changes.push(`<div><span class="text-slate-400">${label}:</span> ${newVal}</div>`);
         } else {
@@ -1276,7 +1249,7 @@
       createMsg.textContent='Создаю...';
       const res=await fetch('/api/tickets',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); const data=await res.json();
       if(!res.ok){ createMsg.textContent=data.error||'Ошибка'; return; }
-      createMsg.textContent=`Готово! №${data.id} → мастер: ${data.assigned_master_id ?? '—'}, статус: ${data.status}`; formCreate.reset(); await loadTickets(); await loadKanban(); if(!viewObjects.classList.contains('hidden')){ await loadObjects(); }
+      createMsg.textContent=`Готово! №${data.id} → мастер: ${data.assigned_master_id ?? '—'}, статус: ${getStatusLabel(data.status)}`; formCreate.reset(); await loadTickets(); await loadKanban(); if(!viewObjects.classList.contains('hidden')){ await loadObjects(); }
     });
     const fillLocButton = document.getElementById('btn-fill-loc');
     if (fillLocButton) fillLocButton.onclick=()=>{ if(!navigator.geolocation) return alert('Геолокация не поддерживается.');
@@ -1397,7 +1370,7 @@
         <td class="py-2 px-2">${t.object_name ?? ''}<div class="text-xs text-slate-500">${t.description ?? ''}</div></td>
         <td class="py-2 px-2 text-xs">${renderAssetSummary(t) || '—'}</td>
         <td class="py-2 px-2">${t.address ?? ''}</td><td class="py-2 px-2"><button class="underline" onclick="openMap(${t.lat},${t.lon})">${coords}</button>${mapButton}</td>
-        <td class="py-2 px-2">${t.assigned_master_name ?? '—'}</td><td class="py-2 px-2"><span class="px-2 py-1 rounded-lg ring-1 ring-slate-200">${t.status}</span></td>
+        <td class="py-2 px-2">${t.assigned_master_name ?? '—'}</td><td class="py-2 px-2"><span class="px-2 py-1 rounded-lg ring-1 ring-slate-200">${getStatusLabel(t.status)}</span></td>
         <td class="py-2 px-2">${unassignedTimer}</td>
         <td class="py-2 px-2">${slaOverdueBadge}</td>
         <td class="py-2 px-2">${priorityCell}</td>
@@ -1681,8 +1654,8 @@
 
     // Kanban
     async function loadKanban(){
-      const res=await fetch('/api/tickets?kanban=1',{cache:'no-store'}); if(!res.ok) return; const data=await res.json();
-      const cols=['NEW','ASSIGNED','ACCEPTED','IN_PROGRESS','WAITING','COMPLETED','CANCELLED']; for(const c of cols) document.getElementById('col-'+c).innerHTML='';
+      const res=await fetch('/api/tickets',{cache:'no-store'}); if(!res.ok) return; const data=await res.json();
+      for(const c of STATUS_ORDER) document.getElementById('col-'+c).innerHTML='';
       for(const t of data){
         const slaInfo=renderSla(t,false);
         const slaBlock = slaInfo ? `<div class="text-[11px] mt-1">${slaInfo}</div>` : '';
@@ -1981,7 +1954,7 @@
         const slaLine = renderSla(t,false);
         const card=document.createElement('div'); card.className='p-3 rounded-xl ring-1 ring-slate-200 bg-white';
         card.innerHTML=`<div class="flex items-center justify-between"><div class="font-semibold">#${t.id} — ${t.object_name ?? ''}</div>
-        <div class="text-xs text-slate-600">${t.assigned_master_name ?? '—'} • ${t.status}${slaBadge}</div></div>
+        <div class="text-xs text-slate-600">${t.assigned_master_name ?? '—'} • ${getStatusLabel(t.status)}${slaBadge}</div></div>
         <div class="text-xs text-slate-500 mt-1">${t.address ?? ''}</div>
         <div class="mt-2 w-full h-3 rounded-lg bg-slate-100 overflow-hidden"><div class="${barColor} h-3" style="width:${pct}%;"></div></div>
         <div class="text-xs text-slate-600 mt-1">Прошло: <span data-elapsed="1">${fmtDuration(elapsed)}</span></div>
@@ -2113,7 +2086,7 @@
     window.openTicketOnObjectsMap = openTicketOnObjectsMap;
     function buildTicketPopup(ticket){
       const assetLine = renderAssetSummary(ticket);
-      const statusLine = `${ticket.status || ''}${ticket.priority ? ` • ${ticket.priority}` : ''}`;
+      const statusLine = `${getStatusLabel(ticket.status)}${ticket.priority ? ` • ${ticket.priority}` : ''}`;
       return `
         <div class="text-sm">
           <div class="font-semibold">Заявка #${ticket.id}</div>
@@ -2355,7 +2328,8 @@
       const compPct = (typeof m.completion_sla_breach_percent==='number') ? m.completion_sla_breach_percent.toFixed(1) : '0.0';
       const priorities = m.tickets_by_priority || {};
       const priorityLine = PRIORITY_ORDER.map(p=>`${PRIORITY_LABELS[p]}: ${priorities[p]||0}`).join(' • ');
-      document.getElementById('metrics-overall').innerHTML = `Всего: ${ov.total||m.total_tickets||0}<br>NEW: ${ov.counts?.NEW||0} • ASSIGNED: ${ov.counts?.ASSIGNED||0} • ACCEPTED: ${ov.counts?.ACCEPTED||0} • IN_PROGRESS: ${ov.counts?.IN_PROGRESS||0} • WAITING: ${ov.counts?.WAITING||0} • COMPLETED: ${ov.counts?.COMPLETED||0} • CANCELLED: ${ov.counts?.CANCELLED||0}<br>Среднее закрытие: ${fmtSec(ov.avg_close_sec)} • Медиана: ${fmtSec(ov.median_close_sec)}<br>SLA ответ: ${respPct}% (${m.response_sla_breached_count||0}/${m.total_tickets||0}) • SLA завершение: ${compPct}% (${m.completion_sla_breached_count||0}/${m.total_tickets||0})<br>Приоритеты: ${priorityLine}`;
+      const statusLine = STATUS_ORDER.map((status) => `${getStatusLabel(status)}: ${ov.counts?.[status] || 0}`).join(' • ');
+      document.getElementById('metrics-overall').innerHTML = `Всего: ${ov.total||m.total_tickets||0}<br>${statusLine}<br>Среднее закрытие: ${fmtSec(ov.avg_close_sec)} • Медиана: ${fmtSec(ov.median_close_sec)}<br>SLA ответ: ${respPct}% (${m.response_sla_breached_count||0}/${m.total_tickets||0}) • SLA завершение: ${compPct}% (${m.completion_sla_breached_count||0}/${m.total_tickets||0})<br>Приоритеты: ${priorityLine}`;
       const reasons = m.tickets_by_close_reason || {};
       const reasonEntries = Object.entries(reasons).filter(([,v])=>v>0);
       const reasonsHtml = reasonEntries.length ? `<ul class="space-y-1">${reasonEntries.map(([k,v])=>`<li>${formatCloseReason(k)} — ${v}</li>`).join('')}</ul>` : 'Нет завершённых заявок с причиной.';

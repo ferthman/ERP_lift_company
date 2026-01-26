@@ -237,6 +237,7 @@ Admin/dispatcher UI must continue to work as before.
 - [x] (2025-02-17 12:05Z) Switch 2GIS routing to geo lon/lat URLs and gate debug logging behind a flag.
 - [x] (2025-02-20 10:15Z) Enforce geofence on sync TICKET_ACCEPT and request geolocation only on mobile accept.
 - [x] (2025-02-20 11:05Z) Harden sync geofence validation for non-finite technician coordinates.
+- [x] (2025-03-05 09:40Z) Localize ticket status labels across admin/dispatcher and mobile technician UI with shared mappings.
 
 ## Surprises & Discoveries
 
@@ -322,6 +323,9 @@ Record every decision made while working on this plan.
 - Decision: Treat non-finite or out-of-range technician coordinates as `NO_TECH_COORDS`.
   Rationale: Avoid server errors and keep geofence failures explicit for the mobile client.
   Date/Author: 2025-02-20 / codex
+- Decision: Centralize Russian status labels in a Jinja context mapping plus per-UI JS maps with fallback to raw codes.
+  Rationale: Keep API/DB enums unchanged while ensuring consistent localized presentation across desktop and mobile.
+  Date/Author: 2025-03-05 / codex
 
 (Keep adding entries as decisions occur.)
 
@@ -343,6 +347,7 @@ At major milestones or completion, summarize what was achieved, what remains, an
 - Outcome (2025-02-17): Updated 2GIS links to /almaty/geo lon,lat URLs and gated debug output.
 - Outcome (2025-02-20): Added geofence enforcement to sync accept events and mobile accept now requests geolocation on demand.
 - Outcome (2025-02-20): Hardened sync geofence checks against non-finite coordinates with explicit error codes.
+- Outcome (2025-03-05): Desktop and mobile UIs now display Russian status labels consistently while preserving enum codes in the backend.
 
 ## Context and Orientation
 
@@ -732,3 +737,6 @@ When you edit this plan during implementation, append a short note here:
 - Change: Logged non-finite coordinate validation for sync geofence.
   Reason: Track the added validation and error behavior for invalid coordinates.
   Date/Author: 2025-02-20 / codex
+- Change: Documented localized status labels for admin/dispatcher and mobile technician views.
+  Reason: Track UI localization work and shared status mapping decisions.
+  Date/Author: 2025-03-05 / codex
