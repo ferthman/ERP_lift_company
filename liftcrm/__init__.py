@@ -165,6 +165,16 @@ def create_app():
             )
         )
 
+    @app.get("/history")
+    def tickets_history_page():
+        from flask_login import current_user
+
+        if not current_user.is_authenticated:
+            return redirect("/login?next=/history")
+        if getattr(current_user, "role", None) not in {"admin", "dispatcher"}:
+            return ("Forbidden", 403)
+        return make_response(render_template("history.html"))
+
     from .auth.routes import bp as auth_bp
     from .access.routes import bp as access_bp
     from .tickets.routes import bp as tickets_bp

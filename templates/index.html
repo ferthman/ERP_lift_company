@@ -25,6 +25,12 @@
     #objects-map-shell{height:70vh;width:100%}
     @media (max-width:768px){ #objects-map-shell{height:60vh} }
     #objects-map-shell.objects-map-fullscreen{height:100%}
+    .kanban-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}
+    .kanban-column{flex:0 0 260px;min-width:260px;display:flex;flex-direction:column;max-height:calc(100vh - 280px);overflow:hidden}
+    .kanban-column-header{flex:0 0 auto}
+    .kanban-column-body{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;min-width:0}
+    .kanban-column-cards{display:flex;flex-direction:column;gap:8px;min-width:0}
+    .kanban-card{width:100%;box-sizing:border-box}
     .objects-search-overlay{
       position:absolute;
       top:12px;
@@ -225,14 +231,51 @@
     <section id="view-ops" class="hidden space-y-4">
       <h2 class="text-lg font-semibold">Контроль этапов</h2>
       <p class="text-sm text-slate-600">Статусы: <b>NEW → ASSIGNED → ACCEPTED → IN_PROGRESS → WAITING → COMPLETED</b> (или CANCELLED).</p>
-      <div id="kanban" class="grid grid-cols-1 md:grid-cols-7 gap-3">
-        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">NEW</h3><div id="col-NEW" class="space-y-2 min-h-[120px]"></div></div>
-        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">ASSIGNED</h3><div id="col-ASSIGNED" class="space-y-2 min-h-[120px]"></div></div>
-        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">ACCEPTED</h3><div id="col-ACCEPTED" class="space-y-2 min-h-[120px]"></div></div>
-        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">IN_PROGRESS</h3><div id="col-IN_PROGRESS" class="space-y-2 min-h-[120px]"></div></div>
-        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">WAITING</h3><div id="col-WAITING" class="space-y-2 min-h-[120px]"></div></div>
-        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">COMPLETED</h3><div id="col-COMPLETED" class="space-y-2 min-h-[120px]"></div></div>
-        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">CANCELLED</h3><div id="col-CANCELLED" class="space-y-2 min-h-[120px]"></div></div>
+      <div id="kanban" class="kanban-board">
+        <div class="bg-white rounded-2xl shadow p-3 kanban-column">
+          <h3 class="font-semibold mb-2 kanban-column-header">NEW</h3>
+          <div class="kanban-column-body">
+            <div id="col-NEW" class="kanban-column-cards min-h-[120px]"></div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow p-3 kanban-column">
+          <h3 class="font-semibold mb-2 kanban-column-header">ASSIGNED</h3>
+          <div class="kanban-column-body">
+            <div id="col-ASSIGNED" class="kanban-column-cards min-h-[120px]"></div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow p-3 kanban-column">
+          <h3 class="font-semibold mb-2 kanban-column-header">ACCEPTED</h3>
+          <div class="kanban-column-body">
+            <div id="col-ACCEPTED" class="kanban-column-cards min-h-[120px]"></div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow p-3 kanban-column">
+          <h3 class="font-semibold mb-2 kanban-column-header">IN_PROGRESS</h3>
+          <div class="kanban-column-body">
+            <div id="col-IN_PROGRESS" class="kanban-column-cards min-h-[120px]"></div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow p-3 kanban-column">
+          <h3 class="font-semibold mb-2 kanban-column-header">WAITING</h3>
+          <div class="kanban-column-body">
+            <div id="col-WAITING" class="kanban-column-cards min-h-[120px]"></div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow p-3 kanban-column">
+          <h3 class="font-semibold mb-2 kanban-column-header">COMPLETED</h3>
+          <div class="kanban-column-body">
+            <div id="col-COMPLETED" class="kanban-column-cards min-h-[120px]"></div>
+          </div>
+          <a class="mt-2 text-xs text-slate-600 underline" href="/history?status=COMPLETED">Вся история</a>
+        </div>
+        <div class="bg-white rounded-2xl shadow p-3 kanban-column">
+          <h3 class="font-semibold mb-2 kanban-column-header">CANCELLED</h3>
+          <div class="kanban-column-body">
+            <div id="col-CANCELLED" class="kanban-column-cards min-h-[120px]"></div>
+          </div>
+          <a class="mt-2 text-xs text-slate-600 underline" href="/history?status=CANCELLED">Вся история</a>
+        </div>
       </div>
     </section>
 
@@ -1638,14 +1681,14 @@
 
     // Kanban
     async function loadKanban(){
-      const res=await fetch('/api/tickets',{cache:'no-store'}); if(!res.ok) return; const data=await res.json();
+      const res=await fetch('/api/tickets?kanban=1',{cache:'no-store'}); if(!res.ok) return; const data=await res.json();
       const cols=['NEW','ASSIGNED','ACCEPTED','IN_PROGRESS','WAITING','COMPLETED','CANCELLED']; for(const c of cols) document.getElementById('col-'+c).innerHTML='';
       for(const t of data){
         const slaInfo=renderSla(t,false);
         const slaBlock = slaInfo ? `<div class="text-[11px] mt-1">${slaInfo}</div>` : '';
         const reasonLine = t.close_reason ? `<div class="text-[11px] text-slate-600 mt-1">Причина: ${formatCloseReason(t.close_reason)}</div>` : '';
         const priorityBadge = renderPriorityBadge(t.priority);
-        const card=document.createElement('div'); card.className='p-3 rounded-xl ring-1 ring-slate-200 bg-white';
+        const card=document.createElement('div'); card.className='kanban-card p-3 rounded-xl ring-1 ring-slate-200 bg-white';
         card.innerHTML=`<div class="flex items-center justify-between"><div class="font-semibold">#${t.id} — ${t.object_name ?? ''}</div><div class="flex items-center gap-2 text-xs">${priorityBadge}${t.assigned_master_name ?? '—'}</div></div>
         <div class="text-xs text-slate-500 mt-1">Лифт: ${renderAssetSummary(t) || '—'}</div>
         <div class="text-xs text-slate-600 mt-1">${t.description ?? ''}</div>
