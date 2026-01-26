@@ -276,25 +276,31 @@ function renderDetail(ticket) {
   btnDone.disabled = ticket.status !== "IN_PROGRESS";
 
   btnAccept.addEventListener("click", () => {
+    queueEvent(ticket, "TICKET_ACCEPT", {});
+  });
+  btnProgress.addEventListener("click", () => {
+    if (ticket.status !== "ACCEPTED") {
+      queueEvent(ticket, "TICKET_IN_PROGRESS", {});
+      return;
+    }
     if (!navigator.geolocation) {
-      alert("Нужно разрешить геолокацию, чтобы принять заявку (радиус 500м).");
+      alert("Нужно разрешить геолокацию, чтобы начать работу (радиус 500м).");
       return;
     }
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const coords = position.coords || {};
-        queueEvent(ticket, "TICKET_ACCEPT", {
+        queueEvent(ticket, "TICKET_IN_PROGRESS", {
           current_lat: coords.latitude,
           current_lng: coords.longitude,
         });
       },
       () => {
-        alert("Нужно разрешить геолокацию, чтобы принять заявку (радиус 500м).");
+        alert("Нужно разрешить геолокацию, чтобы начать работу (радиус 500м).");
       },
       { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
     );
   });
-  btnProgress.addEventListener("click", () => queueEvent(ticket, "TICKET_IN_PROGRESS", {}));
   btnWaiting.addEventListener("click", () => {
     const reason = waitingReason.value.trim();
     queueEvent(ticket, "TICKET_WAITING", { waiting_reason: reason });
@@ -487,10 +493,10 @@ async function syncEvents() {
       await putOutboxEvent(local);
       if (result.code === "OUT_OF_RANGE") {
         const distance = Number.isFinite(result.distance_m) ? result.distance_m : "—";
-        alert(`Вы слишком далеко. Нужно быть в радиусе 500м. Сейчас: ${distance}м`);
+        alert(`Вы слишком далеко. Нужно ≤ 500м. Сейчас: ${distance}м`);
       }
       if (result.code === "NO_TARGET_COORDS") {
-        alert("У заявки нет координат объекта. Принять нельзя.");
+        alert("У заявки нет координат объекта. Начать работу нельзя.");
       }
       if (result.code === "NO_TECH_COORDS") {
         alert("Не удалось получить геолокацию. Разрешите доступ и попробуйте снова.");

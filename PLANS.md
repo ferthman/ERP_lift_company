@@ -145,6 +145,9 @@ Admin/dispatcher UI must continue to work as before.
 - [x] (2025-02-17 12:05Z) Switch 2GIS routing to geo lon/lat URLs and gate debug logging behind a flag.
 - [x] (2025-02-20 10:15Z) Enforce geofence on sync TICKET_ACCEPT and request geolocation only on mobile accept.
 - [x] (2025-02-20 11:05Z) Harden sync geofence validation for non-finite technician coordinates.
+- [x] (2025-03-05 09:10Z) Move sync geofence enforcement to TICKET_IN_PROGRESS (ACCEPTED → IN_PROGRESS only) and keep accept available without coords.
+- [x] (2025-03-05 09:20Z) Update mobile geolocation prompts to request coords only on "В работу" from ACCEPTED and handle out-of-range messaging.
+- [x] (2025-03-05 09:50Z) Validation: run pytest and capture output for geofence transition changes.
 
 ## Surprises & Discoveries
 
@@ -230,6 +233,12 @@ Record every decision made while working on this plan.
 - Decision: Treat non-finite or out-of-range technician coordinates as `NO_TECH_COORDS`.
   Rationale: Avoid server errors and keep geofence failures explicit for the mobile client.
   Date/Author: 2025-02-20 / codex
+- Decision: Move geofence enforcement to sync `TICKET_IN_PROGRESS` only when transitioning from `ACCEPTED`.
+  Rationale: Accept captures reaction speed remotely, while in-progress confirms arrival on site.
+  Date/Author: 2025-03-05 / codex
+- Decision: Request geolocation on mobile only when starting work from `ACCEPTED`, not when resuming from `WAITING`.
+  Rationale: Aligns with backend enforcement and avoids blocking resume without location.
+  Date/Author: 2025-03-05 / codex
 
 (Keep adding entries as decisions occur.)
 
@@ -251,6 +260,7 @@ At major milestones or completion, summarize what was achieved, what remains, an
 - Outcome (2025-02-17): Updated 2GIS links to /almaty/geo lon,lat URLs and gated debug output.
 - Outcome (2025-02-20): Added geofence enforcement to sync accept events and mobile accept now requests geolocation on demand.
 - Outcome (2025-02-20): Hardened sync geofence checks against non-finite coordinates with explicit error codes.
+- Outcome (2025-03-05): Sync geofence enforcement now applies on ACCEPTED → IN_PROGRESS and mobile geolocation prompts only on start-work, with pytest validation captured.
 
 ## Context and Orientation
 
@@ -640,3 +650,6 @@ When you edit this plan during implementation, append a short note here:
 - Change: Logged non-finite coordinate validation for sync geofence.
   Reason: Track the added validation and error behavior for invalid coordinates.
   Date/Author: 2025-02-20 / codex
+- Change: Updated progress/decisions/outcomes for in-progress geofence enforcement and mobile prompt behavior.
+  Reason: Track the policy shift from accept to in-progress and related mobile updates.
+  Date/Author: 2025-03-05 / codex

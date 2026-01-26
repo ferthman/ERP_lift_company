@@ -677,80 +677,6 @@ def sync_events():
             try:
                 old_status = ticket.status
                 if event_type == "TICKET_ACCEPT":
-                    tech_lat = payload.get("current_lat")
-                    tech_lon = payload.get("current_lng")
-                    if tech_lat is None or tech_lon is None:
-                        results.append(
-                            event_result(
-                                event_id,
-                                False,
-                                "NO_TECH_COORDS",
-                                "Missing technician coordinates",
-                            )
-                        )
-                        db.rollback()
-                        continue
-                    target_lat, target_lon = resolve_target_coords(ticket)
-                    if target_lat is None or target_lon is None:
-                        results.append(
-                            event_result(
-                                event_id,
-                                False,
-                                "NO_TARGET_COORDS",
-                                "Missing target coordinates",
-                            )
-                        )
-                        db.rollback()
-                        continue
-                    tech_pair = parse_coord_pair(tech_lat, tech_lon)
-                    if not tech_pair:
-                        results.append(
-                            event_result(
-                                event_id,
-                                False,
-                                "NO_TECH_COORDS",
-                                "Invalid technician coordinates",
-                            )
-                        )
-                        db.rollback()
-                        continue
-                    tech_lat_value, tech_lon_value = tech_pair
-                    distance_m = haversine_distance_m(
-                        tech_lat_value,
-                        tech_lon_value,
-                        target_lat,
-                        target_lon,
-                    )
-                    if not math.isfinite(distance_m):
-                        results.append(
-                            event_result(
-                                event_id,
-                                False,
-                                "NO_TECH_COORDS",
-                                "Invalid technician coordinates",
-                            )
-                        )
-                        db.rollback()
-                        continue
-                    if not is_within_radius(
-                        tech_lat_value,
-                        tech_lon_value,
-                        target_lat,
-                        target_lon,
-                        GEOFENCE_RADIUS_M,
-                    ):
-                        results.append(
-                            event_result(
-                                event_id,
-                                False,
-                                "OUT_OF_RANGE",
-                                "Outside geofence",
-                                distance_m=int(distance_m),
-                                radius_m=GEOFENCE_RADIUS_M,
-                            )
-                        )
-                        db.rollback()
-                        continue
                     old_accept = ticket.accepted_at
                     ticket.accepted_at = datetime.now(timezone.utc)
                     ticket.status = "ACCEPTED"
@@ -782,6 +708,81 @@ def sync_events():
                             new=new,
                         )
                 elif event_type == "TICKET_IN_PROGRESS":
+                    if old_status == "ACCEPTED":
+                        tech_lat = payload.get("current_lat")
+                        tech_lon = payload.get("current_lng")
+                        if tech_lat is None or tech_lon is None:
+                            results.append(
+                                event_result(
+                                    event_id,
+                                    False,
+                                    "NO_TECH_COORDS",
+                                    "Missing technician coordinates",
+                                )
+                            )
+                            db.rollback()
+                            continue
+                        target_lat, target_lon = resolve_target_coords(ticket)
+                        if target_lat is None or target_lon is None:
+                            results.append(
+                                event_result(
+                                    event_id,
+                                    False,
+                                    "NO_TARGET_COORDS",
+                                    "Missing target coordinates",
+                                )
+                            )
+                            db.rollback()
+                            continue
+                        tech_pair = parse_coord_pair(tech_lat, tech_lon)
+                        if not tech_pair:
+                            results.append(
+                                event_result(
+                                    event_id,
+                                    False,
+                                    "NO_TECH_COORDS",
+                                    "Invalid technician coordinates",
+                                )
+                            )
+                            db.rollback()
+                            continue
+                        tech_lat_value, tech_lon_value = tech_pair
+                        distance_m = haversine_distance_m(
+                            tech_lat_value,
+                            tech_lon_value,
+                            target_lat,
+                            target_lon,
+                        )
+                        if not math.isfinite(distance_m):
+                            results.append(
+                                event_result(
+                                    event_id,
+                                    False,
+                                    "NO_TECH_COORDS",
+                                    "Invalid technician coordinates",
+                                )
+                            )
+                            db.rollback()
+                            continue
+                        if not is_within_radius(
+                            tech_lat_value,
+                            tech_lon_value,
+                            target_lat,
+                            target_lon,
+                            GEOFENCE_RADIUS_M,
+                        ):
+                            results.append(
+                                event_result(
+                                    event_id,
+                                    False,
+                                    "OUT_OF_RANGE",
+                                    "Outside geofence",
+                                    distance_m=int(distance_m),
+                                    radius_m=GEOFENCE_RADIUS_M,
+                                )
+                            )
+                            db.rollback()
+                            continue
                     old_arrived = ticket.arrived_at
                     old_arrival_lat = ticket.arrival_lat
                     old_arrival_lon = ticket.arrival_lon
