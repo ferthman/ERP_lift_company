@@ -57,7 +57,8 @@ class OpsHistoryTest(unittest.TestCase):
             for idx, ticket_id in enumerate(cancelled_ids):
                 ticket = db.get(Ticket, ticket_id)
                 ticket.status = "CANCELLED"
-                ticket.updated_at = base_time + timedelta(days=idx)
+                ticket.cancelled_at = base_time + timedelta(days=idx)
+                ticket.updated_at = base_time + timedelta(days=30 - idx)
                 ticket.assigned_master_id = master_id
                 ticket.assigned_at = base_time
             db.commit()
@@ -103,7 +104,8 @@ class OpsHistoryTest(unittest.TestCase):
 
             t_cancelled = db.get(Ticket, cancelled_mid)
             t_cancelled.status = "CANCELLED"
-            t_cancelled.updated_at = datetime(2026, 1, 20, tzinfo=timezone.utc)
+            t_cancelled.cancelled_at = datetime(2026, 1, 20, tzinfo=timezone.utc)
+            t_cancelled.updated_at = datetime(2026, 2, 20, tzinfo=timezone.utc)
 
             db.commit()
 
@@ -117,6 +119,32 @@ class OpsHistoryTest(unittest.TestCase):
         self.assertIn(cancelled_mid, ids)
         self.assertNotIn(completed_early, ids)
         self.assertNotIn(completed_late, ids)
+
+    def test_cancelled_at_stable_after_edit(self):
+        payload = {
+            "object_name": "История отмены",
+            "lat": 43.3,
+            "lon": 76.3,
+            "description": "Отмена",
+        }
+        ticket_id = self.create_ticket(payload)
+        cancel_res = self.client.post(
+            f"/api/tickets/{ticket_id}/cancel",
+            json={"close_reason": "CUSTOMER_CANCELLED", "close_comment": "Client cancelled"},
+        )
+        self.assertEqual(cancel_res.status_code, 200)
+        with SessionLocal() as db:
+            ticket = db.get(Ticket, ticket_id)
+            initial_cancelled_at = ticket.cancelled_at
+            self.assertIsNotNone(initial_cancelled_at)
+        edit_res = self.client.patch(
+            f"/api/tickets/{ticket_id}",
+            json={"description": "Updated after cancel"},
+        )
+        self.assertEqual(edit_res.status_code, 200)
+        with SessionLocal() as db:
+            ticket = db.get(Ticket, ticket_id)
+            self.assertEqual(ticket.cancelled_at, initial_cancelled_at)
 
     def test_history_rbac(self):
         self.login(config.ADMIN_USERNAME, config.ADMIN_PASSWORD)

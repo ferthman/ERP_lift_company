@@ -6,6 +6,82 @@ Treat the reader as a complete beginner to this repository. The only context the
 
 ---
 
+# Ticket Cancellation Timestamp Fix — ExecPlan
+
+## Purpose / Big Picture
+
+Ensure cancelled tickets store a stable `cancelled_at` timestamp that does not move when `updated_at` changes, and use it for history filtering and “last 4 cancelled” selection.
+
+## Progress
+
+- [x] (2025-03-06 10:00Z) Review Ticket model, history helper, kanban list logic, and tests that depend on cancelled timestamps.
+- [x] (2025-03-06 10:15Z) Add `cancelled_at` column, migration/backfill in `ensure_migrations()`, and set it on cancellation without overwriting.
+- [x] (2025-03-06 10:30Z) Update history helpers and kanban closed ordering to use `cancelled_at` when available.
+- [x] (2025-03-06 10:45Z) Update tests to validate stable cancellation timestamps and history filtering behavior.
+- [x] (2025-03-06 11:00Z) Run pytest and capture output.
+- [x] (2025-03-06 11:05Z) Document manual validation notes and retrospective.
+
+## Surprises & Discoveries
+
+- None yet.
+
+## Decision Log
+
+- Decision: Use `cancelled_at` with `updated_at` fallback for cancelled tickets to preserve historical ordering while supporting legacy data.
+  Rationale: Maintains stable history filtering without breaking existing rows that lack `cancelled_at`.
+  Date/Author: 2025-03-06 / codex
+
+## Outcomes & Retrospective
+
+- Outcome (2025-03-06): Cancelled tickets now persist a stable `cancelled_at`, history filtering and “last 4 cancelled” rely on it, and tests cover post-cancel edits. Pytest: 75 passed.
+
+## Plan of Work
+
+### Milestone 1 — Model + migration
+
+Goal: add `Ticket.cancelled_at` with backfill.
+
+Work:
+
+- Update `liftcrm/db.py` Ticket model with `cancelled_at` (nullable DateTime).
+- Update `ensure_migrations()` to add missing column and backfill cancelled rows from `updated_at`.
+
+Validation:
+
+- Run migrations on existing DB and confirm cancelled rows have `cancelled_at` populated.
+
+### Milestone 2 — History + kanban behavior
+
+Goal: use the new cancelled timestamp.
+
+Work:
+
+- Update `_ticket_closed_at` and kanban closed ordering to use `cancelled_at`.
+- Ensure cancellation sets `cancelled_at` only once.
+
+Validation:
+
+- Confirm cancelled tickets do not move between date ranges after edits.
+
+### Milestone 3 — Tests + validation
+
+Goal: assert stability and filtering.
+
+Work:
+
+- Add tests for stable `cancelled_at` after post-cancel edits.
+- Update history/kanban tests to use `cancelled_at`.
+
+Validation:
+
+- Run `pytest` and record output below.
+
+## End-of-plan change log
+
+- Change: Added ExecPlan for cancellation timestamp fix (model/migration/history/tests).
+  Reason: Data model + migration + multi-file history changes require an ExecPlan.
+  Date/Author: 2025-03-06 / codex
+
 # Ops Kanban History + Layout Fix — ExecPlan
 
 ## Purpose / Big Picture

@@ -254,7 +254,9 @@ def list_tickets():
                         repository.func.coalesce(Ticket.completed_at, Ticket.updated_at).desc()
                     )
                 else:
-                    closed_query = query.filter(Ticket.status == status).order_by(Ticket.updated_at.desc())
+                    closed_query = query.filter(Ticket.status == status).order_by(
+                        repository.func.coalesce(Ticket.cancelled_at, Ticket.updated_at).desc()
+                    )
                 tickets.extend(closed_query.limit(4).all())
         else:
             tickets = query.order_by(Ticket.created_at.desc()).all()
@@ -281,7 +283,7 @@ def _ticket_closed_at(ticket: Ticket):
     if ticket.status == "COMPLETED":
         return to_utc(ticket.completed_at or ticket.updated_at)
     if ticket.status == "CANCELLED":
-        return to_utc(ticket.updated_at)
+        return to_utc(ticket.cancelled_at or ticket.updated_at)
     return None
 
 
@@ -613,6 +615,7 @@ def cancel_ticket(ticket_id):
         old_status = t.status
         old_reason = t.close_reason
         old_comment = t.close_comment
+        old_cancelled_at = t.cancelled_at
         close_reason = data.get("close_reason")
         close_comment = data.get("close_comment")
         t.status = "CANCELLED"
@@ -629,10 +632,17 @@ def cancel_ticket(ticket_id):
             return _transition_error(code, message, status=status)
         t.close_reason = close_reason
         t.close_comment = str(close_comment).strip()
+        if t.cancelled_at is None:
+            t.cancelled_at = datetime.now(timezone.utc)
         old, new = changed_fields(
-            {"status": old_status, "close_reason": old_reason, "close_comment": old_comment},
+            {
+                "status": old_status,
+                "close_reason": old_reason,
+                "close_comment": old_comment,
+                "cancelled_at": old_cancelled_at,
+            },
             t,
-            ["status", "close_reason", "close_comment"],
+            ["status", "close_reason", "close_comment", "cancelled_at"],
         )
         if old or new:
             bump_ticket_version(t)
