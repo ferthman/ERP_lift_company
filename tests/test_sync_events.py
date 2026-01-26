@@ -108,7 +108,7 @@ class SyncEventsTest(unittest.TestCase):
                     "ticket_id": ticket_id,
                     "expected_version": 1,
                     "created_at": datetime.now(timezone.utc).isoformat(),
-                    "payload": {"current_lat": 43.238949, "current_lng": 76.889709},
+                    "payload": {},
                 }
             ]
         }
@@ -137,7 +137,7 @@ class SyncEventsTest(unittest.TestCase):
                     "ticket_id": ticket_id,
                     "expected_version": 1,
                     "created_at": datetime.now(timezone.utc).isoformat(),
-                    "payload": {"current_lat": 43.238949, "current_lng": 76.889709},
+                    "payload": {},
                 }
             ]
         }
@@ -147,14 +147,19 @@ class SyncEventsTest(unittest.TestCase):
         self.assertEqual(data["results"][0]["code"], "CONFLICT")
         self.logout()
 
-    def test_accept_out_of_range_returns_error(self):
+    def test_in_progress_out_of_range_returns_error(self):
         ticket_id = self.create_ticket(self.master_id, lat=43.245472, lon=76.885244)
+        with SessionLocal() as db:
+            ticket = db.get(Ticket, ticket_id)
+            ticket.status = "ACCEPTED"
+            ticket.accepted_at = datetime.now(timezone.utc)
+            db.commit()
         self.login(self.tech_username, self.tech_password)
         payload = {
             "events": [
                 {
                     "id": str(uuid.uuid4()),
-                    "type": "TICKET_ACCEPT",
+                    "type": "TICKET_IN_PROGRESS",
                     "ticket_id": ticket_id,
                     "expected_version": 1,
                     "created_at": datetime.now(timezone.utc).isoformat(),
@@ -172,17 +177,22 @@ class SyncEventsTest(unittest.TestCase):
         self.assertEqual(result["radius_m"], 500)
         with SessionLocal() as db:
             ticket = db.get(Ticket, ticket_id)
-            self.assertEqual(ticket.status, "ASSIGNED")
+            self.assertEqual(ticket.status, "ACCEPTED")
         self.logout()
 
-    def test_accept_within_range_succeeds(self):
+    def test_in_progress_within_range_succeeds(self):
         ticket_id = self.create_ticket(self.master_id, lat=43.245472, lon=76.885244)
+        with SessionLocal() as db:
+            ticket = db.get(Ticket, ticket_id)
+            ticket.status = "ACCEPTED"
+            ticket.accepted_at = datetime.now(timezone.utc)
+            db.commit()
         self.login(self.tech_username, self.tech_password)
         payload = {
             "events": [
                 {
                     "id": str(uuid.uuid4()),
-                    "type": "TICKET_ACCEPT",
+                    "type": "TICKET_IN_PROGRESS",
                     "ticket_id": ticket_id,
                     "expected_version": 1,
                     "created_at": datetime.now(timezone.utc).isoformat(),
@@ -198,11 +208,11 @@ class SyncEventsTest(unittest.TestCase):
         self.assertEqual(result["code"], "OK")
         with SessionLocal() as db:
             ticket = db.get(Ticket, ticket_id)
-            self.assertEqual(ticket.status, "ACCEPTED")
+            self.assertEqual(ticket.status, "IN_PROGRESS")
             self.assertEqual(ticket.version, 2)
         self.logout()
 
-    def test_accept_requires_tech_coords(self):
+    def test_accept_from_anywhere_succeeds(self):
         ticket_id = self.create_ticket(self.master_id, lat=43.245472, lon=76.885244)
         self.login(self.tech_username, self.tech_password)
         payload = {
@@ -221,21 +231,58 @@ class SyncEventsTest(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         data = res.get_json()
         result = data["results"][0]
-        self.assertFalse(result["ok"])
-        self.assertEqual(result["code"], "NO_TECH_COORDS")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["code"], "OK")
         with SessionLocal() as db:
             ticket = db.get(Ticket, ticket_id)
-            self.assertEqual(ticket.status, "ASSIGNED")
+            self.assertEqual(ticket.status, "ACCEPTED")
+            self.assertEqual(ticket.version, 2)
         self.logout()
 
-    def test_accept_requires_target_coords(self):
-        ticket_id = self.create_ticket(self.master_id, lat=0.0, lon=0.0)
+    def test_in_progress_requires_tech_coords(self):
+        ticket_id = self.create_ticket(self.master_id, lat=43.245472, lon=76.885244)
+        with SessionLocal() as db:
+            ticket = db.get(Ticket, ticket_id)
+            ticket.status = "ACCEPTED"
+            ticket.accepted_at = datetime.now(timezone.utc)
+            db.commit()
         self.login(self.tech_username, self.tech_password)
         payload = {
             "events": [
                 {
                     "id": str(uuid.uuid4()),
-                    "type": "TICKET_ACCEPT",
+                    "type": "TICKET_IN_PROGRESS",
+                    "ticket_id": ticket_id,
+                    "expected_version": 1,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "payload": {},
+                }
+            ]
+        }
+        res = self.client.post("/api/sync/events", json=payload)
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        result = data["results"][0]
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["code"], "NO_TECH_COORDS")
+        with SessionLocal() as db:
+            ticket = db.get(Ticket, ticket_id)
+            self.assertEqual(ticket.status, "ACCEPTED")
+        self.logout()
+
+    def test_in_progress_requires_target_coords(self):
+        ticket_id = self.create_ticket(self.master_id, lat=0.0, lon=0.0)
+        with SessionLocal() as db:
+            ticket = db.get(Ticket, ticket_id)
+            ticket.status = "ACCEPTED"
+            ticket.accepted_at = datetime.now(timezone.utc)
+            db.commit()
+        self.login(self.tech_username, self.tech_password)
+        payload = {
+            "events": [
+                {
+                    "id": str(uuid.uuid4()),
+                    "type": "TICKET_IN_PROGRESS",
                     "ticket_id": ticket_id,
                     "expected_version": 1,
                     "created_at": datetime.now(timezone.utc).isoformat(),
@@ -251,17 +298,22 @@ class SyncEventsTest(unittest.TestCase):
         self.assertEqual(result["code"], "NO_TARGET_COORDS")
         with SessionLocal() as db:
             ticket = db.get(Ticket, ticket_id)
-            self.assertEqual(ticket.status, "ASSIGNED")
+            self.assertEqual(ticket.status, "ACCEPTED")
         self.logout()
 
-    def test_accept_rejects_nan_coords(self):
+    def test_in_progress_rejects_nan_coords(self):
         ticket_id = self.create_ticket(self.master_id, lat=43.245472, lon=76.885244)
+        with SessionLocal() as db:
+            ticket = db.get(Ticket, ticket_id)
+            ticket.status = "ACCEPTED"
+            ticket.accepted_at = datetime.now(timezone.utc)
+            db.commit()
         self.login(self.tech_username, self.tech_password)
         payload = {
             "events": [
                 {
                     "id": str(uuid.uuid4()),
-                    "type": "TICKET_ACCEPT",
+                    "type": "TICKET_IN_PROGRESS",
                     "ticket_id": ticket_id,
                     "expected_version": 1,
                     "created_at": datetime.now(timezone.utc).isoformat(),
@@ -277,17 +329,22 @@ class SyncEventsTest(unittest.TestCase):
         self.assertEqual(result["code"], "NO_TECH_COORDS")
         with SessionLocal() as db:
             ticket = db.get(Ticket, ticket_id)
-            self.assertEqual(ticket.status, "ASSIGNED")
+            self.assertEqual(ticket.status, "ACCEPTED")
         self.logout()
 
-    def test_accept_rejects_infinite_coords(self):
+    def test_in_progress_rejects_infinite_coords(self):
         ticket_id = self.create_ticket(self.master_id, lat=43.245472, lon=76.885244)
+        with SessionLocal() as db:
+            ticket = db.get(Ticket, ticket_id)
+            ticket.status = "ACCEPTED"
+            ticket.accepted_at = datetime.now(timezone.utc)
+            db.commit()
         self.login(self.tech_username, self.tech_password)
         payload = {
             "events": [
                 {
                     "id": str(uuid.uuid4()),
-                    "type": "TICKET_ACCEPT",
+                    "type": "TICKET_IN_PROGRESS",
                     "ticket_id": ticket_id,
                     "expected_version": 1,
                     "created_at": datetime.now(timezone.utc).isoformat(),
@@ -303,7 +360,7 @@ class SyncEventsTest(unittest.TestCase):
         self.assertEqual(result["code"], "NO_TECH_COORDS")
         with SessionLocal() as db:
             ticket = db.get(Ticket, ticket_id)
-            self.assertEqual(ticket.status, "ASSIGNED")
+            self.assertEqual(ticket.status, "ACCEPTED")
         self.logout()
 
     def test_happy_path_transitions(self):
@@ -312,8 +369,6 @@ class SyncEventsTest(unittest.TestCase):
 
         def send_event(event_type, expected_version, payload=None):
             payload = payload or {}
-            if event_type == "TICKET_ACCEPT" and not payload:
-                payload = {"current_lat": 43.238949, "current_lng": 76.889709}
             body = {
                 "events": [
                     {
@@ -332,7 +387,7 @@ class SyncEventsTest(unittest.TestCase):
 
         res = send_event("TICKET_ACCEPT", 1)
         self.assertTrue(res["ok"])
-        res = send_event("TICKET_IN_PROGRESS", 2)
+        res = send_event("TICKET_IN_PROGRESS", 2, {"current_lat": 43.238949, "current_lng": 76.889709})
         self.assertTrue(res["ok"])
         res = send_event("TICKET_WAITING", 3, {"waiting_reason": "Нет доступа"})
         self.assertTrue(res["ok"])
@@ -368,7 +423,7 @@ class SyncEventsTest(unittest.TestCase):
                     "ticket_id": ticket_id,
                     "expected_version": 1,
                     "created_at": datetime.now(timezone.utc).isoformat(),
-                    "payload": {"lat": 44.0, "lon": 77.0},
+                    "payload": {},
                 }
             ]
         }
@@ -401,7 +456,7 @@ class SyncEventsTest(unittest.TestCase):
                     "ticket_id": ticket_id,
                     "expected_version": 1,
                     "created_at": datetime.now(timezone.utc).isoformat(),
-                    "payload": {"lat": 43.5, "lon": 76.5},
+                    "payload": {"current_lat": 43.238949, "current_lng": 76.889709},
                 }
             ]
         }
@@ -411,6 +466,6 @@ class SyncEventsTest(unittest.TestCase):
             ticket = db.get(Ticket, ticket_id)
             self.assertEqual(ticket.status, "IN_PROGRESS")
             self.assertIsNotNone(ticket.arrived_at)
-            self.assertEqual(ticket.arrival_lat, 43.5)
-            self.assertEqual(ticket.arrival_lon, 76.5)
+            self.assertEqual(ticket.arrival_lat, 43.238949)
+            self.assertEqual(ticket.arrival_lon, 76.889709)
         self.logout()

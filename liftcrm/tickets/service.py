@@ -207,8 +207,13 @@ def bump_ticket_version(ticket: Ticket):
 def apply_in_progress_arrival(ticket: Ticket, payload=None):
     if ticket.arrived_at is not None:
         return False
-    lat = (payload or {}).get("lat")
-    lon = (payload or {}).get("lon")
+    payload = payload or {}
+    lat = payload.get("lat")
+    lon = payload.get("lon")
+    if lat is None:
+        lat = payload.get("current_lat")
+    if lon is None:
+        lon = payload.get("current_lng")
     if lat is not None:
         ticket.arrival_lat = float(lat)
     if lon is not None:

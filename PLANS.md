@@ -237,6 +237,9 @@ Admin/dispatcher UI must continue to work as before.
 - [x] (2025-02-17 12:05Z) Switch 2GIS routing to geo lon/lat URLs and gate debug logging behind a flag.
 - [x] (2025-02-20 10:15Z) Enforce geofence on sync TICKET_ACCEPT and request geolocation only on mobile accept.
 - [x] (2025-02-20 11:05Z) Harden sync geofence validation for non-finite technician coordinates.
+- [x] (2025-03-05 09:10Z) Move sync geofence enforcement to TICKET_IN_PROGRESS (ACCEPTED → IN_PROGRESS only) and keep accept available without coords.
+- [x] (2025-03-05 09:20Z) Update mobile geolocation prompts to request coords only on "В работу" from ACCEPTED and handle out-of-range messaging.
+- [x] (2025-03-05 09:50Z) Validation: run pytest and capture output for geofence transition changes.
 - [x] (2025-03-05 09:40Z) Localize ticket status labels across admin/dispatcher and mobile technician UI with shared mappings.
 
 ## Surprises & Discoveries
