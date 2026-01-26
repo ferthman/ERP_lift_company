@@ -96,21 +96,27 @@ Fix the “Контроль этапов” Kanban layout so cards stay inside c
 - [x] (2026-03-05 11:20Z) Add history page route + template and history API with date range filters and RBAC.
 - [x] (2026-03-05 12:05Z) Add pytest coverage for ops limits, history filtering, and RBAC.
 - [x] (2026-03-05 12:15Z) Run pytest and capture output.
-- [ ] (2026-03-05 00:00Z) Document manual validation steps and retrospective.
+- [x] (2025-03-08 09:20Z) Rebuild Kanban markup with flex scroll columns, add history links, and align history status labels with STATUS_RU.
+- [x] (2025-03-08 09:45Z) Run pytest for ops history changes.
+- [x] (2025-03-08 10:00Z) Document manual validation steps and retrospective.
 
 ## Surprises & Discoveries
 
-- None yet.
+- None during this iteration.
 
 ## Decision Log
 
 - Decision: Use `/history` and `/api/tickets/history` for the ops history UI/API to keep URLs short and consistent with existing admin templates.
   Rationale: Keeps navigation simple and avoids nesting under `/ops` while still gated by RBAC.
   Date/Author: 2026-03-05 / codex
+- Decision: Reuse STATUS_RU in the history page JS for status labels to keep display consistent with admin UI.
+  Rationale: Avoids drift between hardcoded labels and the canonical mapping injected server-side.
+  Date/Author: 2025-03-08 / codex
 
 ## Outcomes & Retrospective
 
-- Outcome (2026-03-05): Kanban layout constrained, completed/cancelled columns limited with history links, and history page/API shipped with tests; manual validation remains. 
+- Outcome (2026-03-05): Kanban layout constrained, completed/cancelled columns limited with history links, and history page/API shipped with tests; manual validation remains.
+- Outcome (2025-03-08): Kanban columns now scroll within fixed-width flex columns, history status labels come from STATUS_RU, and ops history tests still pass. Manual validation: open “Контроль этапов” to confirm horizontal scrolling and per-column vertical scroll; open /history with status/date filters.
 
 ## Plan of Work
 
