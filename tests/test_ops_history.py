@@ -42,7 +42,7 @@ class OpsHistoryTest(unittest.TestCase):
         base_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
         completed_ids = []
         cancelled_ids = []
-        for idx in range(5):
+        for idx in range(6):
             completed_ids.append(self.create_ticket({**payload, "object_name": f"Completed {idx}"}))
             cancelled_ids.append(self.create_ticket({**payload, "object_name": f"Cancelled {idx}"}))
 
@@ -69,8 +69,10 @@ class OpsHistoryTest(unittest.TestCase):
         completed_returned = [t["id"] for t in data if t["status"] == "COMPLETED"]
         cancelled_returned = [t["id"] for t in data if t["status"] == "CANCELLED"]
 
-        expected_completed = set(completed_ids[1:])
-        expected_cancelled = set(cancelled_ids[1:])
+        expected_completed = set(completed_ids[2:])
+        expected_cancelled = set(cancelled_ids[2:])
+        self.assertEqual(len(completed_returned), 4)
+        self.assertEqual(len(cancelled_returned), 4)
         self.assertEqual(set(completed_returned), expected_completed)
         self.assertEqual(set(cancelled_returned), expected_cancelled)
 

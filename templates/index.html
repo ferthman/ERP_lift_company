@@ -26,10 +26,13 @@
     @media (max-width:768px){ #objects-map-shell{height:60vh} }
     #objects-map-shell.objects-map-fullscreen{height:100%}
     .kanban-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}
-    .kanban-column{flex:0 0 260px;min-width:260px;display:flex;flex-direction:column;max-height:calc(100vh - 280px);overflow:hidden}
+    .kanban-column{flex:0 0 280px;min-width:280px;display:flex;flex-direction:column}
+    .kanban-column.kanban-column--empty{flex:0 0 150px;min-width:150px}
     .kanban-column-header{flex:0 0 auto}
-    .kanban-column-body{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;min-width:0}
+    .kanban-column-body{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;max-height:calc(100vh - 240px);min-height:120px}
+    .kanban-column--empty .kanban-column-body{display:none}
     .kanban-column-cards{display:flex;flex-direction:column;gap:8px;min-width:0}
+    .kanban-column-cards > *{width:100%;box-sizing:border-box}
     .kanban-card{width:100%;box-sizing:border-box}
     .objects-search-overlay{
       position:absolute;
@@ -231,14 +234,55 @@
     <section id="view-ops" class="hidden space-y-4">
       <h2 class="text-lg font-semibold">Контроль этапов</h2>
       <p class="text-sm text-slate-600">Статусы: <b>{{ STATUS_RU['NEW'] }} → {{ STATUS_RU['ASSIGNED'] }} → {{ STATUS_RU['ACCEPTED'] }} → {{ STATUS_RU['IN_PROGRESS'] }} → {{ STATUS_RU['WAITING'] }} → {{ STATUS_RU['COMPLETED'] }}</b> (или {{ STATUS_RU['CANCELLED'] }}).</p>
-      <div id="kanban" class="grid grid-cols-1 md:grid-cols-7 gap-3">
-        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">{{ STATUS_RU['NEW'] }}</h3><div id="col-NEW" class="space-y-2 min-h-[120px]"></div></div>
-        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">{{ STATUS_RU['ASSIGNED'] }}</h3><div id="col-ASSIGNED" class="space-y-2 min-h-[120px]"></div></div>
-        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">{{ STATUS_RU['ACCEPTED'] }}</h3><div id="col-ACCEPTED" class="space-y-2 min-h-[120px]"></div></div>
-        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">{{ STATUS_RU['IN_PROGRESS'] }}</h3><div id="col-IN_PROGRESS" class="space-y-2 min-h-[120px]"></div></div>
-        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">{{ STATUS_RU['WAITING'] }}</h3><div id="col-WAITING" class="space-y-2 min-h-[120px]"></div></div>
-        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">{{ STATUS_RU['COMPLETED'] }}</h3><div id="col-COMPLETED" class="space-y-2 min-h-[120px]"></div></div>
-        <div class="bg-white rounded-2xl shadow p-3"><h3 class="font-semibold mb-2">{{ STATUS_RU['CANCELLED'] }}</h3><div id="col-CANCELLED" class="space-y-2 min-h-[120px]"></div></div>
+      <div id="kanban" class="kanban-board">
+        <div class="bg-white rounded-2xl shadow p-3 kanban-column">
+          <h3 class="font-semibold mb-2 kanban-column-header" data-status="NEW">{{ STATUS_RU['NEW'] }}</h3>
+          <div class="kanban-column-body">
+            <div id="col-NEW" class="kanban-column-cards"></div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow p-3 kanban-column">
+          <h3 class="font-semibold mb-2 kanban-column-header" data-status="ASSIGNED">{{ STATUS_RU['ASSIGNED'] }}</h3>
+          <div class="kanban-column-body">
+            <div id="col-ASSIGNED" class="kanban-column-cards"></div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow p-3 kanban-column">
+          <h3 class="font-semibold mb-2 kanban-column-header" data-status="ACCEPTED">{{ STATUS_RU['ACCEPTED'] }}</h3>
+          <div class="kanban-column-body">
+            <div id="col-ACCEPTED" class="kanban-column-cards"></div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow p-3 kanban-column">
+          <h3 class="font-semibold mb-2 kanban-column-header" data-status="IN_PROGRESS">{{ STATUS_RU['IN_PROGRESS'] }}</h3>
+          <div class="kanban-column-body">
+            <div id="col-IN_PROGRESS" class="kanban-column-cards"></div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow p-3 kanban-column">
+          <h3 class="font-semibold mb-2 kanban-column-header" data-status="WAITING">{{ STATUS_RU['WAITING'] }}</h3>
+          <div class="kanban-column-body">
+            <div id="col-WAITING" class="kanban-column-cards"></div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow p-3 kanban-column">
+          <h3 class="font-semibold mb-2 kanban-column-header" data-status="COMPLETED">{{ STATUS_RU['COMPLETED'] }}</h3>
+          <div class="kanban-column-body">
+            <div id="col-COMPLETED" class="kanban-column-cards"></div>
+          </div>
+          <div class="pt-2">
+            <a href="/history?status=COMPLETED" class="text-xs text-slate-500 underline">Вся история</a>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow p-3 kanban-column">
+          <h3 class="font-semibold mb-2 kanban-column-header" data-status="CANCELLED">{{ STATUS_RU['CANCELLED'] }}</h3>
+          <div class="kanban-column-body">
+            <div id="col-CANCELLED" class="kanban-column-cards"></div>
+          </div>
+          <div class="pt-2">
+            <a href="/history?status=CANCELLED" class="text-xs text-slate-500 underline">Вся история</a>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -1653,8 +1697,27 @@
     };
 
     // Kanban
+    function updateKanbanColumnState(status){
+      const column = document.getElementById('col-' + status);
+      if (!column) return;
+      const count = column.children.length;
+      const columnRoot = column.closest('.kanban-column');
+      const header = columnRoot ? columnRoot.querySelector('.kanban-column-header') : null;
+      const label = STATUS_RU[status] || status;
+      if (header) {
+        header.textContent = `${label} — ${count}`;
+      }
+      if (columnRoot) {
+        if (count === 0) {
+          columnRoot.classList.add('kanban-column--empty');
+        } else {
+          columnRoot.classList.remove('kanban-column--empty');
+        }
+      }
+    }
+
     async function loadKanban(){
-      const res=await fetch('/api/tickets',{cache:'no-store'}); if(!res.ok) return; const data=await res.json();
+      const res=await fetch('/api/tickets?kanban=1',{cache:'no-store'}); if(!res.ok) return; const data=await res.json();
       for(const c of STATUS_ORDER) document.getElementById('col-'+c).innerHTML='';
       for(const t of data){
         const slaInfo=renderSla(t,false);
@@ -1669,6 +1732,7 @@
         <div class="text-[11px] text-slate-500 mt-2"><button class="underline" onclick="openMap(${t.lat},${t.lon})">${t.lat.toFixed(5)}, ${t.lon.toFixed(5)}</button></div>`;
         document.getElementById('col-'+t.status).appendChild(card);
       }
+      for (const c of STATUS_ORDER) updateKanbanColumnState(c);
     }
 
     // Access management

@@ -6,10 +6,13 @@ const inputTo = document.getElementById("history-to");
 const resetBtn = document.getElementById("history-reset");
 const statusFilterEl = document.getElementById("history-status-filter");
 
-const STATUS_LABELS = {
-  COMPLETED: "Завершено",
-  CANCELLED: "Отменено",
-};
+const STATUS_LABELS =
+  typeof STATUS_RU !== "undefined"
+    ? STATUS_RU
+    : {
+        COMPLETED: "Завершена",
+        CANCELLED: "Отменена",
+      };
 
 const CLOSE_REASON_LABELS = {
   EQUIPMENT_FAILURE: "Неисправность оборудования",
