@@ -96,6 +96,20 @@ def create_app():
             response.set_cookie("ui_preference", ui, samesite="Lax")
         return response
 
+    status_ru = {
+        "NEW": "Новая",
+        "ASSIGNED": "Назначена",
+        "ACCEPTED": "Принята",
+        "IN_PROGRESS": "В работе",
+        "WAITING": "Ожидание",
+        "COMPLETED": "Завершена",
+        "CANCELLED": "Отменена",
+    }
+
+    @app.context_processor
+    def inject_status_labels():
+        return {"STATUS_RU": status_ru}
+
     @app.get("/")
     def index():
         from .tickets.service import CancelReason

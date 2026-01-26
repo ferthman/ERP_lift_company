@@ -10,6 +10,21 @@
 
   if (!assetId) return;
 
+  const STATUS_RU = {
+    NEW: "Новая",
+    ASSIGNED: "Назначена",
+    ACCEPTED: "Принята",
+    IN_PROGRESS: "В работе",
+    WAITING: "Ожидание",
+    COMPLETED: "Завершена",
+    CANCELLED: "Отменена",
+  };
+
+  function getStatusLabel(status) {
+    if (!status) return "—";
+    return STATUS_RU[status] || status;
+  }
+
   function formatDateTime(ts) {
     if (!ts) return "—";
     const date = new Date(ts);
@@ -73,7 +88,7 @@
               <div class="text-xs text-slate-500">
                 Заявка:
                 <a href="${ticketLink}" class="text-slate-900 underline">
-                  #${item.ticket.id} · ${item.ticket.title || "—"} (${item.ticket.status || "—"})
+                  #${item.ticket.id} · ${item.ticket.title || "—"} (${getStatusLabel(item.ticket.status)})
                 </a>
               </div>
             </div>
