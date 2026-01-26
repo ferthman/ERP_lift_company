@@ -96,6 +96,20 @@ def create_app():
             response.set_cookie("ui_preference", ui, samesite="Lax")
         return response
 
+    status_ru = {
+        "NEW": "Новая",
+        "ASSIGNED": "Назначена",
+        "ACCEPTED": "Принята",
+        "IN_PROGRESS": "В работе",
+        "WAITING": "Ожидание",
+        "COMPLETED": "Завершена",
+        "CANCELLED": "Отменена",
+    }
+
+    @app.context_processor
+    def inject_status_labels():
+        return {"STATUS_RU": status_ru}
+
     @app.get("/")
     def index():
         from .tickets.service import CancelReason
@@ -164,6 +178,16 @@ def create_app():
                 user_role=getattr(current_user, "role", None),
             )
         )
+
+    @app.get("/history")
+    def tickets_history_page():
+        from flask_login import current_user
+
+        if not current_user.is_authenticated:
+            return redirect("/login?next=/history")
+        if getattr(current_user, "role", None) not in {"admin", "dispatcher"}:
+            return ("Forbidden", 403)
+        return make_response(render_template("history.html"))
 
     from .auth.routes import bp as auth_bp
     from .access.routes import bp as access_bp

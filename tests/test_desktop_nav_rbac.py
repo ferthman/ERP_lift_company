@@ -1,3 +1,4 @@
+import re
 import unittest
 
 from werkzeug.security import generate_password_hash
@@ -90,6 +91,19 @@ class DesktopNavRbacTest(unittest.TestCase):
         self.assertNotIn("Админ", body)
         self.assertNotIn("Пользователи и допуск", body)
         self.assertNotIn("Приложение мастера", body)
+
+    def test_admin_status_labels_localized(self):
+        self.login_api("admin_nav_test", "adminpass")
+        res = self.client.get("/admin")
+        self.assertEqual(res.status_code, 200)
+        body = res.get_data(as_text=True)
+        body = re.sub(r"<script[^>]*>.*?</script>", "", body, flags=re.S)
+        body = re.sub(r"<style[^>]*>.*?</style>", "", body, flags=re.S)
+        text = re.sub(r"<[^>]+>", " ", body)
+        text = re.sub(r"\s+", " ", text)
+        self.assertIn("Новая", text)
+        self.assertIn("В работе", text)
+        self.assertNotIn("IN_PROGRESS", text)
 
     def test_technician_admin_banner_only(self):
         self.login_api("tech_nav_test", "techpass")

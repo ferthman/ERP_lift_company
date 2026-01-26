@@ -8,6 +8,15 @@ const CLOSE_REASONS = [
   "EXTERNAL_REASON",
   "OTHER",
 ];
+const STATUS_RU = {
+  NEW: "Новая",
+  ASSIGNED: "Назначена",
+  ACCEPTED: "Принята",
+  IN_PROGRESS: "В работе",
+  WAITING: "Ожидание",
+  COMPLETED: "Завершена",
+  CANCELLED: "Отменена",
+};
 
 const state = {
   tickets: [],
@@ -35,6 +44,11 @@ function formatDate(value) {
   } catch (err) {
     return value;
   }
+}
+
+function getStatusLabel(status) {
+  if (!status) return "—";
+  return STATUS_RU[status] || status;
 }
 
 function uid() {
@@ -157,7 +171,7 @@ function updateTicketStatusBadge(ticket) {
     elements.ticketStatus.textContent = "—";
     return;
   }
-  elements.ticketStatus.textContent = `Статус: ${ticket.status} • v${ticket.version || 1}`;
+  elements.ticketStatus.textContent = `Статус: ${getStatusLabel(ticket.status)} · v${ticket.version || 1}`;
 }
 
 function renderList() {
@@ -178,7 +192,7 @@ function renderList() {
           <div class="font-semibold">${ticket.object_name || "Заявка"}</div>
           <div class="text-xs text-slate-500">${ticket.address || "Адрес не указан"}</div>
         </div>
-        <span class="text-xs font-semibold bg-slate-200 text-slate-700 px-2 py-1 rounded-full">${ticket.status}</span>
+        <span class="text-xs font-semibold bg-slate-200 text-slate-700 px-2 py-1 rounded-full">${getStatusLabel(ticket.status)}</span>
       </div>
       <div class="mt-2 text-xs text-slate-500">Обновлено: ${formatDate(ticket.updated_at)}</div>
     `;

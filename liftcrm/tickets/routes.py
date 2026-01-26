@@ -41,6 +41,7 @@ CLOSE_REASONS = [
 ]
 
 PRIORITY_VALUES = ["HIGH", "MEDIUM", "LOW"]
+HISTORY_STATUSES = {"COMPLETED", "CANCELLED"}
 
 
 def _transition_error(code, message, status=400):
@@ -213,6 +214,7 @@ def list_tickets():
     include_archived = request.args.get("include_archived") in {"1", "true", "True"}
     unassigned_only = request.args.get("unassigned") in {"1", "true", "True"}
     overdue_only = request.args.get("overdue") in {"1", "true", "True"}
+    kanban_view = request.args.get("kanban") in {"1", "true", "True"}
     master_id = request.args.get("master_id")
     priority = request.args.get("priority")
     if priority:
@@ -225,7 +227,7 @@ def list_tickets():
         except ValueError:
             return jsonify({"error": "Invalid master_id"}), 400
     with SessionLocal() as db:
-        query = db.query(Ticket).order_by(Ticket.created_at.desc())
+        query = db.query(Ticket)
         if not include_archived:
             query = query.filter(Ticket.archived_at.is_(None))
         if unassigned_only:
@@ -238,7 +240,24 @@ def list_tickets():
             query = query.filter(Ticket.assigned_master_id == master_id)
         if priority:
             query = query.filter(Ticket.priority == priority)
-        tickets = query.all()
+        if kanban_view:
+            open_statuses = ["NEW", "ASSIGNED", "ACCEPTED", "IN_PROGRESS", "WAITING"]
+            closed_statuses = ["COMPLETED", "CANCELLED"]
+            tickets = []
+            open_tickets = (
+                query.filter(Ticket.status.in_(open_statuses)).order_by(Ticket.created_at.desc()).all()
+            )
+            tickets.extend(open_tickets)
+            for status in closed_statuses:
+                if status == "COMPLETED":
+                    closed_query = query.filter(Ticket.status == status).order_by(
+                        repository.func.coalesce(Ticket.completed_at, Ticket.updated_at).desc()
+                    )
+                else:
+                    closed_query = query.filter(Ticket.status == status).order_by(Ticket.updated_at.desc())
+                tickets.extend(closed_query.limit(4).all())
+        else:
+            tickets = query.order_by(Ticket.created_at.desc()).all()
         if overdue_only:
             filtered = []
             for t in tickets:
@@ -247,6 +266,88 @@ def list_tickets():
                     filtered.append(t)
             tickets = filtered
         return jsonify([repository.serialize_ticket(t) for t in tickets])
+
+
+def _parse_date(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _ticket_closed_at(ticket: Ticket):
+    if ticket.status == "COMPLETED":
+        return to_utc(ticket.completed_at or ticket.updated_at)
+    if ticket.status == "CANCELLED":
+        return to_utc(ticket.updated_at)
+    return None
+
+
+@bp.get("/api/tickets/history")
+@login_required
+@role_required("admin", "dispatcher")
+def tickets_history():
+    raw_statuses = request.args.get("statuses") or request.args.get("status") or "COMPLETED,CANCELLED"
+    statuses = [s.strip().upper() for s in raw_statuses.split(",") if s.strip()]
+    statuses = [s for s in statuses if s in HISTORY_STATUSES]
+    if not statuses:
+        statuses = sorted(HISTORY_STATUSES)
+
+    date_from = _parse_date(request.args.get("date_from"))
+    date_to = _parse_date(request.args.get("date_to"))
+
+    try:
+        limit = int(request.args.get("limit", 50))
+    except ValueError:
+        return jsonify({"error": "Invalid limit"}), 400
+    try:
+        offset = int(request.args.get("offset", 0))
+    except ValueError:
+        return jsonify({"error": "Invalid offset"}), 400
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+
+    start_dt = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc) if date_from else None
+    end_dt = datetime.combine(date_to, datetime.max.time(), tzinfo=timezone.utc) if date_to else None
+
+    with SessionLocal() as db:
+        query = (
+            db.query(Ticket)
+            .filter(Ticket.status.in_(statuses), Ticket.archived_at.is_(None))
+            .order_by(Ticket.updated_at.desc())
+        )
+        tickets = query.all()
+
+        filtered = []
+        for ticket in tickets:
+            closed_at = _ticket_closed_at(ticket)
+            if not closed_at:
+                continue
+            if start_dt and closed_at < start_dt:
+                continue
+            if end_dt and closed_at > end_dt:
+                continue
+            filtered.append((closed_at, ticket))
+
+        filtered.sort(key=lambda item: item[0], reverse=True)
+        sliced = filtered[offset : offset + limit]
+        items = []
+        for closed_at, ticket in sliced:
+            items.append(
+                {
+                    "id": ticket.id,
+                    "object_name": ticket.object_name,
+                    "address": ticket.address,
+                    "status": ticket.status,
+                    "closed_at": closed_at.isoformat(),
+                    "assigned_master_name": ticket.assigned_master.name if ticket.assigned_master else None,
+                    "close_reason": ticket.close_reason,
+                    "close_comment": ticket.close_comment,
+                }
+            )
+        return jsonify({"items": items, "total": len(filtered), "limit": limit, "offset": offset})
 
 
 @bp.get("/api/me/tickets")
