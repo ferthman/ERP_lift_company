@@ -1,5 +1,5 @@
 const DB_NAME = "liftcrm-mobile";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const CLOSE_REASONS = [
   "EQUIPMENT_FAILURE",
   "PASSENGER_TRAPPED",
@@ -21,6 +21,10 @@ const STATUS_RU = {
 const state = {
   tickets: [],
   selectedId: null,
+  historyItems: [],
+  historySelectedId: null,
+  historyUpdatedAt: null,
+  historyOffline: false,
   online: navigator.onLine,
   pendingCount: 0,
   errorCount: 0,
@@ -33,6 +37,20 @@ const elements = {
   syncStatus: document.getElementById("sync-status"),
   lastSync: document.getElementById("last-sync"),
   ticketStatus: document.getElementById("ticket-status"),
+  ticketDetailCard: document.getElementById("ticket-detail-card"),
+  tabTickets: document.getElementById("tab-tickets"),
+  tabHistory: document.getElementById("tab-history"),
+  ticketsPanel: document.getElementById("tickets-panel"),
+  historyPanel: document.getElementById("history-panel"),
+  historyList: document.getElementById("history-list"),
+  historyDetailCard: document.getElementById("history-detail-card"),
+  historyDetail: document.getElementById("history-detail"),
+  historyDetailStatus: document.getElementById("history-detail-status"),
+  historyDateFrom: document.getElementById("history-date-from"),
+  historyDateTo: document.getElementById("history-date-to"),
+  historyApply: document.getElementById("history-apply"),
+  historyOffline: document.getElementById("history-offline"),
+  historyUpdated: document.getElementById("history-updated"),
   btnSync: document.getElementById("btn-sync"),
   btnReset: document.getElementById("btn-reset"),
 };
@@ -66,6 +84,12 @@ function openDb() {
       }
       if (!db.objectStoreNames.contains("tickets_cache")) {
         db.createObjectStore("tickets_cache", { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains("history_list_cache")) {
+        db.createObjectStore("history_list_cache", { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains("history_timeline_cache")) {
+        db.createObjectStore("history_timeline_cache", { keyPath: "id" });
       }
       if (!db.objectStoreNames.contains("outbox_events")) {
         db.createObjectStore("outbox_events", { keyPath: "id" });
@@ -120,6 +144,26 @@ async function saveTicketCache(ticket) {
 
 async function loadTicketCache(id) {
   return withStore("tickets_cache", "readonly", (store) => store.get(id));
+}
+
+async function saveHistoryListCache(items, filters) {
+  return withStore("history_list_cache", "readwrite", (store) =>
+    store.put({ id: "last", items, filters: filters || {}, updated_at: new Date().toISOString() })
+  );
+}
+
+async function loadHistoryListCache() {
+  return withStore("history_list_cache", "readonly", (store) => store.get("last"));
+}
+
+async function saveHistoryTimelineCache(ticketId, items) {
+  return withStore("history_timeline_cache", "readwrite", (store) =>
+    store.put({ id: String(ticketId), items, updated_at: new Date().toISOString() })
+  );
+}
+
+async function loadHistoryTimelineCache(ticketId) {
+  return withStore("history_timeline_cache", "readonly", (store) => store.get(String(ticketId)));
 }
 
 async function listOutboxEvents() {
@@ -199,6 +243,116 @@ function renderList() {
     wrapper.addEventListener("click", () => openTicket(ticket.id));
     elements.list.appendChild(wrapper);
   });
+}
+
+function setActiveTab(tab) {
+  const isHistory = tab === "history";
+  if (elements.tabTickets) {
+    elements.tabTickets.className = `px-3 py-1 rounded-full text-xs font-semibold ${
+      isHistory ? "bg-slate-200 text-slate-700" : "bg-slate-900 text-white"
+    }`;
+  }
+  if (elements.tabHistory) {
+    elements.tabHistory.className = `px-3 py-1 rounded-full text-xs font-semibold ${
+      isHistory ? "bg-slate-900 text-white" : "bg-slate-200 text-slate-700"
+    }`;
+  }
+  if (elements.ticketsPanel) {
+    elements.ticketsPanel.classList.toggle("hidden", isHistory);
+  }
+  if (elements.historyPanel) {
+    elements.historyPanel.classList.toggle("hidden", !isHistory);
+  }
+  if (elements.ticketDetailCard) {
+    elements.ticketDetailCard.classList.toggle("hidden", isHistory);
+  }
+  if (elements.historyDetailCard) {
+    elements.historyDetailCard.classList.toggle("hidden", !isHistory);
+  }
+}
+
+function updateHistoryIndicators() {
+  if (elements.historyOffline) {
+    elements.historyOffline.classList.toggle("hidden", !state.historyOffline);
+  }
+  if (elements.historyUpdated) {
+    elements.historyUpdated.textContent = state.historyUpdatedAt
+      ? `Обновлено: ${formatDate(state.historyUpdatedAt)}`
+      : "—";
+  }
+}
+
+function renderHistoryList() {
+  if (!elements.historyList) return;
+  if (!state.historyItems.length) {
+    elements.historyList.innerHTML = `<div class="text-sm text-slate-500">История не найдена.</div>`;
+    return;
+  }
+  elements.historyList.innerHTML = "";
+  state.historyItems.forEach((item) => {
+    const wrapper = document.createElement("button");
+    wrapper.type = "button";
+    wrapper.className =
+      "w-full text-left border border-slate-200 rounded-xl p-3 hover:border-slate-400 transition bg-slate-50";
+    wrapper.innerHTML = `
+      <div class="flex items-start justify-between gap-2">
+        <div>
+          <div class="font-semibold">${item.object_name || "Заявка"}</div>
+          <div class="text-xs text-slate-500">${item.address || "Адрес не указан"}</div>
+        </div>
+        <span class="text-xs font-semibold bg-slate-200 text-slate-700 px-2 py-1 rounded-full">${getStatusLabel(
+          item.status
+        )}</span>
+      </div>
+      <div class="mt-2 text-xs text-slate-500">Закрыта: ${formatDate(item.closed_at)}</div>
+    `;
+    wrapper.addEventListener("click", () => openHistoryTicket(item.ticket_id));
+    elements.historyList.appendChild(wrapper);
+  });
+}
+
+function renderHistoryDetail(timeline) {
+  if (!elements.historyDetail) return;
+  if (!timeline || !timeline.length) {
+    elements.historyDetail.innerHTML = `<div class="text-sm text-slate-500">Событий нет.</div>`;
+    return;
+  }
+  elements.historyDetail.innerHTML = timeline
+    .map((event) => {
+      if (event.type === "STATUS") {
+        return `
+          <div class="border border-slate-200 rounded-lg p-2">
+            <div class="text-xs text-slate-500">${formatDate(event.created_at)} · ${
+              event.actor === "me" ? "Вы" : "Другой"
+            }</div>
+            <div>Статус: ${getStatusLabel(event.status)}</div>
+          </div>
+        `;
+      }
+      if (event.type === "COMMENT") {
+        return `
+          <div class="border border-slate-200 rounded-lg p-2">
+            <div class="text-xs text-slate-500">${formatDate(event.created_at)} · ${
+              event.actor === "me" ? "Вы" : "Другой"
+            }</div>
+            <div>${event.body || "—"}</div>
+          </div>
+        `;
+      }
+      if (event.type === "PHOTO") {
+        const link = event.url ? `<a href="${event.url}" class="text-blue-600 underline">Открыть фото</a>` : "—";
+        return `
+          <div class="border border-slate-200 rounded-lg p-2">
+            <div class="text-xs text-slate-500">${formatDate(event.created_at)} · ${
+              event.actor === "me" ? "Вы" : "Другой"
+            }</div>
+            <div>${link}</div>
+          </div>
+        `;
+      }
+      return "";
+    })
+    .join("");
 }
 
 function buildSelect(id, options, selected) {
@@ -390,6 +544,41 @@ async function openTicket(id) {
   renderDetail(ticket);
 }
 
+async function openHistoryTicket(ticketId) {
+  state.historySelectedId = ticketId;
+  const selected = state.historyItems.find((item) => item.ticket_id === ticketId);
+  if (elements.historyDetailStatus) {
+    elements.historyDetailStatus.textContent = selected
+      ? `${getStatusLabel(selected.status)} · ${formatDate(selected.closed_at)}`
+      : "—";
+  }
+  let timeline = null;
+  let usedCache = false;
+  if (state.online) {
+    try {
+      const res = await fetch(`/api/me/tickets/${ticketId}/timeline`);
+      if (res.ok) {
+        timeline = await res.json();
+        await saveHistoryTimelineCache(ticketId, timeline || []);
+        state.historyUpdatedAt = new Date().toISOString();
+      }
+    } catch (err) {
+      timeline = null;
+    }
+  }
+  if (!timeline) {
+    const cached = await loadHistoryTimelineCache(ticketId);
+    timeline = cached?.items || [];
+    usedCache = true;
+    if (!state.historyUpdatedAt && cached?.updated_at) {
+      state.historyUpdatedAt = cached.updated_at;
+    }
+  }
+  state.historyOffline = !state.online || usedCache;
+  updateHistoryIndicators();
+  renderHistoryDetail(timeline);
+}
+
 async function refreshTickets() {
   if (!elements.list) return;
   if (state.online) {
@@ -410,6 +599,60 @@ async function refreshTickets() {
     state.tickets = await loadListCache();
   }
   renderList();
+}
+
+async function refreshHistoryList() {
+  const filters = {
+    date_from: elements.historyDateFrom?.value || "",
+    date_to: elements.historyDateTo?.value || "",
+  };
+  let items = [];
+  let usedCache = false;
+  let fetchOk = false;
+  if (state.online) {
+    try {
+      const params = new URLSearchParams();
+      if (filters.date_from) params.set("date_from", filters.date_from);
+      if (filters.date_to) params.set("date_to", filters.date_to);
+      const res = await fetch(`/api/me/history?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        items = data.items || [];
+        await saveHistoryListCache(items, filters);
+        state.historyUpdatedAt = new Date().toISOString();
+        fetchOk = true;
+      }
+    } catch (err) {
+      items = [];
+    }
+  }
+  if (!fetchOk) {
+    const cached = await loadHistoryListCache();
+    if (cached?.items) {
+      items = cached.items;
+      usedCache = true;
+      if (cached.filters) {
+        if (elements.historyDateFrom && !filters.date_from) {
+          elements.historyDateFrom.value = cached.filters.date_from || "";
+        }
+        if (elements.historyDateTo && !filters.date_to) {
+          elements.historyDateTo.value = cached.filters.date_to || "";
+        }
+      }
+      if (cached.updated_at) {
+        state.historyUpdatedAt = cached.updated_at;
+      }
+    }
+  }
+  state.historyItems = items;
+  state.historyOffline = !state.online || usedCache;
+  renderHistoryList();
+  updateHistoryIndicators();
+  if (state.historyItems.length) {
+    await openHistoryTicket(state.historyItems[0].ticket_id);
+  } else {
+    renderHistoryDetail([]);
+  }
 }
 
 async function queueEvent(ticket, type, payload) {
@@ -566,6 +809,8 @@ async function syncAll() {
 async function resetOffline() {
   await withStore("tickets_list_cache", "readwrite", (store) => store.clear());
   await withStore("tickets_cache", "readwrite", (store) => store.clear());
+  await withStore("history_list_cache", "readwrite", (store) => store.clear());
+  await withStore("history_timeline_cache", "readwrite", (store) => store.clear());
   await withStore("outbox_events", "readwrite", (store) => store.clear());
   await withStore("outbox_photos", "readwrite", (store) => store.clear());
   window.location.reload();
@@ -576,6 +821,7 @@ async function init() {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/static/sw.js").catch(() => {});
   }
+  setActiveTab("tickets");
   await refreshTickets();
   await updateSyncIndicators();
   if (state.tickets.length) {
@@ -585,12 +831,21 @@ async function init() {
   window.addEventListener("online", async () => {
     state.online = true;
     await refreshTickets();
+    await refreshHistoryList();
     await syncAll();
   });
   window.addEventListener("offline", async () => {
     state.online = false;
     await updateSyncIndicators();
+    state.historyOffline = true;
+    updateHistoryIndicators();
   });
+  elements.tabTickets?.addEventListener("click", () => setActiveTab("tickets"));
+  elements.tabHistory?.addEventListener("click", async () => {
+    setActiveTab("history");
+    await refreshHistoryList();
+  });
+  elements.historyApply?.addEventListener("click", refreshHistoryList);
   elements.btnSync?.addEventListener("click", syncAll);
   elements.btnReset?.addEventListener("click", resetOffline);
 }

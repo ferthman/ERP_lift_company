@@ -26,19 +26,52 @@
     </header>
 
     <section class="bg-white rounded-2xl shadow p-4 space-y-3">
-      <div class="flex items-center justify-between">
-        <h2 class="font-semibold">Мои заявки</h2>
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex items-center gap-2">
+          <button id="tab-tickets" class="px-3 py-1 rounded-full text-xs font-semibold bg-slate-900 text-white">Мои заявки</button>
+          <button id="tab-history" class="px-3 py-1 rounded-full text-xs font-semibold bg-slate-200 text-slate-700">История</button>
+        </div>
         <span id="last-sync" class="text-xs text-slate-500">—</span>
       </div>
-      <div id="tickets-list" class="space-y-2"></div>
+      <div id="tickets-panel" class="space-y-2">
+        <div id="tickets-list" class="space-y-2"></div>
+      </div>
+      <div id="history-panel" class="space-y-3 hidden">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div>
+            <label class="text-xs text-slate-500">Дата с</label>
+            <input id="history-date-from" type="date" class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1 text-sm" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-500">Дата по</label>
+            <input id="history-date-to" type="date" class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1 text-sm" />
+          </div>
+          <div class="flex items-end">
+            <button id="history-apply" class="w-full px-3 py-2 rounded-xl bg-slate-900 text-white text-sm">Применить</button>
+          </div>
+        </div>
+        <div class="flex items-center justify-between text-xs">
+          <span id="history-offline" class="text-amber-600 hidden">Оффлайн данные</span>
+          <span id="history-updated" class="text-slate-500">—</span>
+        </div>
+        <div id="history-list" class="space-y-2"></div>
+      </div>
     </section>
 
-    <section class="bg-white rounded-2xl shadow p-4 space-y-3">
+    <section id="ticket-detail-card" class="bg-white rounded-2xl shadow p-4 space-y-3">
       <div class="flex items-center justify-between">
         <h2 class="font-semibold">Детали заявки</h2>
         <span id="ticket-status" class="text-xs text-slate-500">—</span>
       </div>
       <div id="ticket-detail" class="text-sm text-slate-700">Выберите заявку в списке.</div>
+    </section>
+
+    <section id="history-detail-card" class="bg-white rounded-2xl shadow p-4 space-y-3 hidden">
+      <div class="flex items-center justify-between">
+        <h2 class="font-semibold">История заявки</h2>
+        <span id="history-detail-status" class="text-xs text-slate-500">—</span>
+      </div>
+      <div id="history-detail" class="text-sm text-slate-700">Выберите заявку в списке истории.</div>
     </section>
   </main>
 
