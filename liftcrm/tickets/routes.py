@@ -287,6 +287,26 @@ def _ticket_closed_at(ticket: Ticket):
     return None
 
 
+def _parse_iso_ts(value):
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return to_utc(value)
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+        return to_utc(parsed)
+    return None
+
+
+def _timeline_actor(actor_user_id, current_user_id):
+    if actor_user_id and actor_user_id == current_user_id:
+        return "me"
+    return "other"
+
+
 @bp.get("/api/tickets/history")
 @login_required
 @role_required("admin", "dispatcher")
@@ -373,6 +393,180 @@ def list_my_tickets():
             query = query.filter(~Ticket.status.in_(closed_statuses))
         tickets = query.all()
         return jsonify([repository.serialize_ticket(t) for t in tickets])
+
+
+@bp.get("/api/me/history")
+@login_required
+@role_required("technician")
+def list_my_history():
+    if not current_user.master_id:
+        return jsonify({"error": "Missing master profile for technician"}), 403
+    raw_statuses = request.args.get("status") or request.args.get("statuses") or "COMPLETED,CANCELLED"
+    statuses = [s.strip().upper() for s in raw_statuses.split(",") if s.strip()]
+    statuses = [s for s in statuses if s in HISTORY_STATUSES]
+    if not statuses:
+        statuses = sorted(HISTORY_STATUSES)
+
+    date_from = _parse_date(request.args.get("date_from"))
+    date_to = _parse_date(request.args.get("date_to"))
+
+    try:
+        limit = int(request.args.get("limit", 50))
+    except ValueError:
+        return jsonify({"error": "Invalid limit"}), 400
+    try:
+        offset = int(request.args.get("offset", 0))
+    except ValueError:
+        return jsonify({"error": "Invalid offset"}), 400
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+
+    start_dt = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc) if date_from else None
+    end_dt = datetime.combine(date_to, datetime.max.time(), tzinfo=timezone.utc) if date_to else None
+
+    with SessionLocal() as db:
+        tickets = (
+            db.query(Ticket)
+            .filter(
+                Ticket.assigned_master_id == current_user.master_id,
+                Ticket.status.in_(statuses),
+                Ticket.archived_at.is_(None),
+            )
+            .all()
+        )
+        filtered = []
+        for ticket in tickets:
+            closed_at = _ticket_closed_at(ticket)
+            if not closed_at:
+                continue
+            if start_dt and closed_at < start_dt:
+                continue
+            if end_dt and closed_at > end_dt:
+                continue
+            filtered.append((closed_at, ticket))
+
+        filtered.sort(key=lambda item: item[0], reverse=True)
+        sliced = filtered[offset : offset + limit]
+        items = []
+        for closed_at, ticket in sliced:
+            items.append(
+                {
+                    "ticket_id": ticket.id,
+                    "title": ticket.object_name,
+                    "object_name": ticket.object_name,
+                    "address": ticket.address,
+                    "status": ticket.status,
+                    "closed_at": closed_at.isoformat(),
+                    "updated_at": (to_utc(ticket.updated_at).isoformat() if ticket.updated_at else None),
+                }
+            )
+        return jsonify({"items": items, "total": len(filtered), "limit": limit, "offset": offset})
+
+
+@bp.get("/api/me/tickets/<int:ticket_id>/timeline")
+@login_required
+@role_required("technician")
+def ticket_timeline(ticket_id):
+    if not current_user.master_id:
+        return jsonify({"error": "Missing master profile for technician"}), 403
+    with SessionLocal() as db:
+        ticket = db.get(Ticket, ticket_id)
+        if not ticket:
+            return jsonify({"error": "Ticket not found"}), 404
+        if ticket.assigned_master_id != current_user.master_id:
+            return jsonify({"error": "Forbidden"}), 403
+        audit_rows = (
+            db.query(AuditLog)
+            .filter(AuditLog.entity_type == "ticket", AuditLog.entity_id == ticket_id)
+            .order_by(AuditLog.created_at.asc())
+            .all()
+        )
+        comments = (
+            db.query(TicketComment)
+            .filter(TicketComment.ticket_id == ticket_id)
+            .order_by(TicketComment.created_at.asc())
+            .all()
+        )
+        attachments = (
+            db.query(Attachment)
+            .filter(Attachment.ticket_id == ticket_id)
+            .order_by(Attachment.created_at.asc())
+            .all()
+        )
+        attachment_ids = [a.id for a in attachments]
+        attachment_audits = {}
+        if attachment_ids:
+            attachment_rows = (
+                db.query(AuditLog)
+                .filter(
+                    AuditLog.entity_type == "attachment",
+                    AuditLog.entity_id.in_(attachment_ids),
+                    AuditLog.action == "CREATE",
+                )
+                .all()
+            )
+            attachment_audits = {row.entity_id: row.actor_user_id for row in attachment_rows}
+
+        events = []
+
+        def add_event(ts, payload):
+            if ts is None:
+                return
+            events.append((ts, payload))
+
+        for entry in audit_rows:
+            ts = _parse_iso_ts(entry.created_at)
+            if not ts:
+                continue
+            try:
+                diff = json.loads(entry.diff_json or "{}")
+            except json.JSONDecodeError:
+                diff = {}
+            old = diff.get("old") or {}
+            new = diff.get("new") or {}
+            new_status = None
+            if entry.action == "CANCEL":
+                new_status = "CANCELLED"
+            elif entry.action in {"STATUS_CHANGE", "ASSIGN", "CREATE"}:
+                new_status = new.get("status")
+            if new_status:
+                add_event(
+                    ts,
+                    {
+                        "type": "STATUS",
+                        "status": new_status,
+                        "created_at": ts.isoformat(),
+                        "actor": _timeline_actor(entry.actor_user_id, current_user.id),
+                        "meta": {"old_status": old.get("status"), "action": entry.action},
+                    },
+                )
+
+        for comment in comments:
+            ts = _parse_iso_ts(comment.created_at)
+            add_event(
+                ts,
+                {
+                    "type": "COMMENT",
+                    "body": comment.body,
+                    "created_at": ts.isoformat() if ts else None,
+                    "actor": _timeline_actor(comment.user_id, current_user.id),
+                },
+            )
+
+        for attachment in attachments:
+            ts = _parse_iso_ts(attachment.created_at)
+            add_event(
+                ts,
+                {
+                    "type": "PHOTO",
+                    "created_at": ts.isoformat() if ts else None,
+                    "actor": _timeline_actor(attachment_audits.get(attachment.id), current_user.id),
+                    "url": f"/uploads/{attachment.filename}",
+                },
+            )
+
+        events.sort(key=lambda item: item[0])
+        return jsonify([payload for _, payload in events])
 
 
 @bp.post("/api/tickets")

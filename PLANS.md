@@ -6,6 +6,102 @@ Treat the reader as a complete beginner to this repository. The only context the
 
 ---
 
+# Technician History (Mobile) — ExecPlan
+
+## Purpose / Big Picture
+
+Add a technician-facing history view under `/mobile` so technicians can review completed/cancelled tickets and inspect a timeline of status changes, comments, and photos for dispute prevention. The backend must enforce technician-only access and ensure technicians only see their own tickets.
+
+## Progress
+
+- [x] (2025-03-08 12:30Z) Implement `/api/me/history` and `/api/me/tickets/<id>/timeline` with technician scoping and status/comment/photo timelines.
+- [x] (2025-03-08 12:45Z) Add `/mobile` “История” UI, date filters, timeline panel, and IndexedDB caching for offline use.
+- [x] (2025-03-08 13:10Z) Add pytest coverage for technician history access, filtering, and timeline permissions.
+- [x] (2025-03-08 13:20Z) Run pytest and capture output; document validation steps.
+- [x] (2025-03-08 13:30Z) Update Outcomes & Retrospective with what shipped and any follow-ups.
+
+## Surprises & Discoveries
+
+- None yet.
+
+## Decision Log
+
+- Decision: Filter technician history by `assigned_master_id == current_user.master_id` (MVP), rather than by audit-log authorship.
+  Rationale: Matches existing schema and is the simplest correct ownership check for assigned tickets.
+  Date/Author: 2025-03-08 / codex
+- Decision: Build timeline entries from audit logs (status changes), ticket comments, and attachment uploads, using audit logs for attachment actors when available.
+  Rationale: Reuses existing audit trail and avoids schema changes while providing a complete timeline.
+  Date/Author: 2025-03-08 / codex
+
+## Outcomes & Retrospective
+
+- Outcome (2025-03-08): Added technician history API endpoints, mobile history UI with offline cache, and pytest coverage for access control and filters. Pytest: 79 passed.
+
+## Plan of Work
+
+### Milestone 1 — Backend endpoints
+
+Goal: Provide technician-scoped history list and ticket timeline endpoints.
+
+Work:
+
+- Add `GET /api/me/history` in `liftcrm/tickets/routes.py`:
+  - Role guard: technician only.
+  - Filter tickets by `assigned_master_id`.
+  - Support `date_from`, `date_to`, `status`, `limit`, `offset`.
+  - Sort by closed timestamp (completed_at/cancelled_at fallback to updated_at).
+  - Return `ticket_id`, `object_name`, `address`, `status`, `closed_at`, `updated_at`.
+- Add `GET /api/me/tickets/<ticket_id>/timeline`:
+  - Role guard: technician only.
+  - Verify ticket belongs to current technician.
+  - Return ordered timeline entries for status changes, comments, and photos.
+
+Validation:
+
+- Hit `/api/me/history` for a technician and verify only their closed tickets appear.
+- Hit `/api/me/tickets/<id>/timeline` and confirm status/comment/photo events are ordered ascending.
+
+### Milestone 2 — Mobile UI + offline caching
+
+Goal: Add a “История” UI in `/mobile` with date filters, timeline view, and IndexedDB caching.
+
+Work:
+
+- Update `templates/mobile.html` with a History tab, date inputs, and a timeline panel.
+- Update `static/mobile.js` to:
+  - Fetch `/api/me/history` with date filters.
+  - Fetch `/api/me/tickets/<id>/timeline` for selected items.
+  - Cache the history list and timelines in IndexedDB.
+  - Display “оффлайн данные” when showing cached results.
+
+Validation:
+
+- Online: open `/mobile`, switch to История, and view closed tickets and timelines.
+- Offline: refresh `/mobile` in offline mode and confirm cached history list and timeline render with an offline label.
+
+### Milestone 3 — Tests
+
+Goal: Ensure technician history access control and filtering.
+
+Work:
+
+- Add pytest tests in `tests/`:
+  - Technician can access `/api/me/history` and only sees their tickets.
+  - Other technicians cannot see those tickets.
+  - Technician timeline endpoint returns 403 for чужой ticket.
+  - Date range filtering works.
+  - Optional: timeline includes comments.
+
+Validation:
+
+- Run `pytest` and capture output.
+
+## End-of-plan change log
+
+- Change: Added ExecPlan for technician history API + mobile UI + offline cache.
+  Reason: Multi-file backend + frontend + offline behavior needs an execution plan.
+  Date/Author: 2025-03-08 / codex
+
 # Ticket Cancellation Timestamp Fix — ExecPlan
 
 ## Purpose / Big Picture
