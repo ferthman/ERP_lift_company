@@ -6,6 +6,97 @@ Treat the reader as a complete beginner to this repository. The only context the
 
 ---
 
+# Upload Access Protection PR — ExecPlan
+
+## Purpose / Big Picture
+
+Protect ticket attachment files served from `/uploads/<filename>` so uploads are no longer public static assets. The route must require login, reject unsafe filename/path access, and authorize by the ticket connected to the attachment: admins can access all uploads, dispatchers can access operational uploads, and technicians can only access uploads for tickets assigned to their master profile. This PR intentionally avoids upload UI changes and broader MIME validation.
+
+## Progress
+
+- [x] (2026-04-30 12:30Z) Inspect current upload creation, attachment serialization, `/uploads/<path:filename>` serving, auth helpers, ticket ownership checks, and existing test setup.
+- [x] (2026-04-30 12:31Z) Add protected upload-serving authorization helper and path-safety checks in `liftcrm/tickets/routes.py`.
+- [x] (2026-04-30 12:31Z) Add focused upload access tests covering anonymous, unrelated technician, assigned technician, admin, dispatcher, and unsafe filenames.
+- [x] (2026-04-30 12:32Z) Run targeted upload/security tests and the full backend test suite.
+- [x] (2026-04-30 12:32Z) Record validation results and retrospective.
+
+## Surprises & Discoveries
+
+- Observation: `serve_upload(filename)` was unauthenticated and accepted a path converter before passing the value directly to `send_from_directory`.
+  Evidence: `liftcrm/tickets/routes.py` defined `@bp.get("/uploads/<path:filename>")` with no `@login_required`.
+- Observation: Attachments already have the ticket relationship needed for authorization, and upload creation already restricts technicians to their assigned tickets.
+  Evidence: `liftcrm/db.py` `Attachment.ticket` relationship and `liftcrm/tickets/routes.py` `upload_file()`.
+
+## Decision Log
+
+- Decision: Authorize served uploads by first resolving an exact `Attachment.filename` row, then checking the related ticket.
+  Rationale: Files not recorded in the database should not be reachable through the protected ticket upload surface, and ticket-level authorization can reuse existing role/master fields without changing URLs or UI.
+  Date/Author: 2026-04-30 / codex
+- Decision: Reject any filename containing path separators, `.` or `..`, or a basename mismatch before querying the database.
+  Rationale: The route uses a path converter, so traversal and nested-path attempts should fail before filesystem access.
+  Date/Author: 2026-04-30 / codex
+
+## Outcomes & Retrospective
+
+- Outcome (2026-04-30): `/uploads/<filename>` now requires authentication, rejects unsafe path-like filenames before filesystem access, resolves uploads through `Attachment.filename`, and enforces ticket-level authorization. Admin can access all attachment-backed uploads, dispatcher can access non-archived operational uploads, and technicians can only access uploads for tickets assigned to their master profile. Validation: `venv/bin/python -m pytest tests/test_upload_access.py -q` passed (6 tests); `venv/bin/python -m pytest -q` passed (86 tests).
+
+## Plan of Work
+
+### Milestone 1 — Protected serving route
+
+Goal: `/uploads/<filename>` requires authentication and only serves ticket-connected files to authorized users.
+
+Work:
+
+- Add `@login_required` to `serve_upload()`.
+- Add an internal filename safety check in `liftcrm/tickets/routes.py` that rejects path separators, current/parent directory names, empty names, and basename rewrites.
+- Query `Attachment` by exact stored `filename` and require a related ticket.
+- Allow roles:
+  - `admin`: all uploads.
+  - `dispatcher`: non-archived operational uploads.
+  - `technician`: only uploads where `Attachment.ticket.assigned_master_id == current_user.master_id`.
+
+Validation:
+
+- Anonymous request to an existing upload returns an auth failure.
+- Unsafe path requests do not reach filesystem serving.
+
+### Milestone 2 — Access regression tests
+
+Goal: Capture the ticket-level access contract.
+
+Work:
+
+- Add `tests/test_upload_access.py`.
+- Create a temporary app/database/upload folder per test.
+- Seed two technician users, assigned tickets, attachment rows, and real files.
+- Cover anonymous denied, unrelated technician denied, assigned technician allowed, admin allowed, dispatcher allowed, and unsafe filename denied.
+
+Validation:
+
+- Run the focused upload access test module.
+
+### Milestone 3 — Backend validation
+
+Goal: Ensure no existing backend behavior regresses.
+
+Work:
+
+- Run the focused upload/security tests.
+- Run the full backend test suite.
+
+Validation:
+
+- Record exact commands and results here and in the final report.
+
+## End-of-plan change log
+
+- Change: Added and completed Upload Access Protection PR ExecPlan.
+  Reason: Upload authorization spans routes, database-backed permissions, filesystem serving, and tests, so AGENTS.md requires an ExecPlan and validation record.
+  Date/Author: 2026-04-30 / codex
+
+---
+
 # Technician History (Mobile) — ExecPlan
 
 ## Purpose / Big Picture
