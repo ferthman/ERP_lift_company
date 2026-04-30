@@ -31,6 +31,15 @@ function formatStatus(status) {
   return STATUS_LABELS[status] || status || "—";
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function formatCloseReason(reason) {
   return CLOSE_REASON_LABELS[reason] || reason || "—";
 }
@@ -103,14 +112,16 @@ async function loadHistory() {
       : "Нет заявок по выбранному диапазону.";
     listEl.innerHTML = items
       .map((item) => {
-        const reason = item.close_reason ? formatCloseReason(item.close_reason) : "—";
-        const comment = item.close_comment ? `<div class="text-xs text-slate-500 mt-1">Комментарий: ${item.close_comment}</div>` : "";
+        const reason = item.close_reason ? escapeHtml(formatCloseReason(item.close_reason)) : "—";
+        const comment = item.close_comment
+          ? `<div class="text-xs text-slate-500 mt-1">Комментарий: ${escapeHtml(item.close_comment)}</div>`
+          : "";
         return `
           <div class="bg-white rounded-2xl shadow p-4">
             <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <div class="text-sm font-semibold">#${item.id} — ${item.object_name || "—"}</div>
-                <div class="text-xs text-slate-500 mt-1">${item.address || "—"}</div>
+                <div class="text-sm font-semibold">#${item.id} — ${escapeHtml(item.object_name || "—")}</div>
+                <div class="text-xs text-slate-500 mt-1">${escapeHtml(item.address || "—")}</div>
               </div>
               <div class="text-xs text-slate-500 text-right">
                 <div>${formatStatus(item.status)}</div>
@@ -118,7 +129,7 @@ async function loadHistory() {
               </div>
             </div>
             <div class="mt-2 text-xs text-slate-600">
-              <div>Мастер: ${item.assigned_master_name || "—"}</div>
+              <div>Мастер: ${escapeHtml(item.assigned_master_name || "—")}</div>
               <div>Причина: ${reason}</div>
               ${comment}
             </div>

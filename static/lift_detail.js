@@ -45,6 +45,15 @@
     return date.toLocaleString("ru-RU");
   }
 
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
   function formatMinutes(seconds) {
     if (seconds === null || seconds === undefined) return "—";
     const minutes = Math.round(seconds / 60);
@@ -100,11 +109,11 @@
       return;
     }
     headerEl.innerHTML = `
-      <div class="text-slate-700 font-semibold text-lg">${lift.lift_label || "Лифт без метки"}</div>
-      <div class="text-slate-500">Серийный номер: <span class="text-slate-700">${lift.serial_no || "—"}</span></div>
-      <div class="text-slate-500">Адрес: <span class="text-slate-700">${lift.address || "—"}</span></div>
-      <div class="text-slate-500">Подъезд: <span class="text-slate-700">${lift.entrance || "—"}</span></div>
-      <div class="text-slate-500">Статус: <span class="text-slate-700">${lift.status || "—"}</span></div>
+      <div class="text-slate-700 font-semibold text-lg">${escapeHtml(lift.lift_label || "Лифт без метки")}</div>
+      <div class="text-slate-500">Серийный номер: <span class="text-slate-700">${escapeHtml(lift.serial_no || "—")}</span></div>
+      <div class="text-slate-500">Адрес: <span class="text-slate-700">${escapeHtml(lift.address || "—")}</span></div>
+      <div class="text-slate-500">Подъезд: <span class="text-slate-700">${escapeHtml(lift.entrance || "—")}</span></div>
+      <div class="text-slate-500">Статус: <span class="text-slate-700">${escapeHtml(lift.status || "—")}</span></div>
     `;
   }
 
@@ -121,8 +130,8 @@
               <span>${eventKindLabel(event.kind)}</span>
               <span>${formatDateTime(event.ts)}</span>
             </div>
-            <div class="text-sm text-slate-700">${event.text || "—"}</div>
-            <div class="text-xs text-slate-500">Исполнитель: <span class="text-slate-700">${actor}</span></div>
+            <div class="text-sm text-slate-700">${escapeHtml(event.text || "—")}</div>
+            <div class="text-xs text-slate-500">Исполнитель: <span class="text-slate-700">${escapeHtml(actor)}</span></div>
           </div>
         `;
       })
@@ -144,13 +153,13 @@
           <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div class="space-y-1">
-                <div class="text-base font-semibold text-slate-800">#${ticket.id} — ${ticketTitle(ticket)}</div>
+                <div class="text-base font-semibold text-slate-800">#${ticket.id} — ${escapeHtml(ticketTitle(ticket))}</div>
                 <div class="text-xs text-slate-500">
                   Открыта: <span class="text-slate-700">${formatDateTime(ticket.created_at)}</span>
                   ${ticket.completed_at ? ` · Закрыта: <span class="text-slate-700">${formatDateTime(ticket.completed_at)}</span>` : ""}
                 </div>
                 <div class="text-xs text-slate-500">
-                  Мастер: <span class="text-slate-700">${assigned || "—"}</span>
+                  Мастер: <span class="text-slate-700">${escapeHtml(assigned || "—")}</span>
                 </div>
                 <div class="text-xs text-slate-500">
                   Реакция: <span class="text-slate-700">${formatMinutes(summary.metrics.response_seconds)}</span>
