@@ -1843,20 +1843,20 @@ def metrics():
                     "median_close_sec": (median(mdurs) if mdurs else None),
                 }
             )
-            return jsonify(
-                {
-                    "overall": overall,
-                    "masters": masters_data,
-                    "total_tickets": total_tickets,
-                    "response_sla_breached_count": resp_breach_count,
-                    "completion_sla_breached_count": comp_breach_count,
-                    "response_sla_breach_percent": (resp_breach_count / total_tickets * 100) if total_tickets else 0,
-                    "completion_sla_breach_percent": (comp_breach_count / total_tickets * 100) if total_tickets else 0,
-                    "tickets_by_close_reason": reason_counts,
-                    "sla_breaches_by_reason": sla_breaches_by_reason,
-                    "tickets_by_priority": priority_counts,
-                }
-            )
+        return jsonify(
+            {
+                "overall": overall,
+                "masters": masters_data,
+                "total_tickets": total_tickets,
+                "response_sla_breached_count": resp_breach_count,
+                "completion_sla_breached_count": comp_breach_count,
+                "response_sla_breach_percent": (resp_breach_count / total_tickets * 100) if total_tickets else 0,
+                "completion_sla_breach_percent": (comp_breach_count / total_tickets * 100) if total_tickets else 0,
+                "tickets_by_close_reason": reason_counts,
+                "sla_breaches_by_reason": sla_breaches_by_reason,
+                "tickets_by_priority": priority_counts,
+            }
+        )
 
 
 @bp.get("/api/archive")

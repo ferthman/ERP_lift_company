@@ -1,2 +1,11 @@
+lift_crm.db
+uploads/
+archive*.xlsx
+venv/
+.venv/
+.pytest_cache/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.DS_Store
