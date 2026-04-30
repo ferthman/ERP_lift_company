@@ -452,7 +452,7 @@ function renderDetail(ticket) {
       return;
     }
     if (!navigator.geolocation) {
-      alert("Нужно разрешить геолокацию, чтобы начать работу (радиус 500м).");
+      alert("Чтобы перевести принятую заявку в работу, разрешите геолокацию. Радиус объекта: 500 м.");
       return;
     }
     navigator.geolocation.getCurrentPosition(
@@ -464,7 +464,7 @@ function renderDetail(ticket) {
         });
       },
       () => {
-        alert("Нужно разрешить геолокацию, чтобы начать работу (радиус 500м).");
+        alert("Чтобы перевести принятую заявку в работу, разрешите геолокацию. Радиус объекта: 500 м.");
       },
       { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
     );
@@ -750,10 +750,10 @@ async function syncEvents() {
       await putOutboxEvent(local);
       if (result.code === "OUT_OF_RANGE") {
         const distance = Number.isFinite(result.distance_m) ? result.distance_m : "—";
-        alert(`Вы слишком далеко. Нужно ≤ 500м. Сейчас: ${distance}м`);
+        alert(`Вы слишком далеко от объекта. Нужно не дальше 500 м. Сейчас: ${distance} м`);
       }
       if (result.code === "NO_TARGET_COORDS") {
-        alert("У заявки нет координат объекта. Начать работу нельзя.");
+        alert("У заявки нет координат объекта. Перевести ее в работу нельзя.");
       }
       if (result.code === "NO_TECH_COORDS") {
         alert("Не удалось получить геолокацию. Разрешите доступ и попробуйте снова.");

@@ -6,6 +6,97 @@ Treat the reader as a complete beginner to this repository. The only context the
 
 ---
 
+# Upload Access Protection PR — ExecPlan
+
+## Purpose / Big Picture
+
+Protect ticket attachment files served from `/uploads/<filename>` so uploads are no longer public static assets. The route must require login, reject unsafe filename/path access, and authorize by the ticket connected to the attachment: admins can access all uploads, dispatchers can access operational uploads, and technicians can only access uploads for tickets assigned to their master profile. This PR intentionally avoids upload UI changes and broader MIME validation.
+
+## Progress
+
+- [x] (2026-04-30 12:30Z) Inspect current upload creation, attachment serialization, `/uploads/<path:filename>` serving, auth helpers, ticket ownership checks, and existing test setup.
+- [x] (2026-04-30 12:31Z) Add protected upload-serving authorization helper and path-safety checks in `liftcrm/tickets/routes.py`.
+- [x] (2026-04-30 12:31Z) Add focused upload access tests covering anonymous, unrelated technician, assigned technician, admin, dispatcher, and unsafe filenames.
+- [x] (2026-04-30 12:32Z) Run targeted upload/security tests and the full backend test suite.
+- [x] (2026-04-30 12:32Z) Record validation results and retrospective.
+
+## Surprises & Discoveries
+
+- Observation: `serve_upload(filename)` was unauthenticated and accepted a path converter before passing the value directly to `send_from_directory`.
+  Evidence: `liftcrm/tickets/routes.py` defined `@bp.get("/uploads/<path:filename>")` with no `@login_required`.
+- Observation: Attachments already have the ticket relationship needed for authorization, and upload creation already restricts technicians to their assigned tickets.
+  Evidence: `liftcrm/db.py` `Attachment.ticket` relationship and `liftcrm/tickets/routes.py` `upload_file()`.
+
+## Decision Log
+
+- Decision: Authorize served uploads by first resolving an exact `Attachment.filename` row, then checking the related ticket.
+  Rationale: Files not recorded in the database should not be reachable through the protected ticket upload surface, and ticket-level authorization can reuse existing role/master fields without changing URLs or UI.
+  Date/Author: 2026-04-30 / codex
+- Decision: Reject any filename containing path separators, `.` or `..`, or a basename mismatch before querying the database.
+  Rationale: The route uses a path converter, so traversal and nested-path attempts should fail before filesystem access.
+  Date/Author: 2026-04-30 / codex
+
+## Outcomes & Retrospective
+
+- Outcome (2026-04-30): `/uploads/<filename>` now requires authentication, rejects unsafe path-like filenames before filesystem access, resolves uploads through `Attachment.filename`, and enforces ticket-level authorization. Admin can access all attachment-backed uploads, dispatcher can access non-archived operational uploads, and technicians can only access uploads for tickets assigned to their master profile. Validation: `venv/bin/python -m pytest tests/test_upload_access.py -q` passed (6 tests); `venv/bin/python -m pytest -q` passed (86 tests).
+
+## Plan of Work
+
+### Milestone 1 — Protected serving route
+
+Goal: `/uploads/<filename>` requires authentication and only serves ticket-connected files to authorized users.
+
+Work:
+
+- Add `@login_required` to `serve_upload()`.
+- Add an internal filename safety check in `liftcrm/tickets/routes.py` that rejects path separators, current/parent directory names, empty names, and basename rewrites.
+- Query `Attachment` by exact stored `filename` and require a related ticket.
+- Allow roles:
+  - `admin`: all uploads.
+  - `dispatcher`: non-archived operational uploads.
+  - `technician`: only uploads where `Attachment.ticket.assigned_master_id == current_user.master_id`.
+
+Validation:
+
+- Anonymous request to an existing upload returns an auth failure.
+- Unsafe path requests do not reach filesystem serving.
+
+### Milestone 2 — Access regression tests
+
+Goal: Capture the ticket-level access contract.
+
+Work:
+
+- Add `tests/test_upload_access.py`.
+- Create a temporary app/database/upload folder per test.
+- Seed two technician users, assigned tickets, attachment rows, and real files.
+- Cover anonymous denied, unrelated technician denied, assigned technician allowed, admin allowed, dispatcher allowed, and unsafe filename denied.
+
+Validation:
+
+- Run the focused upload access test module.
+
+### Milestone 3 — Backend validation
+
+Goal: Ensure no existing backend behavior regresses.
+
+Work:
+
+- Run the focused upload/security tests.
+- Run the full backend test suite.
+
+Validation:
+
+- Record exact commands and results here and in the final report.
+
+## End-of-plan change log
+
+- Change: Added and completed Upload Access Protection PR ExecPlan.
+  Reason: Upload authorization spans routes, database-backed permissions, filesystem serving, and tests, so AGENTS.md requires an ExecPlan and validation record.
+  Date/Author: 2026-04-30 / codex
+
+---
+
 # Technician History (Mobile) — ExecPlan
 
 ## Purpose / Big Picture
@@ -420,7 +511,7 @@ Admin/dispatcher UI must continue to work as before.
 - [x] (2025-02-17 11:05Z) Switch 2GIS routing to dgis deeplink with 2gis.kz web fallback and update tests.
 - [x] (2025-02-17 11:30Z) Ensure /api/me/tickets and details include lat/lng and add mobile coordinate tests.
 - [x] (2025-02-17 12:05Z) Switch 2GIS routing to geo lon/lat URLs and gate debug logging behind a flag.
-- [x] (2025-02-20 10:15Z) Enforce geofence on sync TICKET_ACCEPT and request geolocation only on mobile accept.
+- [x] (2025-02-20 10:15Z, superseded 2025-03-05) Initially enforce geofence on sync TICKET_ACCEPT and request geolocation only on mobile accept.
 - [x] (2025-02-20 11:05Z) Harden sync geofence validation for non-finite technician coordinates.
 - [x] (2025-03-05 09:10Z) Move sync geofence enforcement to TICKET_IN_PROGRESS (ACCEPTED → IN_PROGRESS only) and keep accept available without coords.
 - [x] (2025-03-05 09:20Z) Update mobile geolocation prompts to request coords only on "В работу" from ACCEPTED and handle out-of-range messaging.
@@ -462,9 +553,9 @@ Record every decision made while working on this plan.
   Rationale: Technicians can still append notes without altering final state.
   Date/Author: 2026-01-19 / codex
 
-- Decision: Keep geofence enforcement only on the existing `/api/tickets/<id>/arrive` and `/complete` endpoints; sync events do not enforce geofence.
-  Rationale: Offline sync cannot reliably depend on GPS and should prioritize data consistency over location checks.
-  Date/Author: 2026-01-19 / codex
+- Decision: Superseded by the 2025-03-05 sync geofence change. `/api/sync/events` now enforces the 500 m geofence on `TICKET_IN_PROGRESS` only when moving `ACCEPTED → IN_PROGRESS`; `TICKET_ACCEPT` remains available without coordinates.
+  Rationale: Close the mobile bypass at the moment work starts while keeping acceptance and non-arrival outbox actions usable offline.
+  Date/Author: 2025-03-05 / codex
 
 - Decision: When a technician uses the legacy `/arrive` endpoint from `ASSIGNED`, the backend auto-records `accepted_at` and transitions through `ACCEPTED` for backward compatibility.
   Rationale: Avoid breaking existing technician workflows while introducing the ACCEPTED state.
@@ -505,9 +596,9 @@ Record every decision made while working on this plan.
 - Decision: Use a 2GIS web URL with `m=<lng,lat>` plus optional `query` hint, and open it in the same tab from the PWA.
   Rationale: Keeps navigation consistent in the PWA while allowing the OS to offer “Open in app” on mobile.
   Date/Author: 2025-02-17 / codex
-- Decision: Enforce 500m geofence on sync `TICKET_ACCEPT` and require technician coordinates for accept events.
-  Rationale: Close the mobile sync bypass while keeping location prompts limited to the accept action.
-  Date/Author: 2025-02-20 / codex
+- Decision: Superseded by the 2025-03-05 sync geofence change. Do not require coordinates for `TICKET_ACCEPT`; request and validate technician coordinates for `TICKET_IN_PROGRESS` only when the previous status is `ACCEPTED`.
+  Rationale: Acceptance should work without GPS, but starting work must prove the technician is within 500 m of the object.
+  Date/Author: 2025-03-05 / codex
 - Decision: Treat non-finite or out-of-range technician coordinates as `NO_TECH_COORDS`.
   Rationale: Avoid server errors and keep geofence failures explicit for the mobile client.
   Date/Author: 2025-02-20 / codex
@@ -533,8 +624,9 @@ At major milestones or completion, summarize what was achieved, what remains, an
 - Outcome (2025-02-17): Added dgis deeplink routing with a 2gis.kz fallback and aligned URL builder tests.
 - Outcome (2025-02-17): Verified mobile endpoints return lat/lng values and added coverage for ticket list/detail payloads.
 - Outcome (2025-02-17): Updated 2GIS links to /almaty/geo lon,lat URLs and gated debug output.
-- Outcome (2025-02-20): Added geofence enforcement to sync accept events and mobile accept now requests geolocation on demand.
+- Outcome (2025-02-20, superseded 2025-03-05): Initially added geofence enforcement to sync accept events; current behavior moved that check to `TICKET_IN_PROGRESS` for `ACCEPTED → IN_PROGRESS`.
 - Outcome (2025-02-20): Hardened sync geofence checks against non-finite coordinates with explicit error codes.
+- Outcome (2025-03-05): Moved mobile sync geofence enforcement from accept to `TICKET_IN_PROGRESS` for the `ACCEPTED → IN_PROGRESS` transition; accepting a ticket no longer requires coordinates.
 - Outcome (2025-03-05): Desktop and mobile UIs now display Russian status labels consistently while preserving enum codes in the backend.
 
 ## Context and Orientation
@@ -550,7 +642,7 @@ This repo is a Flask application with SQLAlchemy models and server-rendered temp
 - `templates/index.html` is the admin/dispatcher UI.
 - `static/` currently holds PWA assets (`manifest.webmanifest`, `sw.js`, icons).
 
-Current ticket status values: `NEW`, `ASSIGNED`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`. Existing endpoints for technician scope are limited to `/api/tickets` filtering; there is no `/api/me/tickets` yet.
+Current ticket status values: `NEW`, `ASSIGNED`, `ACCEPTED`, `IN_PROGRESS`, `WAITING`, `COMPLETED`, `CANCELLED`. Technician-scoped mobile endpoints now include `GET /api/me/tickets`, `GET /api/me/history`, `GET /api/me/tickets/<id>/timeline`, and `POST /api/sync/events`.
 
 Key terms used in this plan (plain language):
 
@@ -688,10 +780,11 @@ Work:
     - Immediately update UI (optimistic).
     - Insert an outbox event with `expected_version` from cached ticket.
     - Increase “Pending count”.
-- Sync behavior:
-  - Trigger sync on app start, when `navigator.onLine` becomes true, on “Sync now”, and periodically while online if pending exists.
-  - Batch send pending events to `/api/sync/events`.
-  - On ok: mark event sent, update local ticket status/version from server response, reduce pending count.
+  - Sync behavior:
+    - Trigger sync on app start, when `navigator.onLine` becomes true, on “Sync now”, and periodically while online if pending exists.
+    - Batch send pending events to `/api/sync/events`.
+    - For `TICKET_IN_PROGRESS` from `ACCEPTED`, include technician coordinates and expect the server to enforce the 500 m geofence after version validation.
+    - On ok: mark event sent, update local ticket status/version from server response, reduce pending count.
   - On conflict: mark event failed, show a message on that ticket “Needs refresh”, fetch latest ticket details, and require user to re-apply action if still needed.
   - On forbidden: mark failed and show “Ticket reassigned / access removed”.
 
@@ -919,8 +1012,8 @@ When you edit this plan during implementation, append a short note here:
 - Change: Logged switch to 2GIS geo URLs and debug flag for URL logging.
   Reason: Ensure destination pins render reliably with lon,lat ordering.
   Date/Author: 2025-02-17 / codex
-- Change: Updated sync accept geofence enforcement and mobile accept geolocation flow notes.
-  Reason: Track the security fix across backend and mobile UI.
+- Change: Updated sync geofence enforcement notes. The February accept-time check was superseded by the March behavior: `TICKET_ACCEPT` has no coordinate requirement, and `TICKET_IN_PROGRESS` enforces geofence only from `ACCEPTED`.
+  Reason: Track the security fix across backend and mobile UI without preserving stale accept-time wording.
   Date/Author: 2025-02-20 / codex
 - Change: Logged non-finite coordinate validation for sync geofence.
   Reason: Track the added validation and error behavior for invalid coordinates.

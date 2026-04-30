@@ -4,7 +4,7 @@ import os
 import json
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, request, send_from_directory
+from flask import Blueprint, abort, current_app, jsonify, request, send_from_directory
 from flask_login import login_required, current_user
 from werkzeug.security import generate_password_hash
 
@@ -305,6 +305,32 @@ def _timeline_actor(actor_user_id, current_user_id):
     if actor_user_id and actor_user_id == current_user_id:
         return "me"
     return "other"
+
+
+def _is_safe_upload_filename(filename):
+    if not filename:
+        return False
+    if filename in {".", ".."}:
+        return False
+    if "/" in filename or "\\" in filename:
+        return False
+    return os.path.basename(filename) == filename
+
+
+def _can_access_upload_attachment(attachment):
+    role = normalize_role(current_user.role)
+    ticket = attachment.ticket
+    if not ticket:
+        return False
+    if role == "admin":
+        return True
+    if ticket.archived_at:
+        return False
+    if role == "dispatcher":
+        return True
+    if role == "technician":
+        return bool(current_user.master_id and ticket.assigned_master_id == current_user.master_id)
+    return False
 
 
 @bp.get("/api/tickets/history")
@@ -1547,9 +1573,18 @@ def upload_file(ticket_id):
 
 
 @bp.get("/uploads/<path:filename>")
+@login_required
 def serve_upload(filename):
-    from flask import current_app
-
+    if hasattr(current_user, "is_active") and not current_user.is_active:
+        abort(403)
+    if not _is_safe_upload_filename(filename):
+        abort(404)
+    with SessionLocal() as db:
+        attachment = db.query(Attachment).filter(Attachment.filename == filename).first()
+        if not attachment:
+            abort(404)
+        if not _can_access_upload_attachment(attachment):
+            abort(403)
     return send_from_directory(current_app.config["UPLOAD_FOLDER"], filename)
 
 
