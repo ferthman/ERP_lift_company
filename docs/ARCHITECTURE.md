@@ -30,7 +30,7 @@
 ## Основные модели и роли
 - `User`: username, password_hash, role (`admin|dispatcher|master`), связь `master_id`.【F:liftcrm/db.py†L27-L43】
 - `Master`: справочник мастеров, флаг `is_active`.【F:liftcrm/db.py†L11-L24】
-- `Ticket`: заявка со статусами `NEW/ASSIGNED/IN_PROGRESS/COMPLETED/CANCELLED`, координатами, временами прибытия/завершения, e-mail клиента, гео факты прибытия/завершения, вложения, полем **priority** (`HIGH|MEDIUM|LOW`, дефолт MEDIUM), **custom_sla_response_minutes/custom_sla_completion_minutes** (опциональные, только для admin/dispatcher, перекрывают конфиг SLA), **close_reason** и привязкой к `assets` через `asset_id` + summary поля в сериализации.【F:liftcrm/db.py†L46-L112】【F:liftcrm/tickets/repository.py†L17-L43】
+- `Ticket`: заявка со статусами `NEW/ASSIGNED/ACCEPTED/IN_PROGRESS/WAITING/COMPLETED/CANCELLED`, версией для мобильной синхронизации, координатами, временами принятия/прибытия/ожидания/завершения, e-mail клиента, гео фактами прибытия/завершения, вложениями, полем **priority** (`HIGH|MEDIUM|LOW`, дефолт MEDIUM), **custom_sla_response_minutes/custom_sla_completion_minutes** (опциональные, только для admin/dispatcher, перекрывают конфиг SLA), **close_reason** и привязкой к `assets` через `asset_id` + summary поля в сериализации.【F:liftcrm/db.py†L46-L112】【F:liftcrm/tickets/repository.py†L17-L43】
 - `Asset`: реестр лифтов (адрес, подъезд, метка, серийник, координаты, статус).【F:liftcrm/db.py†L82-L112】
 - `Attachment`: файл, связанный с заявкой, лежит в `uploads/`.【F:liftcrm/db.py†L76-L84】
 
@@ -41,7 +41,7 @@
 
 ### Назначение заявок на мастеров
 - В заявке поле `tickets.assigned_master_id` ссылается на `masters.id` и определяет исполнителя.
-- Автоназанчение выбирает активного мастера с минимальной нагрузкой по открытым статусам (`NEW|ASSIGNED|IN_PROGRESS`).【F:liftcrm/tickets/service.py†L15-L38】
+- Автоназанчение выбирает активного мастера с минимальной нагрузкой по открытым статусам (`NEW|ASSIGNED|ACCEPTED|IN_PROGRESS|WAITING`).【F:liftcrm/tickets/service.py†L15-L38】
 - Ручное назначение/переназначение через `POST /api/tickets/{id}/assign/{master_id}` проставляет `assigned_master_id` (только активным мастерам) и, при необходимости, переводит статус в `ASSIGNED`.【F:liftcrm/tickets/routes.py†L299-L324】
 - При удалении или деактивации мастера открытые заявки перераспределяются на других активных мастеров; связанные `users` с ролью master удаляются или остаются в зависимости от операции удаления мастера.【F:liftcrm/tickets/routes.py†L33-L122】
 
@@ -51,7 +51,9 @@
 |-----------------------------|------------------|--------------------------------------|--------------------------|
 | Новая                       | `NEW`            | `POST /api/tickets` (создание)       | `created_at`             |
 | Назначена                   | `ASSIGNED`       | автоназначение или `.../assign/{id}` | `created_at`             |
-| В пути / На месте (факт прибытия) | `IN_PROGRESS`   | `POST /api/tickets/{id}/arrive`      | `arrived_at`, `arrival_lat/lon` |
+| Принята                    | `ACCEPTED`       | `/api/sync/events` (`TICKET_ACCEPT`) | `accepted_at`           |
+| В работе / На месте (факт прибытия) | `IN_PROGRESS`   | `/api/sync/events` (`TICKET_IN_PROGRESS`) или `POST /api/tickets/{id}/arrive` | `arrived_at`, `arrival_lat/lon` |
+| Ожидание                   | `WAITING`        | `/api/sync/events` (`TICKET_WAITING`) | `waiting_at`, `waiting_reason` |
 | Выполнено                   | `COMPLETED`      | `POST /api/tickets/{id}/complete`    | `completed_at`, `completion_lat/lon`, `close_reason` |
 | Отменено                    | `CANCELLED`      | `POST /api/tickets/{id}/cancel`      | —                        |
 | (Удалено → архивируется)    | — (запись удаляется) | `DELETE /api/tickets/{id}`          | В архив пишется все поля |
@@ -63,8 +65,8 @@
 - Метрики `/api/metrics` дополнительно выдают `tickets_by_close_reason`, `sla_breaches_by_reason` и `tickets_by_priority` для аналитики причин/важности в UI/архивах.【F:liftcrm/tickets/routes.py†L212-L242】【F:templates/index.html†L531-L548】
 
 ## Existing behaviors (frozen)
-- Автоназанчение: используется только активные мастера; метрика нагрузки — количество открытых заявок в статусах `NEW/ASSIGNED/IN_PROGRESS`, выбирается минимальная нагрузка (и минимальный id как тайбрейк).【F:liftcrm/tickets/service.py†L15-L38】
-- Переназначение при удалении/деактивации мастера: все открытые заявки (`NEW/ASSIGNED/IN_PROGRESS`) переводятся на других активных мастеров по той же логике минимальной нагрузки; если активных мастеров нет — операция запрещена.【F:liftcrm/tickets/routes.py†L33-L122】
+- Автоназанчение: используется только активные мастера; метрика нагрузки — количество открытых заявок в статусах `NEW/ASSIGNED/ACCEPTED/IN_PROGRESS/WAITING`, выбирается минимальная нагрузка (и минимальный id как тайбрейк).【F:liftcrm/tickets/service.py†L15-L38】
+- Переназначение при удалении/деактивации мастера: все открытые заявки (`NEW/ASSIGNED/ACCEPTED/IN_PROGRESS/WAITING`) переводятся на других активных мастеров по той же логике минимальной нагрузки; если активных мастеров нет — операция запрещена.【F:liftcrm/tickets/routes.py†L33-L122】
 - Ограничение: назначение/переназначение возможно только на активных мастеров; закрытые (`COMPLETED/CANCELLED`) заявки не учитываются при распределении.
 
 ## Потоки запросов (текстовые диаграммы)
@@ -85,8 +87,10 @@ UI форма с выбором лифта + приоритета (`HIGH|MEDIUM|
 UI `showReassign()` выбирает master → `POST /api/tickets/{id}/assign/{master_id}` (admin/dispatcher) → проверка активности мастера → обновление `assigned_master_id`, статус `ASSIGNED` если нужно → JSON подтверждение → UI перерисовывает списки.【F:app.py†L618-L639】【F:templates/index.html†L308-L334】
 
 ### 6) Обновление статуса мастером
-- **Прибыл:** мастерский UI → геолокация → `POST /api/tickets/{id}/arrive` (role master) → проверка владельца, геозона 500 м (haversine) → статус `IN_PROGRESS`, `arrived_at`, координаты прибытия → JSON.【F:app.py†L370-L405】【F:templates/index.html†L349-L419】
-- **Завершил:** мастерский UI → выбор причины закрытия (dropdown, без неё кнопка блокируется) → геолокация → `POST /api/tickets/{id}/complete` (role master) → проверки аналогичны → статус `COMPLETED`, `completed_at`, координаты завершения, `close_reason` из разрешённого списка → попытка `send_report()` по email → JSON.【F:liftcrm/tickets/routes.py†L184-L214】【F:templates/index.html†L373-L421】
+- **Принял в `/mobile`:** `TICKET_ACCEPT` → `/api/sync/events` проверяет владельца, версию заявки и переход `ASSIGNED → ACCEPTED`; координаты мастера не требуются.【F:liftcrm/tickets/routes.py†L883-L1015】【F:static/mobile.js†L446-L448】
+- **В работу в `/mobile`:** `TICKET_IN_PROGRESS` из `ACCEPTED` → клиент запрашивает геолокацию → `/api/sync/events` после проверки версии требует координаты мастера и объекта, проверяет геозону 500 м (haversine), затем пишет `IN_PROGRESS`, `arrived_at`, `arrival_lat/lon`. Возврат из `WAITING → IN_PROGRESS` координаты заново не требует.【F:liftcrm/tickets/routes.py†L1015-L1147】【F:static/mobile.js†L449-L470】
+- **Прибыл через legacy endpoint:** `POST /api/tickets/{id}/arrive` (role technician) → проверка владельца, геозона 500 м; из `ASSIGNED` backend сначала фиксирует `ACCEPTED`, затем `IN_PROGRESS` для обратной совместимости.【F:liftcrm/tickets/routes.py†L1330-L1398】
+- **Завершил:** мастерский UI → выбор причины закрытия (dropdown, без неё кнопка блокируется) → геолокация → `POST /api/tickets/{id}/complete` (role technician) → проверки аналогичны → статус `COMPLETED`, `completed_at`, координаты завершения, `close_reason` из разрешённого списка → попытка `send_report()` по email → JSON.【F:liftcrm/tickets/routes.py†L1417-L1485】
 
 ### 7) Отмена / удаление и архив
 - **Отмена:** `POST /api/tickets/{id}/cancel` (admin/dispatcher) → статус `CANCELLED` → ответ.【F:app.py†L326-L338】【F:templates/index.html†L287-L299】

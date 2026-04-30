@@ -1,9 +1,10 @@
+import json
 import unittest
 import uuid
 from datetime import datetime, timezone, timedelta
 
 from liftcrm import create_app, config
-from liftcrm.db import SessionLocal, Ticket, TicketComment, User
+from liftcrm.db import SessionLocal, Ticket, TicketComment, User, Attachment, AuditLog
 
 
 class TechnicianHistoryTest(unittest.TestCase):
@@ -147,3 +148,120 @@ class TechnicianHistoryTest(unittest.TestCase):
         timeline = res.get_json()
         comment_events = [item for item in timeline if item["type"] == "COMMENT"]
         self.assertTrue(any(event["body"] == "Комментарий мастера" for event in comment_events))
+
+    def test_timeline_photo_events_are_ordered_and_scoped(self):
+        label = uuid.uuid4().hex[:6]
+        master_id, tech_user, tech_pass = self.create_master_and_tech(f"{label}_a")
+        _other_master_id, other_user, other_pass = self.create_master_and_tech(f"{label}_b")
+        ticket_id = self.create_ticket("Timeline Photo Ticket")
+        base_time = datetime(2026, 1, 15, 10, 0, tzinfo=timezone.utc)
+
+        with SessionLocal() as db:
+            ticket = db.get(Ticket, ticket_id)
+            ticket.assigned_master_id = master_id
+            ticket.status = "COMPLETED"
+            ticket.completed_at = base_time + timedelta(hours=1)
+            ticket.updated_at = ticket.completed_at
+            tech_user_id = db.query(User.id).filter(User.username == tech_user).scalar()
+
+            first_attachment = Attachment(
+                ticket_id=ticket_id,
+                filename="photo_first.jpg",
+                orig_name="first.jpg",
+                created_at=base_time + timedelta(minutes=10),
+            )
+            second_attachment = Attachment(
+                ticket_id=ticket_id,
+                filename="photo_second.jpg",
+                orig_name="second.jpg",
+                created_at=base_time + timedelta(minutes=20),
+            )
+            comment = TicketComment(
+                ticket_id=ticket_id,
+                user_id=tech_user_id,
+                body="Комментарий между фото",
+                created_at=base_time + timedelta(minutes=15),
+            )
+            db.add_all([first_attachment, second_attachment, comment])
+            db.flush()
+            db.add_all(
+                [
+                    AuditLog(
+                        entity_type="ticket",
+                        entity_id=ticket_id,
+                        action="STATUS_CHANGE",
+                        actor_user_id=tech_user_id,
+                        created_at=(base_time + timedelta(minutes=5)).isoformat(),
+                        diff_json=json.dumps(
+                            {"old": {"status": "IN_PROGRESS"}, "new": {"status": "COMPLETED"}}
+                        ),
+                    ),
+                    AuditLog(
+                        entity_type="attachment",
+                        entity_id=first_attachment.id,
+                        action="CREATE",
+                        actor_user_id=tech_user_id,
+                        created_at=(base_time + timedelta(minutes=10)).isoformat(),
+                        diff_json=json.dumps(
+                            {
+                                "old": {},
+                                "new": {
+                                    "ticket_id": ticket_id,
+                                    "filename": first_attachment.filename,
+                                    "orig_name": first_attachment.orig_name,
+                                },
+                            }
+                        ),
+                    ),
+                    AuditLog(
+                        entity_type="attachment",
+                        entity_id=second_attachment.id,
+                        action="CREATE",
+                        actor_user_id=tech_user_id,
+                        created_at=(base_time + timedelta(minutes=20)).isoformat(),
+                        diff_json=json.dumps(
+                            {
+                                "old": {},
+                                "new": {
+                                    "ticket_id": ticket_id,
+                                    "filename": second_attachment.filename,
+                                    "orig_name": second_attachment.orig_name,
+                                },
+                            }
+                        ),
+                    ),
+                ]
+            )
+            db.commit()
+
+        self.logout()
+        self.login(other_user, other_pass)
+        res = self.client.get(f"/api/me/tickets/{ticket_id}/timeline")
+        self.assertEqual(res.status_code, 403)
+
+        self.logout()
+        self.login(tech_user, tech_pass)
+        res = self.client.get(f"/api/me/tickets/{ticket_id}/timeline")
+        self.assertEqual(res.status_code, 200)
+        timeline = res.get_json()
+        self.assertEqual(
+            [event["created_at"] for event in timeline],
+            sorted(event["created_at"] for event in timeline),
+        )
+
+        photo_events = [event for event in timeline if event["type"] == "PHOTO"]
+        self.assertEqual(
+            [event["url"] for event in photo_events],
+            ["/uploads/photo_first.jpg", "/uploads/photo_second.jpg"],
+        )
+        self.assertEqual([event["actor"] for event in photo_events], ["me", "me"])
+
+        first_photo_index = timeline.index(photo_events[0])
+        second_photo_index = timeline.index(photo_events[1])
+        between_photos = timeline[first_photo_index + 1 : second_photo_index]
+        self.assertTrue(
+            any(
+                event["type"] == "COMMENT" and event["body"] == "Комментарий между фото"
+                for event in between_photos
+            )
+        )

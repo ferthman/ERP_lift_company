@@ -420,7 +420,7 @@ Admin/dispatcher UI must continue to work as before.
 - [x] (2025-02-17 11:05Z) Switch 2GIS routing to dgis deeplink with 2gis.kz web fallback and update tests.
 - [x] (2025-02-17 11:30Z) Ensure /api/me/tickets and details include lat/lng and add mobile coordinate tests.
 - [x] (2025-02-17 12:05Z) Switch 2GIS routing to geo lon/lat URLs and gate debug logging behind a flag.
-- [x] (2025-02-20 10:15Z) Enforce geofence on sync TICKET_ACCEPT and request geolocation only on mobile accept.
+- [x] (2025-02-20 10:15Z, superseded 2025-03-05) Initially enforce geofence on sync TICKET_ACCEPT and request geolocation only on mobile accept.
 - [x] (2025-02-20 11:05Z) Harden sync geofence validation for non-finite technician coordinates.
 - [x] (2025-03-05 09:10Z) Move sync geofence enforcement to TICKET_IN_PROGRESS (ACCEPTED → IN_PROGRESS only) and keep accept available without coords.
 - [x] (2025-03-05 09:20Z) Update mobile geolocation prompts to request coords only on "В работу" from ACCEPTED and handle out-of-range messaging.
@@ -462,9 +462,9 @@ Record every decision made while working on this plan.
   Rationale: Technicians can still append notes without altering final state.
   Date/Author: 2026-01-19 / codex
 
-- Decision: Keep geofence enforcement only on the existing `/api/tickets/<id>/arrive` and `/complete` endpoints; sync events do not enforce geofence.
-  Rationale: Offline sync cannot reliably depend on GPS and should prioritize data consistency over location checks.
-  Date/Author: 2026-01-19 / codex
+- Decision: Superseded by the 2025-03-05 sync geofence change. `/api/sync/events` now enforces the 500 m geofence on `TICKET_IN_PROGRESS` only when moving `ACCEPTED → IN_PROGRESS`; `TICKET_ACCEPT` remains available without coordinates.
+  Rationale: Close the mobile bypass at the moment work starts while keeping acceptance and non-arrival outbox actions usable offline.
+  Date/Author: 2025-03-05 / codex
 
 - Decision: When a technician uses the legacy `/arrive` endpoint from `ASSIGNED`, the backend auto-records `accepted_at` and transitions through `ACCEPTED` for backward compatibility.
   Rationale: Avoid breaking existing technician workflows while introducing the ACCEPTED state.
@@ -505,9 +505,9 @@ Record every decision made while working on this plan.
 - Decision: Use a 2GIS web URL with `m=<lng,lat>` plus optional `query` hint, and open it in the same tab from the PWA.
   Rationale: Keeps navigation consistent in the PWA while allowing the OS to offer “Open in app” on mobile.
   Date/Author: 2025-02-17 / codex
-- Decision: Enforce 500m geofence on sync `TICKET_ACCEPT` and require technician coordinates for accept events.
-  Rationale: Close the mobile sync bypass while keeping location prompts limited to the accept action.
-  Date/Author: 2025-02-20 / codex
+- Decision: Superseded by the 2025-03-05 sync geofence change. Do not require coordinates for `TICKET_ACCEPT`; request and validate technician coordinates for `TICKET_IN_PROGRESS` only when the previous status is `ACCEPTED`.
+  Rationale: Acceptance should work without GPS, but starting work must prove the technician is within 500 m of the object.
+  Date/Author: 2025-03-05 / codex
 - Decision: Treat non-finite or out-of-range technician coordinates as `NO_TECH_COORDS`.
   Rationale: Avoid server errors and keep geofence failures explicit for the mobile client.
   Date/Author: 2025-02-20 / codex
@@ -533,8 +533,9 @@ At major milestones or completion, summarize what was achieved, what remains, an
 - Outcome (2025-02-17): Added dgis deeplink routing with a 2gis.kz fallback and aligned URL builder tests.
 - Outcome (2025-02-17): Verified mobile endpoints return lat/lng values and added coverage for ticket list/detail payloads.
 - Outcome (2025-02-17): Updated 2GIS links to /almaty/geo lon,lat URLs and gated debug output.
-- Outcome (2025-02-20): Added geofence enforcement to sync accept events and mobile accept now requests geolocation on demand.
+- Outcome (2025-02-20, superseded 2025-03-05): Initially added geofence enforcement to sync accept events; current behavior moved that check to `TICKET_IN_PROGRESS` for `ACCEPTED → IN_PROGRESS`.
 - Outcome (2025-02-20): Hardened sync geofence checks against non-finite coordinates with explicit error codes.
+- Outcome (2025-03-05): Moved mobile sync geofence enforcement from accept to `TICKET_IN_PROGRESS` for the `ACCEPTED → IN_PROGRESS` transition; accepting a ticket no longer requires coordinates.
 - Outcome (2025-03-05): Desktop and mobile UIs now display Russian status labels consistently while preserving enum codes in the backend.
 
 ## Context and Orientation
@@ -550,7 +551,7 @@ This repo is a Flask application with SQLAlchemy models and server-rendered temp
 - `templates/index.html` is the admin/dispatcher UI.
 - `static/` currently holds PWA assets (`manifest.webmanifest`, `sw.js`, icons).
 
-Current ticket status values: `NEW`, `ASSIGNED`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`. Existing endpoints for technician scope are limited to `/api/tickets` filtering; there is no `/api/me/tickets` yet.
+Current ticket status values: `NEW`, `ASSIGNED`, `ACCEPTED`, `IN_PROGRESS`, `WAITING`, `COMPLETED`, `CANCELLED`. Technician-scoped mobile endpoints now include `GET /api/me/tickets`, `GET /api/me/history`, `GET /api/me/tickets/<id>/timeline`, and `POST /api/sync/events`.
 
 Key terms used in this plan (plain language):
 
@@ -688,10 +689,11 @@ Work:
     - Immediately update UI (optimistic).
     - Insert an outbox event with `expected_version` from cached ticket.
     - Increase “Pending count”.
-- Sync behavior:
-  - Trigger sync on app start, when `navigator.onLine` becomes true, on “Sync now”, and periodically while online if pending exists.
-  - Batch send pending events to `/api/sync/events`.
-  - On ok: mark event sent, update local ticket status/version from server response, reduce pending count.
+  - Sync behavior:
+    - Trigger sync on app start, when `navigator.onLine` becomes true, on “Sync now”, and periodically while online if pending exists.
+    - Batch send pending events to `/api/sync/events`.
+    - For `TICKET_IN_PROGRESS` from `ACCEPTED`, include technician coordinates and expect the server to enforce the 500 m geofence after version validation.
+    - On ok: mark event sent, update local ticket status/version from server response, reduce pending count.
   - On conflict: mark event failed, show a message on that ticket “Needs refresh”, fetch latest ticket details, and require user to re-apply action if still needed.
   - On forbidden: mark failed and show “Ticket reassigned / access removed”.
 
@@ -919,8 +921,8 @@ When you edit this plan during implementation, append a short note here:
 - Change: Logged switch to 2GIS geo URLs and debug flag for URL logging.
   Reason: Ensure destination pins render reliably with lon,lat ordering.
   Date/Author: 2025-02-17 / codex
-- Change: Updated sync accept geofence enforcement and mobile accept geolocation flow notes.
-  Reason: Track the security fix across backend and mobile UI.
+- Change: Updated sync geofence enforcement notes. The February accept-time check was superseded by the March behavior: `TICKET_ACCEPT` has no coordinate requirement, and `TICKET_IN_PROGRESS` enforces geofence only from `ACCEPTED`.
+  Reason: Track the security fix across backend and mobile UI without preserving stale accept-time wording.
   Date/Author: 2025-02-20 / codex
 - Change: Logged non-finite coordinate validation for sync geofence.
   Reason: Track the added validation and error behavior for invalid coordinates.
