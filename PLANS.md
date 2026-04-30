@@ -6,6 +6,86 @@ Treat the reader as a complete beginner to this repository. The only context the
 
 ---
 
+# XSS Rendering Hardening PR — ExecPlan
+
+## Purpose / Big Picture
+
+Fix only the highest-risk frontend XSS rendering paths where user-controlled ticket, object/address, comment, asset, and mobile history fields are interpolated into `innerHTML` template strings. Preserve existing UI appearance and behavior, avoid frontend modularization, and add targeted regression coverage that makes these paths hard to reintroduce.
+
+## Progress
+
+- [x] (2026-04-30 14:40Z) Inspect template/static JS rendering paths for `innerHTML` and user-controlled fields.
+- [x] (2026-04-30 15:00Z) Patch the identified high-risk desktop, lift history, and mobile render sites with text-safe rendering helpers.
+- [x] (2026-04-30 15:03Z) Add targeted pytest regression checks over the affected frontend files.
+- [x] (2026-04-30 15:05Z) Run backend/frontend-related tests and manually verify malicious-looking text renders as text.
+- [x] (2026-04-30 15:08Z) Record outcomes and exact validation results.
+
+## Surprises & Discoveries
+
+- Observation: The repository has no frontend test runner; available tests are pytest backend tests, so practical regression coverage should use pytest assertions over checked-in JS/templates.
+  Evidence: `requirements.txt` and `tests/` exist, but no `package.json` was found.
+- Observation: The highest-risk paths are template-string renderers in `templates/index.html`, `static/mobile.js`, `static/history.js`, `static/lift_history.js`, and `static/lift_detail.js`.
+  Evidence: `rg "innerHTML|\\$\\{.*description|\\$\\{.*address|\\$\\{.*comment"` across `templates static`.
+- Observation: A scoped post-patch scan found no remaining raw interpolations for the requested risky field names in the touched renderers.
+  Evidence: `rg "\\$\\{[^}]*\\b(object_name|description|address|close_comment|assigned_master_name|serial_no|lift_label|entrance|body|text|actor|title)\\b" templates/index.html static/mobile.js static/history.js static/lift_history.js static/lift_detail.js` returned no matches.
+
+## Decision Log
+
+- Decision: Use small local `escapeHtml()` helpers in each affected non-module script and the admin inline script instead of introducing a shared frontend module.
+  Rationale: The user explicitly asked not to modularize `index.html`, and the existing scripts are standalone files loaded directly by templates.
+  Date/Author: 2026-04-30 / codex
+- Decision: Keep trusted static markup and enum-derived labels in template strings, but escape user-controlled API fields before interpolation.
+  Rationale: This preserves layout/classes while neutralizing ticket descriptions, object/address values, comments, asset fields, actors, titles, and history text.
+  Date/Author: 2026-04-30 / codex
+
+## Outcomes & Retrospective
+
+- Outcome (2026-04-30): Added local `escapeHtml()` helpers to the affected standalone scripts and the admin inline script. Escaped high-risk ticket description, object/address, comment, asset/lift, event text, actor, attachment-label, and mobile history render paths while preserving the existing `innerHTML` layout structure where it carries trusted static classes/markup. Added `tests/test_xss_rendering_guards.py`.
+- Validation (2026-04-30): `venv/bin/python -m pytest tests/test_xss_rendering_guards.py -q` passed (3 tests); `venv/bin/python -m pytest -q` passed (89 tests). Manual browser fixture served from localhost rendered `<img src=x onerror="window.executed=true"><script>window.executed=true</script>` as visible text; Playwright eval returned `executed: false`, `imageCount: 0`, and `scriptCount: 0`.
+
+## Plan of Work
+
+### Milestone 1 — Patch high-risk renderers
+
+Goal: User-controlled text from tickets, assets/lifts, comments, addresses, and mobile history appears as text, not executable markup.
+
+Work:
+
+- In `static/mobile.js`, escape mobile ticket list, ticket detail, comments, and history timeline/list text before assigning `innerHTML`.
+- In `static/history.js`, escape ticket history fields including object name, address, close reason, close comment, and assigned master.
+- In `static/lift_history.js` and `static/lift_detail.js`, escape lift header fields, event text/actors, ticket titles, and assigned user labels.
+- In `templates/index.html`, add a small escaping helper and apply it to the highest-risk admin tickets/assets/dashboard/map popup renderers that interpolate API data into `innerHTML` or popup HTML.
+
+Validation:
+
+- Search for remaining scoped risky interpolations and confirm remaining raw uses are either static markup, enum labels, dates/numbers, URLs built from IDs, or outside this PR scope.
+
+### Milestone 2 — Regression tests and verification
+
+Goal: Capture the security contract with lightweight tests and run the available suite.
+
+Work:
+
+- Add pytest coverage that inspects the affected JS/template files for the escaping helper and representative escaped render paths.
+- Run targeted tests.
+- Run the full pytest suite.
+- Manually exercise the escaping behavior with malicious-looking strings using a browser/DOM-capable check or direct helper simulation, depending on available tooling.
+
+Validation:
+
+- Record exact commands and results here and in the final response.
+
+## End-of-plan change log
+
+- Change: Added XSS Rendering Hardening PR ExecPlan.
+  Reason: The task spans multiple frontend renderers and security-sensitive behavior, so AGENTS.md requires an ExecPlan.
+  Date/Author: 2026-04-30 / codex
+- Change: Completed XSS rendering hardening milestones and recorded validation.
+  Reason: Track exact files, test results, and manual browser evidence for the security patch.
+  Date/Author: 2026-04-30 / codex
+
+---
+
 # Upload Access Protection PR — ExecPlan
 
 ## Purpose / Big Picture

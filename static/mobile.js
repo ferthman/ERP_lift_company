@@ -69,6 +69,15 @@ function getStatusLabel(status) {
   return STATUS_RU[status] || status;
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function uid() {
   if (crypto?.randomUUID) return crypto.randomUUID();
   return `evt_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -233,8 +242,8 @@ function renderList() {
     wrapper.innerHTML = `
       <div class="flex items-start justify-between gap-2">
         <div>
-          <div class="font-semibold">${ticket.object_name || "Заявка"}</div>
-          <div class="text-xs text-slate-500">${ticket.address || "Адрес не указан"}</div>
+          <div class="font-semibold">${escapeHtml(ticket.object_name || "Заявка")}</div>
+          <div class="text-xs text-slate-500">${escapeHtml(ticket.address || "Адрес не указан")}</div>
         </div>
         <span class="text-xs font-semibold bg-slate-200 text-slate-700 px-2 py-1 rounded-full">${getStatusLabel(ticket.status)}</span>
       </div>
@@ -297,8 +306,8 @@ function renderHistoryList() {
     wrapper.innerHTML = `
       <div class="flex items-start justify-between gap-2">
         <div>
-          <div class="font-semibold">${item.object_name || "Заявка"}</div>
-          <div class="text-xs text-slate-500">${item.address || "Адрес не указан"}</div>
+          <div class="font-semibold">${escapeHtml(item.object_name || "Заявка")}</div>
+          <div class="text-xs text-slate-500">${escapeHtml(item.address || "Адрес не указан")}</div>
         </div>
         <span class="text-xs font-semibold bg-slate-200 text-slate-700 px-2 py-1 rounded-full">${getStatusLabel(
           item.status
@@ -335,12 +344,12 @@ function renderHistoryDetail(timeline) {
             <div class="text-xs text-slate-500">${formatDate(event.created_at)} · ${
               event.actor === "me" ? "Вы" : "Другой"
             }</div>
-            <div>${event.body || "—"}</div>
+            <div>${escapeHtml(event.body || "—")}</div>
           </div>
         `;
       }
       if (event.type === "PHOTO") {
-        const link = event.url ? `<a href="${event.url}" class="text-blue-600 underline">Открыть фото</a>` : "—";
+        const link = event.url ? `<a href="${escapeHtml(event.url)}" class="text-blue-600 underline">Открыть фото</a>` : "—";
         return `
           <div class="border border-slate-200 rounded-lg p-2">
             <div class="text-xs text-slate-500">${formatDate(event.created_at)} · ${
@@ -382,15 +391,15 @@ function renderDetail(ticket) {
       (c) =>
         `<div class="border border-slate-200 rounded-lg p-2"><div class="text-xs text-slate-500">${formatDate(
           c.created_at
-        )}</div><div>${c.body}</div></div>`
+        )}</div><div>${escapeHtml(c.body)}</div></div>`
     )
     .join("");
   elements.detail.innerHTML = `
     <div class="space-y-2">
-      <div><span class="font-semibold">Объект:</span> ${ticket.object_name || "—"}</div>
-      <div><span class="font-semibold">Адрес:</span> ${ticket.address || "—"}</div>
+      <div><span class="font-semibold">Объект:</span> ${escapeHtml(ticket.object_name || "—")}</div>
+      <div><span class="font-semibold">Адрес:</span> ${escapeHtml(ticket.address || "—")}</div>
       ${mapButton}
-      <div><span class="font-semibold">Описание:</span> ${ticket.description || "—"}</div>
+      <div><span class="font-semibold">Описание:</span> ${escapeHtml(ticket.description || "—")}</div>
       <div class="text-xs text-slate-500">Назначено: ${ticket.assigned_at ? formatDate(ticket.assigned_at) : "—"}</div>
     </div>
     <div class="mt-4 space-y-3">

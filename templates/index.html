@@ -723,6 +723,14 @@
       if (!status) return '—';
       return STATUS_RU[status] || status;
     }
+    function escapeHtml(value){
+      return String(value ?? '')
+        .replaceAll('&','&amp;')
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('"','&quot;')
+        .replaceAll("'",'&#39;');
+    }
     function renderRoleLabel(r){
       const key = normalizeRole(r);
       return ROLE_LABELS[key] || key || '—';
@@ -1080,13 +1088,13 @@
     function openTicketModal(ticket) {
       if (!ticket) return;
       const parts = [
-        `<div class="text-lg font-semibold">#${ticket.id} — ${ticket.object_name ?? ''}</div>`,
+        `<div class="text-lg font-semibold">#${ticket.id} — ${escapeHtml(ticket.object_name ?? '')}</div>`,
         `<div><span class="text-slate-500">Статус:</span> ${getStatusLabel(ticket.status)}</div>`,
-        `<div><span class="text-slate-500">Мастер:</span> ${ticket.assigned_master_name ?? '—'}</div>`,
-        `<div><span class="text-slate-500">Лифт:</span> ${renderAssetSummary(ticket) || '—'}</div>`,
-        `<div><span class="text-slate-500">Адрес:</span> ${ticket.address ?? '—'}</div>`,
-        `<div><span class="text-slate-500">Описание:</span> ${ticket.description ?? '—'}</div>`,
-        `<div><span class="text-slate-500">Приоритет:</span> ${ticket.priority ?? 'MEDIUM'}</div>`,
+        `<div><span class="text-slate-500">Мастер:</span> ${escapeHtml(ticket.assigned_master_name ?? '—')}</div>`,
+        `<div><span class="text-slate-500">Лифт:</span> ${escapeHtml(renderAssetSummary(ticket) || '—')}</div>`,
+        `<div><span class="text-slate-500">Адрес:</span> ${escapeHtml(ticket.address ?? '—')}</div>`,
+        `<div><span class="text-slate-500">Описание:</span> ${escapeHtml(ticket.description ?? '—')}</div>`,
+        `<div><span class="text-slate-500">Приоритет:</span> ${escapeHtml(ticket.priority ?? 'MEDIUM')}</div>`,
         `<div><span class="text-slate-500">SLA:</span> ${renderSla(ticket)}</div>`,
       ];
       ticketModalBody.innerHTML = `
@@ -1128,9 +1136,9 @@
         const oldVal = formatHistoryFieldValue(field, oldData[field]);
         const newVal = formatHistoryFieldValue(field, newData[field]);
         if (oldData[field] === undefined) {
-          changes.push(`<div><span class="text-slate-400">${label}:</span> ${newVal}</div>`);
+          changes.push(`<div><span class="text-slate-400">${escapeHtml(label)}:</span> ${escapeHtml(newVal)}</div>`);
         } else {
-          changes.push(`<div><span class="text-slate-400">${label}:</span> ${oldVal} → ${newVal}</div>`);
+          changes.push(`<div><span class="text-slate-400">${escapeHtml(label)}:</span> ${escapeHtml(oldVal)} → ${escapeHtml(newVal)}</div>`);
         }
       });
       return changes.join('');
@@ -1211,9 +1219,9 @@
             <div class="rounded-lg border border-slate-200 bg-slate-50 p-2">
               <div class="flex items-center justify-between text-slate-500">
                 <span>${timeLabel}</span>
-                <span>${actor}</span>
+                <span>${escapeHtml(actor)}</span>
               </div>
-              <div class="mt-1 font-semibold text-slate-700">${actionLabel}</div>
+              <div class="mt-1 font-semibold text-slate-700">${escapeHtml(actionLabel)}</div>
               <div class="mt-1 space-y-1">${diffHtml}</div>
             </div>
           `;
@@ -1268,7 +1276,7 @@
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'w-full text-left px-3 py-2 text-sm hover:bg-slate-50';
-            btn.innerHTML = `<div class="font-semibold">${formatAssetLabel(asset)}</div><div class="text-xs text-slate-600">${asset.address || '—'}</div>`;
+            btn.innerHTML = `<div class="font-semibold">${escapeHtml(formatAssetLabel(asset))}</div><div class="text-xs text-slate-600">${escapeHtml(asset.address || '—')}</div>`;
             btn.onclick = () => {
               applyAssetSelection(asset);
               assetSuggestions.classList.add('hidden');
@@ -1395,7 +1403,7 @@
         const mapButton = hasCoords
           ? `<button type="button" data-open-map="${encodeURIComponent(JSON.stringify({id:t.id, asset_id:t.asset_id, lat:t.lat, lon:t.lon, object_name:t.object_name, address:t.address}))}" class="ml-2 text-xs px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200">📍 Карта</button>`
           : '';
-        const files=t.attachments?.map(a=>`<a class="underline" href="${a.url}" target="_blank">${a.name}</a>`).join(', ')||'—';
+        const files=t.attachments?.map(a=>`<a class="underline" href="${escapeHtml(a.url)}" target="_blank">${escapeHtml(a.name)}</a>`).join(', ')||'—';
         const priorityBadge = renderPriorityBadge(t.priority);
         const prioritySelect = canEditPriority ? `<select data-edit-priority="${t.id}" class="px-2 py-1 text-xs rounded-lg ring-1 ring-slate-200 bg-white">${renderPriorityOptions(t.priority)}</select>` : '';
         const priorityCell = canEditPriority ? `<div class="flex items-center gap-2">${priorityBadge}${prioritySelect}</div>` : priorityBadge;
@@ -1411,10 +1419,10 @@
           <p class="text-[10px] text-slate-500">Overrides default SLA if set</p>
         </div>` : '';
         html+=`<tr class="border-b last:border-none"><td class="py-2 px-2 font-mono">${t.id}</td>
-        <td class="py-2 px-2">${t.object_name ?? ''}<div class="text-xs text-slate-500">${t.description ?? ''}</div></td>
-        <td class="py-2 px-2 text-xs">${renderAssetSummary(t) || '—'}</td>
-        <td class="py-2 px-2">${t.address ?? ''}</td><td class="py-2 px-2"><button class="underline" onclick="openMap(${t.lat},${t.lon})">${coords}</button>${mapButton}</td>
-        <td class="py-2 px-2">${t.assigned_master_name ?? '—'}</td><td class="py-2 px-2"><span class="px-2 py-1 rounded-lg ring-1 ring-slate-200">${getStatusLabel(t.status)}</span></td>
+        <td class="py-2 px-2">${escapeHtml(t.object_name ?? '')}<div class="text-xs text-slate-500">${escapeHtml(t.description ?? '')}</div></td>
+        <td class="py-2 px-2 text-xs">${escapeHtml(renderAssetSummary(t) || '—')}</td>
+        <td class="py-2 px-2">${escapeHtml(t.address ?? '')}</td><td class="py-2 px-2"><button class="underline" onclick="openMap(${t.lat},${t.lon})">${coords}</button>${mapButton}</td>
+        <td class="py-2 px-2">${escapeHtml(t.assigned_master_name ?? '—')}</td><td class="py-2 px-2"><span class="px-2 py-1 rounded-lg ring-1 ring-slate-200">${getStatusLabel(t.status)}</span></td>
         <td class="py-2 px-2">${unassignedTimer}</td>
         <td class="py-2 px-2">${slaOverdueBadge}</td>
         <td class="py-2 px-2">${priorityCell}</td>
@@ -1555,11 +1563,11 @@
       assets.forEach(asset => {
         html += `<tr class="border-b last:border-none">
           <td class="py-2 px-2 font-mono">${asset.id}</td>
-          <td class="py-2 px-2">${asset.serial_no || '—'}</td>
-          <td class="py-2 px-2">${asset.lift_label || '—'}</td>
-          <td class="py-2 px-2">${asset.address || '—'}</td>
-          <td class="py-2 px-2">${asset.entrance || '—'}</td>
-          <td class="py-2 px-2">${asset.status || 'ACTIVE'}</td>
+          <td class="py-2 px-2">${escapeHtml(asset.serial_no || '—')}</td>
+          <td class="py-2 px-2">${escapeHtml(asset.lift_label || '—')}</td>
+          <td class="py-2 px-2">${escapeHtml(asset.address || '—')}</td>
+          <td class="py-2 px-2">${escapeHtml(asset.entrance || '—')}</td>
+          <td class="py-2 px-2">${escapeHtml(asset.status || 'ACTIVE')}</td>
           <td class="py-2 px-2">
             <div class="flex gap-2">
               <button class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" data-edit-asset="${asset.id}">Редактировать</button>
@@ -1722,12 +1730,12 @@
       for(const t of data){
         const slaInfo=renderSla(t,false);
         const slaBlock = slaInfo ? `<div class="text-[11px] mt-1">${slaInfo}</div>` : '';
-        const reasonLine = t.close_reason ? `<div class="text-[11px] text-slate-600 mt-1">Причина: ${formatCloseReason(t.close_reason)}</div>` : '';
+        const reasonLine = t.close_reason ? `<div class="text-[11px] text-slate-600 mt-1">Причина: ${escapeHtml(formatCloseReason(t.close_reason))}</div>` : '';
         const priorityBadge = renderPriorityBadge(t.priority);
         const card=document.createElement('div'); card.className='kanban-card p-3 rounded-xl ring-1 ring-slate-200 bg-white';
-        card.innerHTML=`<div class="flex items-center justify-between"><div class="font-semibold">#${t.id} — ${t.object_name ?? ''}</div><div class="flex items-center gap-2 text-xs">${priorityBadge}${t.assigned_master_name ?? '—'}</div></div>
-        <div class="text-xs text-slate-500 mt-1">Лифт: ${renderAssetSummary(t) || '—'}</div>
-        <div class="text-xs text-slate-600 mt-1">${t.description ?? ''}</div>
+        card.innerHTML=`<div class="flex items-center justify-between"><div class="font-semibold">#${t.id} — ${escapeHtml(t.object_name ?? '')}</div><div class="flex items-center gap-2 text-xs">${priorityBadge}${escapeHtml(t.assigned_master_name ?? '—')}</div></div>
+        <div class="text-xs text-slate-500 mt-1">Лифт: ${escapeHtml(renderAssetSummary(t) || '—')}</div>
+        <div class="text-xs text-slate-600 mt-1">${escapeHtml(t.description ?? '')}</div>
         ${reasonLine}${slaBlock}
         <div class="text-[11px] text-slate-500 mt-2"><button class="underline" onclick="openMap(${t.lat},${t.lon})">${t.lat.toFixed(5)}, ${t.lon.toFixed(5)}</button></div>`;
         document.getElementById('col-'+t.status).appendChild(card);
@@ -1880,8 +1888,8 @@
     function populateMasterSelects(masters){
       if(!changeRoleMasterSelect || !replaceExistingSelect) return;
       changeRoleMasterSelect.innerHTML = '<option value="">Выберите мастера</option>' +
-        masters.map(m=>`<option value="${m.id}">${m.name}</option>`).join('');
-      replaceExistingSelect.innerHTML = masters.map(m=>`<option value="${m.id}">${m.name}</option>`).join('');
+        masters.map(m=>`<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('');
+      replaceExistingSelect.innerHTML = masters.map(m=>`<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('');
     }
 
     function openAssignRoleModal(masterId){
@@ -2017,9 +2025,9 @@
         const pct=statusProgress(t.status);
         const slaLine = renderSla(t,false);
         const card=document.createElement('div'); card.className='p-3 rounded-xl ring-1 ring-slate-200 bg-white';
-        card.innerHTML=`<div class="flex items-center justify-between"><div class="font-semibold">#${t.id} — ${t.object_name ?? ''}</div>
-        <div class="text-xs text-slate-600">${t.assigned_master_name ?? '—'} • ${getStatusLabel(t.status)}${slaBadge}</div></div>
-        <div class="text-xs text-slate-500 mt-1">${t.address ?? ''}</div>
+        card.innerHTML=`<div class="flex items-center justify-between"><div class="font-semibold">#${t.id} — ${escapeHtml(t.object_name ?? '')}</div>
+        <div class="text-xs text-slate-600">${escapeHtml(t.assigned_master_name ?? '—')} • ${getStatusLabel(t.status)}${slaBadge}</div></div>
+        <div class="text-xs text-slate-500 mt-1">${escapeHtml(t.address ?? '')}</div>
         <div class="mt-2 w-full h-3 rounded-lg bg-slate-100 overflow-hidden"><div class="${barColor} h-3" style="width:${pct}%;"></div></div>
         <div class="text-xs text-slate-600 mt-1">Прошло: <span data-elapsed="1">${fmtDuration(elapsed)}</span></div>
         ${slaLine ? `<div class="text-[11px] mt-1">${slaLine}</div>` : ''}`;
@@ -2154,9 +2162,9 @@
       return `
         <div class="text-sm">
           <div class="font-semibold">Заявка #${ticket.id}</div>
-          <div>${statusLine}</div>
-          ${assetLine ? `<div>Лифт: ${assetLine}</div>` : ''}
-          ${ticket.address ? `<div>${ticket.address}</div>` : ''}
+          <div>${escapeHtml(statusLine)}</div>
+          ${assetLine ? `<div>Лифт: ${escapeHtml(assetLine)}</div>` : ''}
+          ${ticket.address ? `<div>${escapeHtml(ticket.address)}</div>` : ''}
         </div>`;
     }
     async function loadOpenTicketsLayer(){
@@ -2240,7 +2248,7 @@
         btn.className = 'objects-suggestion-item w-full text-left px-3 py-2 flex flex-col gap-0.5';
         const label = formatAssetLabel(entry.data);
         const entrance = entry.data.entrance ? `Подъезд ${entry.data.entrance}` : '';
-        btn.innerHTML = `<div class="font-semibold">${label || '—'}</div><div class="text-xs text-slate-600">${[entry.data.address, entrance].filter(Boolean).join(' • ')}</div>`;
+        btn.innerHTML = `<div class="font-semibold">${escapeHtml(label || '—')}</div><div class="text-xs text-slate-600">${escapeHtml([entry.data.address, entrance].filter(Boolean).join(' • '))}</div>`;
         btn.onclick = () => {
           focusObjectMarker(entry);
           objectsSuggestions.classList.add('hidden');
@@ -2355,8 +2363,8 @@
           fillOpacity: 0.8
         }).addTo(objectsMap);
         const liftLabel = formatAssetLabel(obj);
-        const entranceLine = obj.entrance ? `<div>Подъезд: ${obj.entrance}</div>` : '';
-        circle.bindPopup(`<b>${liftLabel}</b><br>${obj.address ?? ''}${entranceLine}`);
+        const entranceLine = obj.entrance ? `<div>Подъезд: ${escapeHtml(obj.entrance)}</div>` : '';
+        circle.bindPopup(`<b>${escapeHtml(liftLabel)}</b><br>${escapeHtml(obj.address ?? '')}${entranceLine}`);
         const normalizedText = normalizeSearchText(`${obj.address ?? ''} ${obj.serial_no ?? ''} ${obj.lift_label ?? ''} ${obj.entrance ?? ''}`);
         objectsMarkers.push({ marker: circle, data: obj, normalizedText, isVisible: true });
       });
@@ -2396,14 +2404,14 @@
       document.getElementById('metrics-overall').innerHTML = `Всего: ${ov.total||m.total_tickets||0}<br>${statusLine}<br>Среднее закрытие: ${fmtSec(ov.avg_close_sec)} • Медиана: ${fmtSec(ov.median_close_sec)}<br>SLA ответ: ${respPct}% (${m.response_sla_breached_count||0}/${m.total_tickets||0}) • SLA завершение: ${compPct}% (${m.completion_sla_breached_count||0}/${m.total_tickets||0})<br>Приоритеты: ${priorityLine}`;
       const reasons = m.tickets_by_close_reason || {};
       const reasonEntries = Object.entries(reasons).filter(([,v])=>v>0);
-      const reasonsHtml = reasonEntries.length ? `<ul class="space-y-1">${reasonEntries.map(([k,v])=>`<li>${formatCloseReason(k)} — ${v}</li>`).join('')}</ul>` : 'Нет завершённых заявок с причиной.';
+      const reasonsHtml = reasonEntries.length ? `<ul class="space-y-1">${reasonEntries.map(([k,v])=>`<li>${escapeHtml(formatCloseReason(k))} — ${v}</li>`).join('')}</ul>` : 'Нет завершённых заявок с причиной.';
       document.getElementById('metrics-close-reasons').innerHTML = reasonsHtml;
       const slaByReason = m.sla_breaches_by_reason || {};
       const slaEntries = Object.entries(slaByReason).filter(([,v])=> (v.response||v.completion));
-      const slaHtml = slaEntries.length ? `<ul class="space-y-1">${slaEntries.map(([k,v])=>`<li>${formatCloseReason(k)} — ответ: ${v.response}, завершение: ${v.completion}</li>`).join('')}</ul>` : 'Нет нарушений SLA по завершённым заявкам.';
+      const slaHtml = slaEntries.length ? `<ul class="space-y-1">${slaEntries.map(([k,v])=>`<li>${escapeHtml(formatCloseReason(k))} — ответ: ${v.response}, завершение: ${v.completion}</li>`).join('')}</ul>` : 'Нет нарушений SLA по завершённым заявкам.';
       document.getElementById('metrics-sla-reasons').innerHTML = slaHtml;
       const ms = m.masters || []; let html = '<table class="min-w-full text-sm"><thead><tr class="text-left border-b"><th class="py-2 px-2">#</th><th class="py-2 px-2">Мастер</th><th class="py-2 px-2">Закрыто (30д)</th><th class="py-2 px-2">Среднее</th><th class="py-2 px-2">Медиана</th></tr></thead><tbody>';
-      ms.forEach((row, i) => { html += `<tr class="border-b"><td class="py-2 px-2">${i+1}</td><td class="py-2 px-2">${row.master_name}</td><td class="py-2 px-2">${row.count}</td><td class="py-2 px-2">${fmtSec(row.avg_sec)}</td><td class="py-2 px-2">${fmtSec(row.median_sec)}</td></tr>`; });
+      ms.forEach((row, i) => { html += `<tr class="border-b"><td class="py-2 px-2">${i+1}</td><td class="py-2 px-2">${escapeHtml(row.master_name)}</td><td class="py-2 px-2">${row.count}</td><td class="py-2 px-2">${fmtSec(row.avg_sec)}</td><td class="py-2 px-2">${fmtSec(row.median_sec)}</td></tr>`; });
       html += '</tbody></table>'; document.getElementById('metrics-masters').innerHTML = html;
     }
 

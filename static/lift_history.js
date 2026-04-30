@@ -25,6 +25,15 @@
     return STATUS_RU[status] || status;
   }
 
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
   function formatDateTime(ts) {
     if (!ts) return "—";
     const date = new Date(ts);
@@ -59,11 +68,11 @@
       return;
     }
     headerEl.innerHTML = `
-      <div class="text-slate-700 font-semibold text-base">${lift.lift_label || "Лифт без метки"}</div>
-      <div class="text-slate-500">Серийный номер: <span class="text-slate-700">${lift.serial_no || "—"}</span></div>
-      <div class="text-slate-500">Адрес: <span class="text-slate-700">${lift.address || "—"}</span></div>
-      <div class="text-slate-500">Подъезд: <span class="text-slate-700">${lift.entrance || "—"}</span></div>
-      <div class="text-slate-500">Статус: <span class="text-slate-700">${lift.status || "—"}</span></div>
+      <div class="text-slate-700 font-semibold text-base">${escapeHtml(lift.lift_label || "Лифт без метки")}</div>
+      <div class="text-slate-500">Серийный номер: <span class="text-slate-700">${escapeHtml(lift.serial_no || "—")}</span></div>
+      <div class="text-slate-500">Адрес: <span class="text-slate-700">${escapeHtml(lift.address || "—")}</span></div>
+      <div class="text-slate-500">Подъезд: <span class="text-slate-700">${escapeHtml(lift.entrance || "—")}</span></div>
+      <div class="text-slate-500">Статус: <span class="text-slate-700">${escapeHtml(lift.status || "—")}</span></div>
     `;
   }
 
@@ -83,12 +92,12 @@
                 <div class="text-xs uppercase tracking-wide text-slate-500">${kindLabel(item.kind)}</div>
                 <div class="text-xs text-slate-500">${formatDateTime(item.ts)}</div>
               </div>
-              <div class="text-sm text-slate-700">${item.text || "—"}</div>
-              <div class="text-xs text-slate-500">Исполнитель: <span class="text-slate-700">${actor}</span></div>
+              <div class="text-sm text-slate-700">${escapeHtml(item.text || "—")}</div>
+              <div class="text-xs text-slate-500">Исполнитель: <span class="text-slate-700">${escapeHtml(actor)}</span></div>
               <div class="text-xs text-slate-500">
                 Заявка:
                 <a href="${ticketLink}" class="text-slate-900 underline">
-                  #${item.ticket.id} · ${item.ticket.title || "—"} (${getStatusLabel(item.ticket.status)})
+                  #${item.ticket.id} · ${escapeHtml(item.ticket.title || "—")} (${getStatusLabel(item.ticket.status)})
                 </a>
               </div>
             </div>
