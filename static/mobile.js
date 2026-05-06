@@ -1,5 +1,7 @@
 const DB_NAME = "liftcrm-mobile";
 const DB_VERSION = 2;
+const MAX_PHOTO_SIZE_BYTES = 8 * 1024 * 1024;
+const MAX_QUEUED_PHOTOS = 20;
 const CLOSE_REASONS = [
   "EQUIPMENT_FAILURE",
   "PASSENGER_TRAPPED",
@@ -17,6 +19,26 @@ const STATUS_RU = {
   COMPLETED: "Завершена",
   CANCELLED: "Отменена",
 };
+const EVENT_TYPE_RU = {
+  TICKET_ACCEPT: "Принятие заявки",
+  TICKET_IN_PROGRESS: "В работу",
+  TICKET_WAITING: "Ожидание",
+  TICKET_DONE: "Завершение",
+  TICKET_ADD_COMMENT: "Комментарий",
+};
+const SYNC_ERROR_RU = {
+  ARCHIVED: "Заявка архивирована",
+  CONFLICT: "Заявка изменилась на сервере",
+  FORBIDDEN: "Заявка больше не назначена вам",
+  IMMUTABLE: "Заявка закрыта",
+  INVALID_EVENT: "Некорректное действие",
+  NO_TARGET_COORDS: "У заявки нет координат объекта",
+  NO_TECH_COORDS: "Нет координат мастера",
+  NOT_FOUND: "Заявка не найдена",
+  OUT_OF_RANGE: "Вы вне геозоны объекта",
+  SERVER_ERROR: "Ошибка сервера",
+  VALIDATION_ERROR: "Проверьте данные действия",
+};
 
 const state = {
   tickets: [],
@@ -28,6 +50,8 @@ const state = {
   online: navigator.onLine,
   pendingCount: 0,
   errorCount: 0,
+  pendingPhotoCount: 0,
+  errorPhotoCount: 0,
   lastSync: null,
 };
 
@@ -53,6 +77,9 @@ const elements = {
   historyUpdated: document.getElementById("history-updated"),
   btnSync: document.getElementById("btn-sync"),
   btnReset: document.getElementById("btn-reset"),
+  outboxPanel: document.getElementById("outbox-panel"),
+  outboxFailedList: document.getElementById("outbox-failed-list"),
+  outboxRetryAll: document.getElementById("outbox-retry-all"),
 };
 
 function formatDate(value) {
@@ -199,23 +226,145 @@ async function deleteOutboxPhoto(id) {
   return withStore("outbox_photos", "readwrite", (store) => store.delete(id));
 }
 
+function getEventLabel(event) {
+  return EVENT_TYPE_RU[event?.type] || event?.type || "Действие";
+}
+
+function getErrorLabel(error) {
+  const code = error?.code || "ERROR";
+  const message = error?.message || SYNC_ERROR_RU[code] || "Не удалось синхронизировать";
+  return `${SYNC_ERROR_RU[code] || message}${message && message !== SYNC_ERROR_RU[code] ? `: ${message}` : ""}`;
+}
+
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes)) return "—";
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
+  return `${Math.ceil(bytes / 1024)} КБ`;
+}
+
 async function updateSyncIndicators() {
   const events = await listOutboxEvents();
+  const photos = await listOutboxPhotos();
   state.pendingCount = events.filter((e) => e.status === "pending").length;
   state.errorCount = events.filter((e) => e.status === "error").length;
+  state.pendingPhotoCount = photos.filter((p) => p.status === "pending").length;
+  state.errorPhotoCount = photos.filter((p) => p.status === "error").length;
+  const totalPending = state.pendingCount + state.pendingPhotoCount;
+  const totalErrors = state.errorCount + state.errorPhotoCount;
   const online = state.online;
   let text = "—";
   if (!online) {
-    text = state.pendingCount > 0 ? `Оффлайн • В очереди ${state.pendingCount}` : "Оффлайн";
-  } else if (state.errorCount > 0) {
-    text = `Ошибка (${state.errorCount})`;
-  } else if (state.pendingCount > 0) {
-    text = `В очереди ${state.pendingCount}`;
+    text = totalPending > 0 ? `Оффлайн • В очереди ${totalPending}` : "Оффлайн";
+  } else if (totalErrors > 0) {
+    text = `Ошибка (${totalErrors})`;
+  } else if (totalPending > 0) {
+    text = `В очереди ${totalPending}`;
   } else {
     text = "Синхронизировано";
   }
   elements.syncStatus.textContent = text;
   elements.lastSync.textContent = state.lastSync ? `Последняя синхронизация: ${formatDate(state.lastSync)}` : "—";
+  await renderFailedOutbox(events, photos);
+}
+
+async function retryOutboxEvent(id) {
+  const events = await listOutboxEvents();
+  const event = events.find((item) => item.id === id);
+  if (!event) return;
+  event.status = "pending";
+  event.error = null;
+  event.retry_at = new Date().toISOString();
+  await putOutboxEvent(event);
+  await updateSyncIndicators();
+  await syncAll();
+}
+
+async function discardOutboxEvent(id) {
+  await deleteOutboxEvent(id);
+  await updateSyncIndicators();
+}
+
+async function retryOutboxPhoto(id) {
+  const photos = await listOutboxPhotos();
+  const photo = photos.find((item) => item.id === id);
+  if (!photo) return;
+  photo.status = "pending";
+  photo.error = null;
+  photo.retry_at = new Date().toISOString();
+  await putOutboxPhoto(photo);
+  await updateSyncIndicators();
+  await syncAll();
+}
+
+async function discardOutboxPhoto(id) {
+  await deleteOutboxPhoto(id);
+  await updateSyncIndicators();
+  if (state.selectedId) {
+    await renderPhotoQueue(state.selectedId);
+  }
+}
+
+async function retryAllFailedOutbox() {
+  const events = await listOutboxEvents();
+  for (const event of events.filter((item) => item.status === "error")) {
+    event.status = "pending";
+    event.error = null;
+    event.retry_at = new Date().toISOString();
+    await putOutboxEvent(event);
+  }
+  const photos = await listOutboxPhotos();
+  for (const photo of photos.filter((item) => item.status === "error")) {
+    photo.status = "pending";
+    photo.error = null;
+    photo.retry_at = new Date().toISOString();
+    await putOutboxPhoto(photo);
+  }
+  await updateSyncIndicators();
+  await syncAll();
+}
+
+async function renderFailedOutbox(events, photos) {
+  if (!elements.outboxPanel || !elements.outboxFailedList) return;
+  const failedEvents = (events || []).filter((event) => event.status === "error");
+  const failedPhotos = (photos || []).filter((photo) => photo.status === "error");
+  const failed = [
+    ...failedEvents.map((event) => ({ kind: "event", item: event })),
+    ...failedPhotos.map((photo) => ({ kind: "photo", item: photo })),
+  ];
+  elements.outboxPanel.classList.toggle("hidden", failed.length === 0);
+  elements.outboxFailedList.innerHTML = "";
+  failed.forEach(({ kind, item }) => {
+    const row = document.createElement("div");
+    row.className = "rounded-lg border border-amber-200 bg-white p-2 text-xs text-amber-950";
+    const title =
+      kind === "event"
+        ? `${getEventLabel(item)} · заявка #${item.ticket_id}`
+        : `Фото · заявка #${item.ticket_id}`;
+    const detail = kind === "event" ? getErrorLabel(item.error) : getErrorLabel(item.error);
+    row.innerHTML = `
+      <div class="font-semibold">${escapeHtml(title)}</div>
+      <div class="mt-1">${escapeHtml(detail)}</div>
+      <div class="mt-2 flex gap-2">
+        <button class="retry px-2 py-1 rounded bg-amber-900 text-white">Повторить</button>
+        <button class="discard px-2 py-1 rounded bg-white ring-1 ring-amber-300">Скрыть</button>
+      </div>
+    `;
+    row.querySelector(".retry")?.addEventListener("click", () => {
+      if (kind === "event") {
+        retryOutboxEvent(item.id);
+      } else {
+        retryOutboxPhoto(item.id);
+      }
+    });
+    row.querySelector(".discard")?.addEventListener("click", () => {
+      if (kind === "event") {
+        discardOutboxEvent(item.id);
+      } else {
+        discardOutboxPhoto(item.id);
+      }
+    });
+    elements.outboxFailedList.appendChild(row);
+  });
 }
 
 function updateTicketStatusBadge(ticket) {
@@ -508,11 +657,23 @@ function renderDetail(ticket) {
   photoInput.addEventListener("change", async () => {
     const file = photoInput.files?.[0];
     if (!file) return;
+    if (file.size > MAX_PHOTO_SIZE_BYTES) {
+      alert(`Фото слишком большое. Максимум: ${formatFileSize(MAX_PHOTO_SIZE_BYTES)}.`);
+      photoInput.value = "";
+      return;
+    }
+    const queuedPhotos = await listOutboxPhotos();
+    if (queuedPhotos.length >= MAX_QUEUED_PHOTOS) {
+      alert(`В очереди уже ${MAX_QUEUED_PHOTOS} фото. Синхронизируйте или удалите ошибочные фото.`);
+      photoInput.value = "";
+      return;
+    }
     const photo = {
       id: uid(),
       ticket_id: ticket.id,
       name: file.name,
       type: file.type,
+      size: file.size,
       blob: file,
       created_at: new Date().toISOString(),
       status: "pending",
@@ -529,8 +690,16 @@ async function renderPhotoQueue(ticketId) {
   const queue = document.getElementById("photo-queue");
   if (!queue) return;
   const photos = await listOutboxPhotos();
-  const count = photos.filter((p) => p.ticket_id === ticketId).length;
-  queue.textContent = count ? `Фото в очереди: ${count}` : "Фото не ожидают загрузки.";
+  const ticketPhotos = photos.filter((p) => p.ticket_id === ticketId);
+  const pending = ticketPhotos.filter((p) => p.status === "pending").length;
+  const failed = ticketPhotos.filter((p) => p.status === "error").length;
+  if (failed) {
+    queue.textContent = `Фото: ожидают ${pending}, ошибка ${failed}. Проверьте блок "Требует внимания".`;
+  } else if (pending) {
+    queue.textContent = `Фото в очереди: ${pending}`;
+  } else {
+    queue.textContent = "Фото не ожидают загрузки.";
+  }
 }
 
 async function openTicket(id) {
@@ -733,11 +902,16 @@ async function syncEvents() {
   if (!pending.length || !state.online) return;
   pending.sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
   const payload = { events: pending.map(({ status, error, ...evt }) => evt) };
-  const res = await fetch("/api/sync/events", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  let res;
+  try {
+    res = await fetch("/api/sync/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    return;
+  }
   if (!res.ok) {
     return;
   }
@@ -798,9 +972,23 @@ async function syncPhotos() {
         if (state.selectedId === photo.ticket_id) {
           await openTicket(photo.ticket_id);
         }
+      } else {
+        let message = "Не удалось загрузить фото";
+        try {
+          const data = await res.json();
+          message = data?.error?.message || data?.error || message;
+          if (typeof message !== "string") {
+            message = "Не удалось загрузить фото";
+          }
+        } catch (err) {
+          message = `${message} (${res.status})`;
+        }
+        photo.status = "error";
+        photo.error = { code: `UPLOAD_${res.status}`, message };
+        await putOutboxPhoto(photo);
       }
     } catch (err) {
-      // keep queued
+      // Transient network failures stay pending and retryable on the next sync.
     }
   }
 }
@@ -812,6 +1000,9 @@ async function syncAll() {
   }
   await syncEvents();
   await syncPhotos();
+  if (state.selectedId) {
+    await renderPhotoQueue(state.selectedId);
+  }
   await updateSyncIndicators();
 }
 
@@ -857,6 +1048,7 @@ async function init() {
   elements.historyApply?.addEventListener("click", refreshHistoryList);
   elements.btnSync?.addEventListener("click", syncAll);
   elements.btnReset?.addEventListener("click", resetOffline);
+  elements.outboxRetryAll?.addEventListener("click", retryAllFailedOutbox);
 }
 
 init();

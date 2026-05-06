@@ -36,6 +36,15 @@
       <div id="tickets-panel" class="space-y-2">
         <div id="tickets-list" class="space-y-2"></div>
       </div>
+      <div id="outbox-panel" class="hidden rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
+        <div class="flex items-center justify-between gap-2">
+          <div class="text-sm font-semibold text-amber-900">Требует внимания</div>
+          <button id="outbox-retry-all" class="px-3 py-1 rounded-lg bg-amber-900 text-white text-xs font-semibold">
+            Повторить
+          </button>
+        </div>
+        <div id="outbox-failed-list" class="space-y-2"></div>
+      </div>
       <div id="history-panel" class="space-y-3 hidden">
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <div>

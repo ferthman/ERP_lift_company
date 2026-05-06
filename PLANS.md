@@ -6,6 +6,117 @@ Treat the reader as a complete beginner to this repository. The only context the
 
 ---
 
+# PWA Offline Reliability PR — ExecPlan
+
+## Purpose / Big Picture
+
+Create a focused reliability PR for the technician PWA only. Make the service worker avoid stale authenticated/API responses, keep static shell/assets cacheable, make deploy updates predictable, improve visibility and retry/discard handling for failed offline outbox events, and add small photo queue safety limits. Do not add product features, do not touch CSRF/CORS/session security, upload authorization, Docker/Postgres/deployment, or broad frontend architecture.
+
+## Progress
+
+- [x] (2026-05-06 17:54Z) Read `README.md`, `AGENTS.md`, `PLANS.md`, and `docs/RUNBOOK.md`.
+- [x] (2026-05-06 17:54Z) Inspect `templates/mobile.html`, `static/mobile.js`, `static/sw.js`, service worker registration, `/api/me/tickets`, `/api/sync/events`, and upload/photo flow.
+- [x] (2026-05-06 17:54Z) Create the focused PWA/offline reliability ExecPlan before coding.
+- [x] (2026-05-06 17:56Z) Patch service worker caching so API/authenticated requests are network-only and static shell/assets remain cache-first.
+- [x] (2026-05-06 17:57Z) Patch mobile outbox/photo handling with visible failed-event rows, retry/discard controls, transient retry behavior, and practical photo queue limits.
+- [x] (2026-05-06 17:57Z) Add focused regression tests for service worker caching, mobile outbox visibility/retryability, sync compatibility, mobile ticket flow, and upload access.
+- [x] (2026-05-06 17:57Z) Update manual offline validation notes.
+- [x] (2026-05-06 18:01Z) Run focused tests, full pytest suite, local app startup, smoke checks, and `git status --short`.
+
+## Surprises & Discoveries
+
+- Observation: `static/sw.js` currently uses cache-first behavior for every fetch request via `caches.match(e.request).then(resp => resp || fetch(e.request))`.
+  Evidence: `sed -n '1,260p' static/sw.js`.
+- Observation: `/mobile` and the desktop shell both register `/static/sw.js`, so any service worker API caching bug affects both technician and admin API calls under the same origin.
+  Evidence: `rg -n "serviceWorker|manifest|sw\\.js|mobile" templates static liftcrm app.py`.
+- Observation: `static/mobile.js` already stores failed sync events as `status: "error"` and shows only aggregate `Ошибка (N)` status; there is no visible per-event retry/discard control.
+  Evidence: `syncEvents()` and `updateSyncIndicators()` in `static/mobile.js`.
+- Observation: Offline photos are stored as raw IndexedDB blobs with `status: "pending"` and retried only for pending records; there is no file size validation, failed upload status, or queue cap.
+  Evidence: `renderDetail()` photo input handler and `syncPhotos()` in `static/mobile.js`.
+- Observation: Backend `/api/sync/events` already returns per-event error codes for conflicts, geofence failures, validation failures, forbidden tickets, immutable tickets, and duplicates.
+  Evidence: `sync_events()` in `liftcrm/tickets/routes.py`.
+
+## Decision Log
+
+- Decision: Treat service worker API/authenticated fetches as network-only instead of network-first with a cached fallback.
+  Rationale: The app already owns offline ticket data in IndexedDB. Falling back from Cache Storage for `/api/*`, uploads, login, or HTML pages can serve stale or cross-user authenticated data.
+  Date/Author: 2026-05-06 / codex
+- Decision: Keep the outbox UX small by adding an inline failed-event panel with retry and discard actions rather than building a separate queue management screen.
+  Rationale: The current mobile page already has sync controls and aggregate status; a compact panel makes failures visible without product expansion or frontend refactoring.
+  Date/Author: 2026-05-06 / codex
+- Decision: Add practical client-side photo limits only: maximum file size and maximum queued photo count.
+  Rationale: This prevents silent unbounded IndexedDB growth while avoiding a larger compression/storage-management feature.
+  Date/Author: 2026-05-06 / codex
+
+## Outcomes & Retrospective
+
+- Outcome (2026-05-06): `static/sw.js` now precaches only static shell/assets, deletes old caches on activation, claims clients after activation, and sends API, uploads, login/logout/admin/mobile HTML, non-GET, and other non-static requests directly to network.
+- Outcome (2026-05-06): `templates/mobile.html` and `static/mobile.js` now show a compact failed outbox panel. Failed sync events and failed photo uploads remain visible with retry and discard actions; transient network failures stay pending for later retry.
+- Outcome (2026-05-06): Photo queue safety now rejects files larger than 8 MB before IndexedDB storage and caps the local queued photo count at 20.
+- Outcome (2026-05-06): `docs/RUNBOOK.md` now has a manual offline/PWA checklist covering online load, offline actions, reconnect, duplicate prevention, visible failures, photo limits, metrics, and protected uploads.
+- Validation (2026-05-06): `venv/bin/python -m pytest tests/test_pwa_offline_reliability.py tests/test_sync_events.py tests/test_mobile_login_flow.py tests/test_mobile_ticket_coords.py tests/test_upload_access.py tests/test_metrics_api.py -q` passed (39 tests).
+- Validation (2026-05-06): `venv/bin/python -m pytest -q` passed (104 tests).
+- Validation (2026-05-06): First local startup attempt `PORT=5056 venv/bin/python app.py` failed under sandbox with `Operation not permitted`; rerun with approved local-server escalation started Flask successfully.
+- Validation (2026-05-06): Local smoke against `http://127.0.0.1:5056` passed admin login, master creation, technician role assignment, ticket creation and assignment, `/mobile` render with outbox panel, `/api/me/tickets`, sync accept, duplicate event idempotency, sync start, photo upload, anonymous upload redirect to login, assigned technician upload readback, and `/api/metrics`.
+- Validation (2026-05-06): Smoke summary: `{"accept_sync": "OK", "admin_login": 200, "anonymous_upload_status": 302, "assigned_ticket_seen": true, "duplicate_sync": "duplicate", "master_id": 182, "metrics_total_tickets_present": true, "mobile_status": 200, "start_sync": "OK", "technician_upload_status": 200, "ticket_id": 155, "upload_status": 200}`.
+
+## Plan of Work
+
+### Milestone 1 — Service worker cache strategy
+
+Goal: Avoid stale API/authenticated responses while preserving offline shell asset caching.
+
+Work:
+
+- Update `static/sw.js` to version caches explicitly, pre-cache only safe static shell/assets, and remove old caches during activation.
+- Return `fetch(request)` for `/api/*`, `/uploads/*`, login/logout/admin/mobile HTML navigations, non-GET requests, and other non-static requests.
+- Keep cache-first behavior only for static assets and manifests.
+
+Validation:
+
+- Add a static regression test that proves the service worker contains API/upload network-only handling and does not use blanket `caches.match(e.request)` for all fetches.
+
+### Milestone 2 — Outbox and photo queue reliability
+
+Goal: Failed offline work remains visible and retryable, while transient failures stay queued.
+
+Work:
+
+- Add a minimal failed outbox panel in `templates/mobile.html`.
+- In `static/mobile.js`, render failed events with ticket/type/error labels, add retry and discard buttons, and keep transient fetch failures as pending.
+- Add photo file size validation, queued-photo count limits, visible photo queue status, and failed-photo retry behavior.
+
+Validation:
+
+- Add static tests over `templates/mobile.html` and `static/mobile.js` for failed outbox panel controls, retry/discard behavior, transient pending preservation, and photo limits.
+
+### Milestone 3 — Backend compatibility, docs, and smoke
+
+Goal: Prove existing technician sync, mobile ticket, upload access, and metrics flows still work.
+
+Work:
+
+- Run focused tests for sync events, mobile login/ticket endpoints, upload access, metrics, and PWA static guards.
+- Run the full pytest suite.
+- Update `docs/RUNBOOK.md` with a short manual offline checklist covering install/open, online load, offline actions, reconnect, duplicate prevention, and visible failures.
+- Start the app locally and run a smoke script covering admin ticket creation, technician `/mobile`, accept/start sync, queued-event compatibility, protected uploads, and metrics.
+- Run `git status --short` and record exact results.
+
+Validation:
+
+- Record exact commands/results in this plan and final response.
+
+## End-of-plan change log
+
+- Change: Added PWA Offline Reliability PR ExecPlan.
+  Reason: The task changes service worker cache strategy, IndexedDB outbox behavior, photo queue safety, docs, and tests, so `AGENTS.md` requires an ExecPlan.
+  Date/Author: 2026-05-06 / codex
+- Change: Completed the focused PWA/offline reliability implementation and validation.
+  Reason: Record the final behavior, tests, smoke evidence, and review scope.
+  Date/Author: 2026-05-06 / codex
+
+---
+
 # CSRF/CORS/Session Security Hardening PR — ExecPlan
 
 ## Purpose / Big Picture
