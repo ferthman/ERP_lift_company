@@ -23,18 +23,19 @@ def create_app():
         template_folder=os.path.join(config.ROOT_DIR, "templates"),
         static_folder=os.path.join(config.ROOT_DIR, "static"),
     )
-    app.config["SECRET_KEY"] = config.SECRET_KEY
+    app.config["SECRET_KEY"] = config.validate_secret_key()
     app.config["UPLOAD_FOLDER"] = config.UPLOAD_FOLDER
     app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
-    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-    app.config["SESSION_COOKIE_SECURE"] = False
+    app.config.update(config.session_cookie_config())
 
     if config.TRUST_PROXY_HEADERS:
         from werkzeug.middleware.proxy_fix import ProxyFix
 
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=config.PROXY_FIX_X_FOR)
 
-    CORS(app, supports_credentials=True)
+    cors_origins = config.cors_allowed_origins()
+    if cors_origins:
+        CORS(app, origins=cors_origins, supports_credentials=True)
     login_manager.init_app(app)
     login_manager.login_view = "auth.login_page"
 
@@ -83,6 +84,7 @@ def create_app():
         _db_initialized["done"] = True
 
     from flask import request, make_response
+    from .utils.security import unsafe_request_is_same_origin
 
     def _get_ui_preference():
         value = (request.cookies.get("ui_preference") or "").strip().lower()
@@ -95,6 +97,14 @@ def create_app():
         if ui in {"admin", "mobile"}:
             response.set_cookie("ui_preference", ui, samesite="Lax")
         return response
+
+    @app.before_request
+    def enforce_same_origin_unsafe_requests():
+        if unsafe_request_is_same_origin():
+            return None
+        if request.path.startswith("/api"):
+            return {"error": {"code": 403, "message": "Cross-origin state-changing request rejected"}}, 403
+        return ("Cross-origin state-changing request rejected", 403)
 
     status_ru = {
         "NEW": "Новая",
