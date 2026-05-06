@@ -67,11 +67,14 @@
 ## Конфигурация и секреты
 - Файл примера: `.env.example` содержит все поддерживаемые переменные окружения.
 - Обязательные в проде (dev имеет дефолты):
-  - `SECRET_KEY` — ключ сессий Flask (dev по умолчанию `dev-secret`, обязательно переопределить в проде).【F:liftcrm/config.py†L7-L18】【F:liftcrm/__init__.py†L12-L33】
+  - `APP_ENV=production` — включает production-проверки секрета и secure-cookie дефолты.
+  - `SECRET_KEY` — ключ сессий Flask (dev по умолчанию `dev-secret`; в production обязателен не-дефолтный ключ длиной минимум 32 символа).【F:liftcrm/config.py†L7-L18】【F:liftcrm/__init__.py†L12-L33】
   - `ADMIN_USERNAME` / `ADMIN_PASSWORD` — креды админа (dev: `admin` / `admin123`).【F:liftcrm/config.py†L7-L18】【F:liftcrm/db.py†L58-L73】
   - `DISPATCHER_USERNAME` / `DISPATCHER_PASSWORD` — креды диспетчера (dev: `dispatcher` / `disp123`).【F:liftcrm/config.py†L7-L18】【F:liftcrm/db.py†L58-L73】
   - `SLA_RESPONSE_MINUTES`, `SLA_COMPLETION_MINUTES` — опциональные, задают лимиты SLA в минутах (30/120 по умолчанию).【F:liftcrm/config.py†L7-L23】
 - Опционально:
+  - `SESSION_COOKIE_HTTPONLY`, `SESSION_COOKIE_SAMESITE`, `SESSION_COOKIE_SECURE` — настройки cookie сессии. По умолчанию `HttpOnly=true`, `SameSite=Lax`, а `Secure=true` при `APP_ENV=production`.
+  - `CORS_ALLOWED_ORIGINS` — список разрешённых origin через запятую, только если нужен credentialed CORS. `*` запрещён при cookie-auth.
   - `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` — для email-отправки отчёта при завершении; если пусто, отправка пропускается.【F:liftcrm/config.py†L20-L23】【F:liftcrm/tickets/service.py†L43-L77】
 - Файлы и данные:
   - БД: `lift_crm.db` в корне.

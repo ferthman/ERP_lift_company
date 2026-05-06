@@ -6,6 +6,115 @@ Treat the reader as a complete beginner to this repository. The only context the
 
 ---
 
+# CSRF/CORS/Session Security Hardening PR — ExecPlan
+
+## Purpose / Big Picture
+
+Harden only the cookie-auth security envelope: CORS, session cookie settings, production `SECRET_KEY` validation, and same-origin protection for unsafe state-changing requests. Preserve the existing same-domain Flask UI, JSON API, technician mobile sync, uploads access rules, archive/admin workflows, and metrics endpoint. This PR must not implement product features or touch PWA/offline, upload authorization, XSS rendering, Docker/Postgres/deployment, or unrelated refactors.
+
+## Progress
+
+- [x] (2026-05-06 17:34Z) Read `README.md`, `AGENTS.md`, `PLANS.md`, `liftcrm/config.py`, `liftcrm/utils/security.py`, app factory/auth routes, route decorators, and frontend fetch/form patterns.
+- [x] (2026-05-06 17:42Z) Add config-driven CORS/session/SECRET_KEY hardening in the app factory and security utilities.
+- [x] (2026-05-06 17:42Z) Add same-origin protection for unsafe cookie-auth state-changing requests.
+- [x] (2026-05-06 17:42Z) Add focused pytest coverage for CORS, cookies, production secret validation, same-origin rejection/acceptance, login, ticket create/update, and mobile sync.
+- [x] (2026-05-06 17:43Z) Run focused security tests, then the full pytest suite.
+- [x] (2026-05-06 17:51Z) Start the app locally and run requested smoke checks.
+- [x] (2026-05-06 17:54Z) Record exact validation results, changed files, and retrospective.
+
+## Surprises & Discoveries
+
+- Observation: `liftcrm/__init__.py` currently enables `CORS(app, supports_credentials=True)` with no origin restrictions.
+  Evidence: `rg "CORS|supports_credentials" liftcrm`.
+- Observation: Current session cookie settings are hardcoded in `create_app()` as `SESSION_COOKIE_SAMESITE = "Lax"` and `SESSION_COOKIE_SECURE = False`; `SECRET_KEY` defaults to `dev-secret` in `liftcrm/config.py`.
+  Evidence: `liftcrm/__init__.py` and `liftcrm/config.py`.
+- Observation: State-changing endpoints are all same-app cookie flows, including `/api/login`, `/login`, `/api/logout`, `/logout`, ticket create/update/assignment/archive/mobile sync/upload actions, asset CRUD, and access-management actions.
+  Evidence: `rg -n "@.*\\.(post|patch|put|delete)|methods=.*(POST|PATCH|PUT|DELETE)" liftcrm`.
+- Observation: Frontend unsafe requests are vanilla `fetch()` calls from `templates/index.html` and `static/mobile.js`, plus same-site form posts in `templates/login.html` and `templates/index.html`; no separate frontend origin was found.
+  Evidence: `rg -n "fetch\\(|method:\\s*['\\\"](POST|PATCH|PUT|DELETE)|<form" templates static liftcrm tests`.
+- Observation: The metrics endpoint is healthy but currently returns top-level metrics keys such as `total_tickets`, not a nested `totals` object.
+  Evidence: The first smoke script reached `GET /api/metrics` with status 200 and stopped only because the script asserted the wrong response shape.
+
+## Decision Log
+
+- Decision: Use strict same-origin validation for unsafe methods instead of adding CSRF tokens in this PR.
+  Rationale: The app is same-origin Flask-rendered UI plus mobile PWA; a token rollout would require broader template and fetch plumbing, while Origin/Referer validation protects browser cookie-auth unsafe requests without rewriting frontend flows.
+  Date/Author: 2026-05-06 / codex
+- Decision: Disable CORS by default and only enable credentialed CORS when `CORS_ALLOWED_ORIGINS` contains explicit non-wildcard origins.
+  Rationale: The inspected frontend does not require cross-origin API calls, and wildcard credentialed CORS is unsafe.
+  Date/Author: 2026-05-06 / codex
+- Decision: Treat `APP_ENV` or `FLASK_ENV` equal to `production` as production mode for secret/cookie defaults.
+  Rationale: The repo currently has no explicit environment abstraction; using these conventional environment variables keeps development working and lets deployment fail fast on weak secrets.
+  Date/Author: 2026-05-06 / codex
+
+## Outcomes & Retrospective
+
+- Outcome (2026-05-06): Removed default broad credentialed CORS, added opt-in explicit `CORS_ALLOWED_ORIGINS`, added environment-driven session cookie settings, added production-only strong `SECRET_KEY` validation, and added unsafe-method same-origin protection using `Origin`/`Referer` while preserving no-header local/test clients.
+- Outcome (2026-05-06): Added focused security regression tests in `tests/test_security_hardening.py` and documented new runtime settings in `.env.example` and `docs/RUNBOOK.md`.
+- Validation (2026-05-06): `venv/bin/python -m pytest tests/test_security_hardening.py -q` passed (8 tests).
+- Validation (2026-05-06): `venv/bin/python -m pytest -q` passed (97 tests).
+- Validation (2026-05-06): `PORT=5055 venv/bin/python app.py` started the Flask app locally after sandbox approval. Corrected smoke script passed admin login, master creation, technician role assignment, ticket create, ticket update, technician assignment, assigned ticket read, metrics endpoint, admin logout, technician login, mobile sync accept, mobile sync start, upload file, and upload readback.
+- Validation (2026-05-06): Smoke-test artifacts in `lift_crm.db` and `uploads/` were cleaned up; `git status --short` showed only intended code/docs/test files modified.
+
+## Plan of Work
+
+### Milestone 1 — Configuration hardening
+
+Goal: Production startup and response cookies are safer while local development still works.
+
+Work:
+
+- Update `liftcrm/config.py` with environment helpers for app env, session cookie flags, allowed CORS origins, and secret validation.
+- Update `liftcrm/__init__.py` to call secret validation during `create_app()`, apply configurable session cookie settings, and remove broad credentialed CORS.
+- If CORS origins are configured, enable `flask_cors.CORS` with `supports_credentials=True` and the explicit origin list only.
+
+Validation:
+
+- Unit tests cover dev fallback, production weak/missing secret rejection, production secure cookie defaults, local development cookie behavior, and no wildcard credentialed CORS.
+
+### Milestone 2 — Same-origin unsafe request guard
+
+Goal: Cookie-auth state-changing browser requests from other origins are rejected before route handlers mutate state.
+
+Work:
+
+- Add helpers in `liftcrm/utils/security.py` to compare `Origin` or `Referer` against the request host URL for `POST`, `PATCH`, `PUT`, and `DELETE`.
+- Register a `before_request` guard in `liftcrm/__init__.py` for unsafe methods.
+- Return JSON 403 for `/api/*` requests and plain 403 for non-API form posts.
+- Preserve requests with no browser provenance header so existing tests, CLI/manual local calls, and non-browser clients continue to work.
+
+Validation:
+
+- Tests prove a cross-origin unsafe request is rejected and a same-origin unsafe request is accepted.
+- Existing login, ticket create/update, mobile sync, upload, archive, admin workflows remain same-origin compatible.
+
+### Milestone 3 — Focused regression tests and smoke
+
+Goal: Prove the security contract and avoid behavior drift outside this PR scope.
+
+Work:
+
+- Add focused pytest module for security config and same-origin behavior.
+- Run the focused test module.
+- Run the full pytest suite.
+- Start the app locally and smoke-test admin login, ticket create/update, assignment, technician mobile sync accept/start, upload access, and metrics endpoint.
+- Run `git status --short`.
+
+Validation:
+
+- Record exact commands and results in this plan and final response.
+
+## End-of-plan change log
+
+- Change: Added CSRF/CORS/session security hardening ExecPlan.
+  Reason: The task changes authentication/session/security behavior across app factory, utilities, and tests, so `AGENTS.md` requires an ExecPlan.
+  Date/Author: 2026-05-06 / codex
+- Change: Completed CSRF/CORS/session security hardening implementation and validation.
+  Reason: Track the exact hardening scope, tests, smoke results, and cleanup outcome for review.
+  Date/Author: 2026-05-06 / codex
+
+---
+
 # XSS Rendering Hardening PR — ExecPlan
 
 ## Purpose / Big Picture
