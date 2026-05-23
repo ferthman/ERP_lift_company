@@ -6,6 +6,88 @@ Treat the reader as a complete beginner to this repository. The only context the
 
 ---
 
+# Local Backup/Restore Tooling PR — ExecPlan
+
+## Purpose / Big Picture
+
+Make the local MVP safer for a controlled pilot by adding small operator scripts that back up and restore the local SQLite database, uploads, and generated archive/export files. This is only local MVP tooling. It is not a production backup architecture and does not migrate the app to Postgres, add Docker/deployment, change PWA/offline behavior, change CSRF/CORS/session security, or touch uploads authorization, XSS rendering, or metrics logic.
+
+## Progress
+
+- [x] (2026-05-23 17:57Z) Read `README.md`, `AGENTS.md`, `PLANS.md`, and `docs/RUNBOOK.md`.
+- [x] (2026-05-23 17:57Z) Inspect current local runtime files: `lift_crm.db`, `uploads/`, and `archive.xlsx`.
+- [x] (2026-05-23 17:57Z) Create this focused local backup/restore ExecPlan before coding.
+- [x] (2026-05-23 18:03Z) Implement local backup script, restore script, `.gitignore` entry, docs, and focused tests.
+- [x] (2026-05-23 18:05Z) Run focused backup/restore tests, full pytest suite, and `git status --short`.
+
+## Surprises & Discoveries
+
+- Observation: The working tree started on `codex/pwa-offline-reliability`, but fetched `origin/main` is `2dad997` and does not contain `codex/pwa-offline-reliability`.
+  Evidence: `git merge-base --is-ancestor codex/pwa-offline-reliability origin/main; printf '%s\n' $?` returned `1`.
+- Observation: Runtime local data exists and is currently untracked: `lift_crm.db`, `uploads/`, and `archive.xlsx`.
+  Evidence: `find . -maxdepth 2 \( -name 'lift_crm.db' -o -name 'uploads' -o -name 'archive*.xlsx' -o -name '*export*.xlsx' -o -name '*export*.csv' \) -print`.
+- Observation: `.gitignore` already ignores `lift_crm.db`, `uploads/`, and `archive*.xlsx`, but does not yet ignore `backups/`.
+  Evidence: `sed -n '1,220p' .gitignore`.
+
+## Decision Log
+
+- Decision: Base this branch on fetched `origin/main` instead of the PWA branch.
+  Rationale: The requested latest-main PWA merge was not visible in the fetched remote, and basing on the PWA branch would mix unrelated PWA/offline changes into this focused backup/restore PR.
+  Date/Author: 2026-05-23 / codex
+- Decision: Treat archive/export files as root-level `archive*.xlsx` plus root-level `*export*.xlsx` and `*export*.csv`.
+  Rationale: The runbook documents `archive.xlsx` and `archive_N.xlsx`; asset export endpoints generate CSV/XLSX downloads, and this keeps the backup scope file-based and local without touching app routes.
+  Date/Author: 2026-05-23 / codex
+
+## Outcomes & Retrospective
+
+- Outcome (2026-05-23): Added standard-library local backup and restore scripts for `lift_crm.db`, `uploads/`, and root-level archive/export files. Backup creates `backups/<timestamp>/manifest.json`; restore refuses to overwrite existing local data unless `--force` is provided.
+- Outcome (2026-05-23): Added `backups/` to `.gitignore`, documented pilot-day backup/restore steps in `docs/RUNBOOK.md`, and added focused pytest coverage in `tests/test_local_backup_restore.py`.
+- Validation (2026-05-23): `venv/bin/python -m pytest tests/test_local_backup_restore.py -q` passed (`5 passed in 0.03s`).
+- Validation (2026-05-23): `venv/bin/python -m pytest -q` passed (`105 passed in 16.43s`).
+- Validation (2026-05-23): `git status --short` showed only intended files: modified `.gitignore`, `PLANS.md`, `docs/RUNBOOK.md`; untracked `scripts/backup_local.py`, `scripts/restore_local.py`, `tests/test_local_backup_restore.py`.
+
+## Plan of Work
+
+### Milestone 1 — Backup and restore scripts
+
+Goal: Operators can create a timestamped local copy of the SQLite DB, uploads, and archive/export files, and can restore a selected backup only after explicitly accepting overwrite risk.
+
+Work:
+
+- Add `scripts/backup_local.py`.
+- Add `scripts/restore_local.py`.
+- Backup behavior: create `backups/YYYYmmdd-HHMMSS/`, copy `lift_crm.db` if present, copy `uploads/` if present, copy archive/export files if present, and write `manifest.json` with timestamp, source root, copied file entries, byte sizes, and warnings for optional missing inputs.
+- Restore behavior: accept a backup folder argument, refuse to overwrite existing `lift_crm.db`, `uploads/`, or archive/export files unless `--force` is provided, then restore present backup contents.
+- Keep scripts standalone and standard-library only.
+
+Validation:
+
+- Add pytest coverage for backup with all inputs, backup with optional files missing, manifest creation, restore refusal without `--force`, and restore with `--force` into a temp root.
+
+### Milestone 2 — Docs, ignore rules, and final validation
+
+Goal: The local pilot runbook explains the operator workflow and generated backups are never committed.
+
+Work:
+
+- Add `backups/` to `.gitignore`.
+- Update `docs/RUNBOOK.md` with backup creation, restore, restore verification, daily pilot backup checklist, and an explicit local-MVP-only warning.
+- Run focused backup/restore tests.
+- Run the full pytest suite.
+- Run `git status --short`.
+
+Validation:
+
+- Record exact commands and results in this plan and final response.
+
+## End-of-plan change log
+
+- Change: Added Local Backup/Restore Tooling PR ExecPlan.
+  Reason: The task spans scripts, docs, ignore rules, and tests, so `AGENTS.md` requires an ExecPlan before coding.
+  Date/Author: 2026-05-23 / codex
+
+---
+
 # PWA Offline Reliability PR — ExecPlan
 
 ## Purpose / Big Picture
