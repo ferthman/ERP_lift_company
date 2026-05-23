@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta, time
 from flask import Blueprint, jsonify, request, send_file
 from flask_login import login_required
 
-from ..db import SessionLocal, Asset, Ticket, TicketComment, Attachment, AuditLog, User, Master
+from ..db import SessionLocal, Asset, Ticket, TicketComment, Attachment, AuditLog, User, Master, Customer, Contract
 from ..utils.security import role_required
 from ..utils.time import to_utc
 from .service import normalize_text
@@ -61,21 +61,128 @@ ASSET_IMPORT_HEADERS = {
 ASSET_IMPORT_ALIAS_TO_FIELD = {
     alias: field for field, aliases in ASSET_IMPORT_HEADERS.items() for alias in aliases
 }
+CONTRACT_STATUSES = {"active", "paused", "expired"}
 
 
 def serialize_asset(asset: Asset):
+    customer = asset.customer
+    contract = asset.contract
     return {
         "id": asset.id,
         "address": asset.address,
         "entrance": asset.entrance,
         "lift_label": asset.lift_label,
         "serial_no": asset.serial_no,
+        "customer_id": asset.customer_id,
+        "customer_name": customer.name if customer else None,
+        "contract_id": asset.contract_id,
+        "contract_number": contract.contract_number if contract else None,
+        "contract_title": contract.title if contract else None,
+        "contract_status": contract.status if contract else None,
         "lat": asset.lat,
         "lon": asset.lon,
         "status": asset.status,
         "created_at": (to_utc(asset.created_at).isoformat() if asset.created_at else None),
         "updated_at": (to_utc(asset.updated_at).isoformat() if asset.updated_at else None),
     }
+
+
+def serialize_customer(customer: Customer):
+    return {
+        "id": customer.id,
+        "name": customer.name,
+        "contact_person": customer.contact_person,
+        "phone": customer.phone,
+        "email": customer.email,
+        "notes": customer.notes,
+        "is_active": bool(customer.is_active),
+        "created_at": (to_utc(customer.created_at).isoformat() if customer.created_at else None),
+        "updated_at": (to_utc(customer.updated_at).isoformat() if customer.updated_at else None),
+    }
+
+
+def serialize_contract(contract: Contract):
+    return {
+        "id": contract.id,
+        "customer_id": contract.customer_id,
+        "customer_name": contract.customer.name if contract.customer else None,
+        "contract_number": contract.contract_number,
+        "title": contract.title,
+        "start_date": contract.start_date.isoformat() if contract.start_date else None,
+        "end_date": contract.end_date.isoformat() if contract.end_date else None,
+        "status": contract.status,
+        "sla_hours_normal": contract.sla_hours_normal,
+        "sla_hours_high": contract.sla_hours_high,
+        "sla_hours_emergency": contract.sla_hours_emergency,
+        "notes": contract.notes,
+        "created_at": (to_utc(contract.created_at).isoformat() if contract.created_at else None),
+        "updated_at": (to_utc(contract.updated_at).isoformat() if contract.updated_at else None),
+    }
+
+
+def _clean_optional(value):
+    return str(value or "").strip() or None
+
+
+def _parse_bool_int(value, default=True):
+    if value is None:
+        return 1 if default else 0
+    if isinstance(value, bool):
+        return 1 if value else 0
+    raw = str(value).strip().lower()
+    if raw in {"1", "true", "yes", "active"}:
+        return 1
+    if raw in {"0", "false", "no", "inactive"}:
+        return 0
+    raise ValueError("is_active must be true or false")
+
+
+def _parse_contract_date(value, field):
+    if value in (None, ""):
+        return None
+    try:
+        return datetime.strptime(str(value).strip(), "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ValueError(f"{field} must use YYYY-MM-DD") from exc
+
+
+def _parse_positive_float(value, field):
+    if value in (None, ""):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be a positive number") from exc
+    if parsed <= 0:
+        raise ValueError(f"{field} must be a positive number")
+    return parsed
+
+
+def _parse_optional_int(value, field):
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be an integer") from exc
+
+
+def _validate_customer_contract_link(db, customer_id, contract_id):
+    customer = None
+    contract = None
+    if customer_id is not None:
+        customer = db.get(Customer, customer_id)
+        if not customer:
+            raise ValueError("Customer not found")
+    if contract_id is not None:
+        contract = db.get(Contract, contract_id)
+        if not contract:
+            raise ValueError("Contract not found")
+        if customer_id is not None and contract.customer_id != customer_id:
+            raise ValueError("Contract must belong to selected customer")
+        if customer_id is None:
+            customer_id = contract.customer_id
+    return customer_id, contract_id, customer, contract
 
 
 def _parse_date(value: str, label: str):
@@ -330,6 +437,198 @@ def _validate_import_row(row_number, row):
     }, []
 
 
+@bp.get("/api/customers")
+@login_required
+@role_required("admin", "dispatcher")
+def list_customers():
+    with SessionLocal() as db:
+        customers = db.query(Customer).order_by(Customer.name.asc(), Customer.id.asc()).all()
+        return jsonify([serialize_customer(customer) for customer in customers])
+
+
+@bp.post("/api/customers")
+@login_required
+@role_required("admin", "dispatcher")
+def create_customer():
+    data = request.get_json() or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Customer name is required"}), 400
+    try:
+        is_active = _parse_bool_int(data.get("is_active"), default=True)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        customer = Customer(
+            name=name,
+            contact_person=_clean_optional(data.get("contact_person")),
+            phone=_clean_optional(data.get("phone")),
+            email=_clean_optional(data.get("email")),
+            notes=_clean_optional(data.get("notes")),
+            is_active=is_active,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(customer)
+        db.commit()
+        db.refresh(customer)
+        return jsonify(serialize_customer(customer)), 201
+
+
+@bp.get("/api/customers/<int:customer_id>")
+@login_required
+@role_required("admin", "dispatcher")
+def get_customer(customer_id):
+    with SessionLocal() as db:
+        customer = db.get(Customer, customer_id)
+        if not customer:
+            return jsonify({"error": "Customer not found"}), 404
+        return jsonify(serialize_customer(customer))
+
+
+@bp.patch("/api/customers/<int:customer_id>")
+@login_required
+@role_required("admin", "dispatcher")
+def update_customer(customer_id):
+    data = request.get_json() or {}
+    with SessionLocal() as db:
+        customer = db.get(Customer, customer_id)
+        if not customer:
+            return jsonify({"error": "Customer not found"}), 404
+        if "name" in data:
+            name = (data.get("name") or "").strip()
+            if not name:
+                return jsonify({"error": "Customer name is required"}), 400
+            customer.name = name
+        for field in ("contact_person", "phone", "email", "notes"):
+            if field in data:
+                setattr(customer, field, _clean_optional(data.get(field)))
+        if "is_active" in data:
+            try:
+                customer.is_active = _parse_bool_int(data.get("is_active"), default=True)
+            except ValueError as exc:
+                return jsonify({"error": str(exc)}), 400
+        customer.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(customer)
+        return jsonify(serialize_customer(customer))
+
+
+def _contract_values_from_payload(data, db, existing=None):
+    if existing is None or "customer_id" in data:
+        customer_id = _parse_optional_int(data.get("customer_id"), "customer_id")
+        if customer_id is None:
+            raise ValueError("customer_id is required")
+        customer = db.get(Customer, customer_id)
+        if not customer:
+            raise ValueError("Customer not found")
+    else:
+        customer_id = existing.customer_id
+
+    title = None
+    if existing is None or "title" in data or "name" in data:
+        title = (data.get("title") or data.get("name") or "").strip()
+        if not title:
+            raise ValueError("Contract title is required")
+
+    status = None
+    if existing is None or "status" in data:
+        status = str(data.get("status") or "active").strip().lower()
+        if status not in CONTRACT_STATUSES:
+            raise ValueError("Contract status must be active, paused, or expired")
+
+    start_date = _parse_contract_date(data.get("start_date"), "start_date") if existing is None or "start_date" in data else None
+    end_date = _parse_contract_date(data.get("end_date"), "end_date") if existing is None or "end_date" in data else None
+    effective_start = start_date if start_date is not None or existing is None else existing.start_date
+    effective_end = end_date if end_date is not None or existing is None else existing.end_date
+    if effective_start and effective_end and effective_end < effective_start:
+        raise ValueError("end_date must be on or after start_date")
+
+    values = {"customer_id": customer_id}
+    if title is not None:
+        values["title"] = title
+    if status is not None:
+        values["status"] = status
+    for field in ("contract_number", "notes"):
+        if existing is None or field in data:
+            values[field] = _clean_optional(data.get(field))
+    if existing is None or "start_date" in data:
+        values["start_date"] = start_date
+    if existing is None or "end_date" in data:
+        values["end_date"] = end_date
+    for field in ("sla_hours_normal", "sla_hours_high", "sla_hours_emergency"):
+        if existing is None or field in data:
+            values[field] = _parse_positive_float(data.get(field), field)
+    return values
+
+
+@bp.get("/api/contracts")
+@login_required
+@role_required("admin", "dispatcher")
+def list_contracts():
+    customer_id = request.args.get("customer_id")
+    try:
+        customer_id = _parse_optional_int(customer_id, "customer_id")
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    with SessionLocal() as db:
+        query = db.query(Contract).order_by(Contract.id.desc())
+        if customer_id is not None:
+            query = query.filter(Contract.customer_id == customer_id)
+        return jsonify([serialize_contract(contract) for contract in query.all()])
+
+
+@bp.post("/api/contracts")
+@login_required
+@role_required("admin", "dispatcher")
+def create_contract():
+    data = request.get_json() or {}
+    with SessionLocal() as db:
+        try:
+            values = _contract_values_from_payload(data, db)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        now = datetime.now(timezone.utc)
+        contract = Contract(**values, created_at=now, updated_at=now)
+        db.add(contract)
+        db.commit()
+        db.refresh(contract)
+        return jsonify(serialize_contract(contract)), 201
+
+
+@bp.get("/api/contracts/<int:contract_id>")
+@login_required
+@role_required("admin", "dispatcher")
+def get_contract(contract_id):
+    with SessionLocal() as db:
+        contract = db.get(Contract, contract_id)
+        if not contract:
+            return jsonify({"error": "Contract not found"}), 404
+        return jsonify(serialize_contract(contract))
+
+
+@bp.patch("/api/contracts/<int:contract_id>")
+@login_required
+@role_required("admin", "dispatcher")
+def update_contract(contract_id):
+    data = request.get_json() or {}
+    with SessionLocal() as db:
+        contract = db.get(Contract, contract_id)
+        if not contract:
+            return jsonify({"error": "Contract not found"}), 404
+        try:
+            values = _contract_values_from_payload(data, db, existing=contract)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        for field, value in values.items():
+            setattr(contract, field, value)
+        contract.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(contract)
+        return jsonify(serialize_contract(contract))
+
+
 @bp.get("/api/assets")
 @login_required
 def list_assets():
@@ -359,17 +658,30 @@ def create_asset():
     if not address:
         return jsonify({"error": "Address is required"}), 400
     serial_no = (data.get("serial_no") or "").strip() or None
+    try:
+        customer_id = _parse_optional_int(data.get("customer_id"), "customer_id")
+        contract_id = _parse_optional_int(data.get("contract_id"), "contract_id")
+        lat = float(data["lat"]) if data.get("lat") not in (None, "") else None
+        lon = float(data["lon"]) if data.get("lon") not in (None, "") else None
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     with SessionLocal() as db:
         if serial_no and _ensure_unique_serial(db, serial_no):
             return jsonify({"error": "serial_no must be unique"}), 400
+        try:
+            customer_id, contract_id, _, _ = _validate_customer_contract_link(db, customer_id, contract_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         asset = Asset(
             address=address,
             address_norm=normalize_text(address),
             entrance=(data.get("entrance") or "").strip() or None,
             lift_label=(data.get("lift_label") or "").strip() or None,
             serial_no=serial_no,
-            lat=float(data["lat"]) if data.get("lat") not in (None, "") else None,
-            lon=float(data["lon"]) if data.get("lon") not in (None, "") else None,
+            customer_id=customer_id,
+            contract_id=contract_id,
+            lat=lat,
+            lon=lon,
             status=(data.get("status") or "ACTIVE").strip().upper(),
         )
         if asset.status not in {"ACTIVE", "INACTIVE"}:
@@ -396,6 +708,11 @@ def get_asset(asset_id):
 @role_required("admin", "dispatcher")
 def update_asset(asset_id):
     data = request.get_json() or {}
+    try:
+        new_customer_id = _parse_optional_int(data.get("customer_id"), "customer_id") if "customer_id" in data else None
+        new_contract_id = _parse_optional_int(data.get("contract_id"), "contract_id") if "contract_id" in data else None
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     with SessionLocal() as db:
         asset = db.get(Asset, asset_id)
         if not asset:
@@ -416,14 +733,29 @@ def update_asset(asset_id):
                 return jsonify({"error": "serial_no must be unique"}), 400
             asset.serial_no = serial_no
         if "lat" in data:
-            asset.lat = float(data["lat"]) if data.get("lat") not in (None, "") else None
+            try:
+                asset.lat = float(data["lat"]) if data.get("lat") not in (None, "") else None
+            except ValueError:
+                return jsonify({"error": "lat must be a valid number"}), 400
         if "lon" in data:
-            asset.lon = float(data["lon"]) if data.get("lon") not in (None, "") else None
+            try:
+                asset.lon = float(data["lon"]) if data.get("lon") not in (None, "") else None
+            except ValueError:
+                return jsonify({"error": "lon must be a valid number"}), 400
         if "status" in data:
             status = (data.get("status") or "").strip().upper()
             if status not in {"ACTIVE", "INACTIVE"}:
                 return jsonify({"error": "Invalid status"}), 400
             asset.status = status
+        if "customer_id" in data or "contract_id" in data:
+            customer_id = new_customer_id if "customer_id" in data else asset.customer_id
+            contract_id = new_contract_id if "contract_id" in data else asset.contract_id
+            try:
+                customer_id, contract_id, _, _ = _validate_customer_contract_link(db, customer_id, contract_id)
+            except ValueError as exc:
+                return jsonify({"error": str(exc)}), 400
+            asset.customer_id = customer_id
+            asset.contract_id = contract_id
         asset.updated_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(asset)

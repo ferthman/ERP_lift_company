@@ -6,6 +6,113 @@ Treat the reader as a complete beginner to this repository. The only context the
 
 ---
 
+# Customers and Contracts Foundation PR — ExecPlan
+
+## Purpose / Big Picture
+
+Add the smallest durable customer/company and service contract foundation needed for real elevator service operations. Admin and dispatcher users must be able to manage customers/contracts, link lifts/assets to them, and see that context on asset and ticket payloads/UI. This PR intentionally does not add billing, invoices, tariff calculation, payments, a full contract lifecycle, an SLA escalation engine, Postgres, Docker/deployment, PWA/offline changes, CSRF/CORS/session security changes, upload authorization changes, backup/restore changes, or unrelated refactors.
+
+## Progress
+
+- [x] (2026-05-24 00:00 +05) Read `README.md`, `AGENTS.md`, `PLANS.md`, and `docs/RUNBOOK.md`.
+- [x] (2026-05-24 00:00 +05) Inspect existing implementation in `liftcrm/db.py`, `liftcrm/assets/routes.py`, `liftcrm/tickets/routes.py`, `liftcrm/tickets/service.py`, `templates/index.html`, asset/lift JS/templates, and existing asset/ticket/import/access tests.
+- [x] (2026-05-24 00:00 +05) Verify existing customer/company/contract concepts: `Asset.customer_id` exists as an unreferenced nullable integer, but there are no Customer/Contract models, contract fields, API routes, serializers, or UI controls.
+- [x] (2026-05-24 00:00 +05) Create this focused ExecPlan before coding.
+- [x] (2026-05-24 00:00 +05) Implement migration-compatible Customer and Contract models plus asset contract linking.
+- [x] (2026-05-24 00:00 +05) Add minimal admin/dispatcher API routes and validation.
+- [x] (2026-05-24 00:00 +05) Surface customer/contract context in asset and ticket serializers.
+- [x] (2026-05-24 00:00 +05) Add simple admin UI for customers/contracts and asset selectors.
+- [x] (2026-05-24 00:00 +05) Update `docs/RUNBOOK.md`.
+- [x] (2026-05-24 00:00 +05) Add focused regression tests and run focused/full validation commands.
+
+## Surprises & Discoveries
+
+- Observation: The checkout started on `codex/emergency-priority-pr95`; local `main` was at `32841a0` and `origin/main` had advanced to `a6e4e3a`.
+  Evidence: `git fetch origin main` and `git pull --ff-only origin main` fast-forwarded local `main` and brought in PR #95 files.
+- Observation: `assets.customer_id` already exists in `Asset` and in the SQLite migration-created assets table, but it is not a foreign key and is not serialized or edited.
+  Evidence: `Asset.customer_id = Column(Integer, nullable=True)` and the assets table DDL in `liftcrm/db.py`.
+- Observation: Tickets already link to assets through `Ticket.asset_id`, and `repository.serialize_ticket()` already returns asset context fields.
+  Evidence: `Ticket.asset_id`, `Ticket.asset = relationship("Asset", back_populates="tickets")`, and `asset_*` keys in `liftcrm/tickets/repository.py`.
+
+## Decision Log
+
+- Decision: Add explicit `Customer` and `Contract` models and reuse the existing `assets.customer_id` column instead of creating a duplicate company/client concept.
+  Rationale: The existing column is the intended seam for asset ownership/management; normalizing it avoids parallel customer fields.
+  Date/Author: 2026-05-24 / codex
+- Decision: Add `assets.contract_id` and keep ticket customer/contract context derived from `ticket.asset` for this foundation PR.
+  Rationale: Derivation is the smallest safe approach and avoids a partial historical snapshot model. Historical tickets remain readable because inactive customers and expired contracts stay visible.
+  Date/Author: 2026-05-24 / codex
+- Decision: Allow admin and dispatcher to list/create/update customers/contracts and link assets, while technicians remain blocked from management APIs.
+  Rationale: This matches existing operational asset CRUD permissions in `liftcrm/assets/routes.py`.
+  Date/Author: 2026-05-24 / codex
+- Decision: Keep import behavior unchanged in this PR except preserving compatibility; imported assets can be linked after import.
+  Rationale: Customer/contract import matching needs product rules for names/numbers and is not required for the foundation.
+  Date/Author: 2026-05-24 / codex
+
+## Outcomes & Retrospective
+
+- Outcome (2026-05-24): Added `Customer` and `Contract` models, idempotent SQLite table creation, and automatic `assets.contract_id` migration while reusing existing `assets.customer_id`.
+- Outcome (2026-05-24): Added admin/dispatcher APIs for customer and contract list/create/update plus asset customer/contract linking with 400 validation for required names, valid customers, date order, SLA hours, and mismatched contract/customer links.
+- Outcome (2026-05-24): Ticket customer/contract context is derived from the linked asset and returned in ticket serializers; tickets without assets continue returning null context.
+- Outcome (2026-05-24): Added compact customer/contract forms in the existing Lifts registry, asset customer/contract selectors, asset table labels, map popup/search labels, and ticket modal context.
+- Outcome (2026-05-24): Documented customer/contract meaning, creation, linking, ticket context behavior, import limitation, and MVP limits in `docs/RUNBOOK.md`.
+- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_customers_contracts.py -q` passed (`10 passed in 1.14s`).
+- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_customers_contracts.py tests/test_assets_api.py tests/test_ticket_status_transitions.py -q` passed (`33 passed in 3.17s`).
+- Validation (2026-05-24): `venv/bin/python -m py_compile liftcrm/db.py liftcrm/assets/routes.py liftcrm/tickets/repository.py` passed with no output.
+- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_xss_rendering_guards.py tests/test_customers_contracts.py tests/test_assets_api.py tests/test_ticket_status_transitions.py -q` passed (`36 passed in 3.26s`).
+- Validation (2026-05-24): First `venv/bin/python -m pytest -q` run failed with one outdated source guard in `tests/test_xss_rendering_guards.py`; updated the guard to assert escaped customer/contract popup fields.
+- Validation (2026-05-24): Final `venv/bin/python -m pytest -q` passed (`138 passed in 22.76s`).
+- Validation (2026-05-24): `git diff --check` passed with no output.
+- Validation (2026-05-24): `git status --short` showed intended files only: `PLANS.md`, `docs/RUNBOOK.md`, `liftcrm/assets/routes.py`, `liftcrm/db.py`, `liftcrm/tickets/repository.py`, `templates/index.html`, `tests/test_xss_rendering_guards.py`, and untracked `tests/test_customers_contracts.py`.
+- Validation (2026-05-24): Browser smoke was attempted with `venv/bin/python app.py`, but local server startup is blocked by sandbox permissions and escalation was rejected by the approval reviewer; no workaround was attempted.
+
+## Plan of Work
+
+### Milestone 1 — Data model and API foundation
+
+Goal: Existing SQLite databases start without manual edits, and admin/dispatcher users can manage customers/contracts through small JSON APIs.
+
+Work:
+
+- Update `liftcrm/db.py` with `Customer` and `Contract` models, relationships to `Asset`, and an `Asset.contract_id` column.
+- Extend `ensure_migrations()` to create `customers` and `contracts` tables idempotently and add missing `assets.customer_id` / `assets.contract_id` columns to existing databases.
+- Add route-local validation and serializers in `liftcrm/assets/routes.py` for customers, contracts, and asset customer/contract labels.
+- Add endpoints:
+  - `GET/POST /api/customers`
+  - `GET/PATCH /api/customers/<id>`
+  - `GET/POST /api/contracts`
+  - `GET/PATCH /api/contracts/<id>`
+  - extend `POST/PATCH /api/assets` for `customer_id` and `contract_id`
+- Validate required customer name, existing customer for contracts, optional date order, positive SLA hours, contract status, and contract/customer consistency on assets.
+
+Validation:
+
+- Focused tests for customer/contract CRUD, role access, migration creation, bad payload 400s, and asset linking.
+
+### Milestone 2 — Ticket/asset context, UI, and docs
+
+Goal: Operators can link lifts to customers/contracts and see that context without dashboard redesign.
+
+Work:
+
+- Extend `serialize_asset()` and `repository.serialize_ticket()` to include customer/contract IDs and labels derived through assets.
+- Add a compact Customers/Contracts section in `templates/index.html` for list/create/update forms.
+- Add customer/contract selectors to the existing asset modal and show labels in the asset table.
+- Show customer/contract context in the ticket modal/list where the existing asset summary is already displayed.
+- Update `docs/RUNBOOK.md` with customer/contract meaning, creation/linking steps, ticket context behavior, import limitations, and MVP limits.
+
+Validation:
+
+- Focused customer/contract tests, asset tests, ticket smoke tests, import tests, full pytest suite, `git diff --check`, and `git status --short`.
+
+## End-of-plan change log
+
+- Change: Added Customers and Contracts Foundation PR ExecPlan.
+  Reason: The task spans database schema, backend APIs, asset/ticket serializers, UI, docs, and tests, so `AGENTS.md` requires an ExecPlan before coding.
+  Date/Author: 2026-05-24 / codex
+
+---
+
 # Emergency / High-Priority Ticket Workflow PR — ExecPlan
 
 ## Purpose / Big Picture

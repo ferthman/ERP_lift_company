@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, func, Text, Index, text
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, func, Text, Index, text, Date
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship, scoped_session
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash
@@ -80,6 +80,48 @@ class Ticket(Base):
     asset = relationship("Asset", back_populates="tickets")
 
 
+class Customer(Base):
+    __tablename__ = "customers"
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    contact_person = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+    is_active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    contracts = relationship("Contract", back_populates="customer")
+    assets = relationship("Asset", back_populates="customer")
+
+
+class Contract(Base):
+    __tablename__ = "contracts"
+    id = Column(Integer, primary_key=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    contract_number = Column(String, nullable=True)
+    title = Column(String, nullable=False)
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
+    status = Column(String, nullable=False, default="active")
+    sla_hours_normal = Column(Float, nullable=True)
+    sla_hours_high = Column(Float, nullable=True)
+    sla_hours_emergency = Column(Float, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    customer = relationship("Customer", back_populates="contracts")
+    assets = relationship("Asset", back_populates="contract")
+
+
 class Asset(Base):
     __tablename__ = "assets"
     id = Column(Integer, primary_key=True)
@@ -88,7 +130,8 @@ class Asset(Base):
     entrance = Column(String, nullable=True)
     lift_label = Column(String, nullable=True)
     serial_no = Column(String, nullable=True, unique=True)
-    customer_id = Column(Integer, nullable=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
+    contract_id = Column(Integer, ForeignKey("contracts.id"), nullable=True)
     lat = Column(Float, nullable=True)
     lon = Column(Float, nullable=True)
     status = Column(String, nullable=False, default="ACTIVE")
@@ -99,6 +142,8 @@ class Asset(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
     tickets = relationship("Ticket", back_populates="asset")
+    customer = relationship("Customer", back_populates="assets")
+    contract = relationship("Contract", back_populates="assets")
 
 
 class Attachment(Base):
@@ -146,6 +191,8 @@ Index("idx_assets_serial_no", Asset.serial_no)
 Index("idx_assets_address", Asset.address)
 Index("idx_assets_address_norm", Asset.address_norm)
 Index("idx_assets_lat_lon", Asset.lat, Asset.lon)
+Index("idx_assets_customer_id", Asset.customer_id)
+Index("idx_assets_contract_id", Asset.contract_id)
 Index(
     "ux_users_master_id",
     User.master_id,
@@ -303,6 +350,45 @@ def ensure_migrations():
             if "version" in tcols:
                 cur.execute("UPDATE tickets SET version = 1 WHERE version IS NULL")
                 conn.commit()
+        if not _table_exists(cur, "customers"):
+            cur.execute(
+                """
+                CREATE TABLE customers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    contact_person TEXT NULL,
+                    phone TEXT NULL,
+                    email TEXT NULL,
+                    notes TEXT NULL,
+                    is_active INTEGER DEFAULT 1,
+                    created_at DATETIME,
+                    updated_at DATETIME
+                )
+                """
+            )
+            conn.commit()
+        if not _table_exists(cur, "contracts"):
+            cur.execute(
+                """
+                CREATE TABLE contracts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    customer_id INTEGER NOT NULL,
+                    contract_number TEXT NULL,
+                    title TEXT NOT NULL,
+                    start_date DATE NULL,
+                    end_date DATE NULL,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    sla_hours_normal REAL NULL,
+                    sla_hours_high REAL NULL,
+                    sla_hours_emergency REAL NULL,
+                    notes TEXT NULL,
+                    created_at DATETIME,
+                    updated_at DATETIME,
+                    FOREIGN KEY(customer_id) REFERENCES customers(id)
+                )
+                """
+            )
+            conn.commit()
         if not _table_exists(cur, "assets"):
             cur.execute(
                 """
@@ -314,6 +400,7 @@ def ensure_migrations():
                     lift_label TEXT NULL,
                     serial_no TEXT NULL UNIQUE,
                     customer_id INTEGER NULL,
+                    contract_id INTEGER NULL,
                     lat REAL NULL,
                     lon REAL NULL,
                     status TEXT NOT NULL DEFAULT 'ACTIVE',
@@ -328,6 +415,12 @@ def ensure_migrations():
             acols = [r[1] for r in cur.fetchall()]
             if "address_norm" not in acols:
                 cur.execute("ALTER TABLE assets ADD COLUMN address_norm TEXT")
+                conn.commit()
+            if "customer_id" not in acols:
+                cur.execute("ALTER TABLE assets ADD COLUMN customer_id INTEGER")
+                conn.commit()
+            if "contract_id" not in acols:
+                cur.execute("ALTER TABLE assets ADD COLUMN contract_id INTEGER")
                 conn.commit()
         if _table_exists(cur, "assets"):
             try:
@@ -350,6 +443,8 @@ def ensure_migrations():
             cur.execute("CREATE INDEX IF NOT EXISTS idx_assets_address ON assets (address)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_assets_address_norm ON assets (address_norm)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_assets_lat_lon ON assets (lat, lon)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_assets_customer_id ON assets (customer_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_assets_contract_id ON assets (contract_id)")
         if not _table_exists(cur, "ticket_comments"):
             cur.execute(
                 """

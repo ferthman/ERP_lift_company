@@ -233,6 +233,59 @@
           <button type="submit" class="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm md:shrink-0">Импорт</button>
         </form>
         <div id="assets-import-result" class="mt-3 text-sm"></div>
+        <div class="mt-5 grid gap-4 lg:grid-cols-2">
+          <div class="rounded-xl border border-slate-200 p-3">
+            <div class="flex items-center justify-between gap-2">
+              <h3 class="font-semibold text-sm">Клиенты</h3>
+              <button id="btn-customers-refresh" type="button" class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200">Обновить</button>
+            </div>
+            <form id="customer-form" class="mt-3 grid gap-2 md:grid-cols-2">
+              <input type="hidden" name="customer_id">
+              <input name="name" required placeholder="Название клиента *" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm md:col-span-2">
+              <input name="contact_person" placeholder="Контакт" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
+              <input name="phone" placeholder="Телефон" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
+              <input name="email" placeholder="Email" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
+              <select name="is_active" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
+                <option value="true">Активен</option>
+                <option value="false">Неактивен</option>
+              </select>
+              <textarea name="notes" rows="2" placeholder="Заметки" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm md:col-span-2"></textarea>
+              <div class="md:col-span-2 flex items-center justify-between gap-2">
+                <span id="customer-form-msg" class="text-xs text-slate-500"></span>
+                <button class="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm">Сохранить клиента</button>
+              </div>
+            </form>
+            <div id="customers-table" class="mt-3 overflow-x-auto text-sm"></div>
+          </div>
+          <div class="rounded-xl border border-slate-200 p-3">
+            <div class="flex items-center justify-between gap-2">
+              <h3 class="font-semibold text-sm">Договоры</h3>
+              <button id="btn-contracts-refresh" type="button" class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200">Обновить</button>
+            </div>
+            <form id="contract-form" class="mt-3 grid gap-2 md:grid-cols-2">
+              <input type="hidden" name="contract_id">
+              <select name="customer_id" required class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm md:col-span-2"></select>
+              <input name="contract_number" placeholder="Номер договора" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
+              <input name="title" required placeholder="Название договора *" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
+              <input name="start_date" type="date" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
+              <input name="end_date" type="date" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
+              <select name="status" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
+                <option value="active">active</option>
+                <option value="paused">paused</option>
+                <option value="expired">expired</option>
+              </select>
+              <input name="sla_hours_normal" type="number" min="0" step="0.1" placeholder="SLA normal, ч" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
+              <input name="sla_hours_high" type="number" min="0" step="0.1" placeholder="SLA high, ч" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
+              <input name="sla_hours_emergency" type="number" min="0" step="0.1" placeholder="SLA emergency, ч" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
+              <textarea name="notes" rows="2" placeholder="Заметки" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm md:col-span-2"></textarea>
+              <div class="md:col-span-2 flex items-center justify-between gap-2">
+                <span id="contract-form-msg" class="text-xs text-slate-500"></span>
+                <button class="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm">Сохранить договор</button>
+              </div>
+            </form>
+            <div id="contracts-table" class="mt-3 overflow-x-auto text-sm"></div>
+          </div>
+        </div>
         <div id="assets-table" class="mt-4 overflow-x-auto"></div>
       </div>
     </section>
@@ -487,6 +540,16 @@
               <option value="ACTIVE">ACTIVE</option>
               <option value="INACTIVE">INACTIVE</option>
             </select>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-slate-500">Клиент</label>
+            <select name="customer_id" class="w-full px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50"></select>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500">Договор</label>
+            <select name="contract_id" class="w-full px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50"></select>
           </div>
         </div>
         <div class="grid grid-cols-2 gap-3">
@@ -864,6 +927,14 @@
     const assetsImportForm = document.getElementById('assets-import-form');
     const assetsImportFile = document.getElementById('assets-import-file');
     const assetsImportResult = document.getElementById('assets-import-result');
+    const customersTable = document.getElementById('customers-table');
+    const contractsTable = document.getElementById('contracts-table');
+    const customerForm = document.getElementById('customer-form');
+    const contractForm = document.getElementById('contract-form');
+    const customerFormMsg = document.getElementById('customer-form-msg');
+    const contractFormMsg = document.getElementById('contract-form-msg');
+    const btnCustomersRefresh = document.getElementById('btn-customers-refresh');
+    const btnContractsRefresh = document.getElementById('btn-contracts-refresh');
     const assetModal = document.getElementById('asset-modal');
     const assetModalTitle = document.getElementById('asset-modal-title');
     const assetModalClose = document.getElementById('asset-modal-close');
@@ -879,6 +950,8 @@
     const filterMaster = document.getElementById('filter-master');
     const filterPriority = document.getElementById('filter-priority');
     let cancelTicketId = null;
+    let customersCache = [];
+    let contractsCache = [];
     const ticketFilters = {
       overdue: false,
       masterId: '',
@@ -918,7 +991,7 @@
     if (tabOps) tabOps.onclick = () => { loadKanban(); setTab('ops'); };
     if (tabSuper) tabSuper.onclick = () => { loadDashboard(); loadMetrics(); setTab('super'); };
     if (tabAccess) tabAccess.onclick = () => { loadUsers(); loadAccessMasters(); setAccessTab('users'); setTab('access'); };
-    if (tabAssets) tabAssets.onclick = () => { loadAssets(); setTab('assets'); };
+    if (tabAssets) tabAssets.onclick = () => { loadCustomersContracts(); loadAssets(); setTab('assets'); };
     if (tabObjects) tabObjects.onclick = () => { loadObjects(); setTab('objects'); };
 
     const loginState = document.getElementById('login-state');
@@ -1103,6 +1176,8 @@
         `<div><span class="text-slate-500">Статус:</span> ${getStatusLabel(ticket.status)}</div>`,
         `<div><span class="text-slate-500">Мастер:</span> ${escapeHtml(ticket.assigned_master_name ?? '—')}</div>`,
         `<div><span class="text-slate-500">Лифт:</span> ${escapeHtml(renderAssetSummary(ticket) || '—')}</div>`,
+        `<div><span class="text-slate-500">Клиент:</span> ${escapeHtml(ticket.customer_name ?? '—')}</div>`,
+        `<div><span class="text-slate-500">Договор:</span> ${escapeHtml(ticket.contract_title || ticket.contract_number || '—')}</div>`,
         `<div><span class="text-slate-500">Адрес:</span> ${escapeHtml(ticket.address ?? '—')}</div>`,
         `<div><span class="text-slate-500">Описание:</span> ${escapeHtml(ticket.description ?? '—')}</div>`,
         `<div><span class="text-slate-500">Приоритет:</span> ${renderPriorityBadge(ticket.priority)}</div>`,
@@ -1168,7 +1243,10 @@
       const label = ticket.asset_lift_label ? ticket.asset_lift_label : '(нет метки)';
       const main = `${serial} / ${label}`;
       const entrance = ticket.asset_entrance ? `Подъезд: ${ticket.asset_entrance}` : null;
-      return [main, entrance].filter(Boolean).join(' • ');
+      const customer = ticket.customer_name ? `Клиент: ${ticket.customer_name}` : null;
+      const contractLabel = ticket.contract_title || ticket.contract_number;
+      const contract = contractLabel ? `Договор: ${contractLabel}` : null;
+      return [main, entrance, customer, contract].filter(Boolean).join(' • ');
     }
 
     async function loadAssetSuggestions(query){
@@ -1533,6 +1611,182 @@
     }
 
     // Assets registry
+    function customerLabel(customer){
+      return customer ? `${customer.name}${customer.is_active ? '' : ' (неактивен)'}` : '';
+    }
+    function contractLabel(contract){
+      if(!contract) return '';
+      const num = contract.contract_number ? `${contract.contract_number} / ` : '';
+      return `${num}${contract.title}${contract.status ? ` (${contract.status})` : ''}`;
+    }
+    function populateCustomerSelect(select, selectedId = ''){
+      if(!select) return;
+      const selected = selectedId ? String(selectedId) : '';
+      select.innerHTML = '<option value="">Без клиента</option>' + customersCache.map(c => {
+        const id = String(c.id);
+        return `<option value="${id}" ${id === selected ? 'selected' : ''}>${escapeHtml(customerLabel(c))}</option>`;
+      }).join('');
+    }
+    function populateContractSelect(select, selectedId = '', customerId = ''){
+      if(!select) return;
+      const selected = selectedId ? String(selectedId) : '';
+      const customer = customerId ? String(customerId) : '';
+      const visible = contractsCache.filter(c => !customer || String(c.customer_id) === customer);
+      select.innerHTML = '<option value="">Без договора</option>' + visible.map(c => {
+        const id = String(c.id);
+        return `<option value="${id}" ${id === selected ? 'selected' : ''}>${escapeHtml(contractLabel(c))}</option>`;
+      }).join('');
+    }
+    function populateAssetSelectors(asset = null){
+      if(!assetForm) return;
+      const customerSelect = assetForm.elements.customer_id;
+      const contractSelect = assetForm.elements.contract_id;
+      const selectedCustomer = asset?.customer_id || '';
+      const selectedContract = asset?.contract_id || '';
+      populateCustomerSelect(customerSelect, selectedCustomer);
+      populateContractSelect(contractSelect, selectedContract, selectedCustomer);
+      if(customerSelect && !customerSelect.dataset.boundContracts){
+        customerSelect.dataset.boundContracts = '1';
+        customerSelect.addEventListener('change', () => populateContractSelect(contractSelect, '', customerSelect.value));
+      }
+    }
+    function renderCustomersTable(){
+      if(!customersTable) return;
+      if(!customersCache.length){
+        customersTable.innerHTML = '<div class="text-xs text-slate-500">Клиенты не заведены.</div>';
+        return;
+      }
+      let html = '<table class="min-w-full text-xs"><thead><tr class="text-left border-b"><th class="py-1 px-2">ID</th><th class="py-1 px-2">Название</th><th class="py-1 px-2">Контакт</th><th class="py-1 px-2">Статус</th><th class="py-1 px-2"></th></tr></thead><tbody>';
+      customersCache.forEach(c => {
+        html += `<tr class="border-b last:border-none">
+          <td class="py-1 px-2 font-mono">${c.id}</td>
+          <td class="py-1 px-2">${escapeHtml(c.name || '—')}</td>
+          <td class="py-1 px-2">${escapeHtml([c.contact_person, c.phone].filter(Boolean).join(' / ') || '—')}</td>
+          <td class="py-1 px-2">${c.is_active ? 'active' : 'inactive'}</td>
+          <td class="py-1 px-2"><button type="button" data-edit-customer="${c.id}" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200">Редактировать</button></td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      customersTable.innerHTML = html;
+      customersTable.querySelectorAll('button[data-edit-customer]').forEach(btn => {
+        btn.onclick = () => {
+          const customer = customersCache.find(c => String(c.id) === btn.getAttribute('data-edit-customer'));
+          if(!customer || !customerForm) return;
+          customerForm.elements.customer_id.value = customer.id;
+          customerForm.elements.name.value = customer.name || '';
+          customerForm.elements.contact_person.value = customer.contact_person || '';
+          customerForm.elements.phone.value = customer.phone || '';
+          customerForm.elements.email.value = customer.email || '';
+          customerForm.elements.is_active.value = customer.is_active ? 'true' : 'false';
+          customerForm.elements.notes.value = customer.notes || '';
+          customerFormMsg.textContent = `Редактирование клиента #${customer.id}`;
+        };
+      });
+    }
+    function renderContractsTable(){
+      if(!contractsTable) return;
+      if(!contractsCache.length){
+        contractsTable.innerHTML = '<div class="text-xs text-slate-500">Договоры не заведены.</div>';
+        return;
+      }
+      let html = '<table class="min-w-full text-xs"><thead><tr class="text-left border-b"><th class="py-1 px-2">ID</th><th class="py-1 px-2">Договор</th><th class="py-1 px-2">Клиент</th><th class="py-1 px-2">Статус</th><th class="py-1 px-2"></th></tr></thead><tbody>';
+      contractsCache.forEach(c => {
+        html += `<tr class="border-b last:border-none">
+          <td class="py-1 px-2 font-mono">${c.id}</td>
+          <td class="py-1 px-2">${escapeHtml(contractLabel(c))}</td>
+          <td class="py-1 px-2">${escapeHtml(c.customer_name || '—')}</td>
+          <td class="py-1 px-2">${escapeHtml(c.status || 'active')}</td>
+          <td class="py-1 px-2"><button type="button" data-edit-contract="${c.id}" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200">Редактировать</button></td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      contractsTable.innerHTML = html;
+      contractsTable.querySelectorAll('button[data-edit-contract]').forEach(btn => {
+        btn.onclick = () => {
+          const contract = contractsCache.find(c => String(c.id) === btn.getAttribute('data-edit-contract'));
+          if(!contract || !contractForm) return;
+          contractForm.elements.contract_id.value = contract.id;
+          populateCustomerSelect(contractForm.elements.customer_id, contract.customer_id);
+          contractForm.elements.contract_number.value = contract.contract_number || '';
+          contractForm.elements.title.value = contract.title || '';
+          contractForm.elements.start_date.value = contract.start_date || '';
+          contractForm.elements.end_date.value = contract.end_date || '';
+          contractForm.elements.status.value = contract.status || 'active';
+          contractForm.elements.sla_hours_normal.value = contract.sla_hours_normal ?? '';
+          contractForm.elements.sla_hours_high.value = contract.sla_hours_high ?? '';
+          contractForm.elements.sla_hours_emergency.value = contract.sla_hours_emergency ?? '';
+          contractForm.elements.notes.value = contract.notes || '';
+          contractFormMsg.textContent = `Редактирование договора #${contract.id}`;
+        };
+      });
+    }
+    async function loadCustomersContracts(){
+      const [customersRes, contractsRes] = await Promise.all([
+        fetch('/api/customers', { cache: 'no-store' }),
+        fetch('/api/contracts', { cache: 'no-store' }),
+      ]);
+      if(customersRes.ok) customersCache = await customersRes.json();
+      if(contractsRes.ok) contractsCache = await contractsRes.json();
+      renderCustomersTable();
+      renderContractsTable();
+      if(contractForm) populateCustomerSelect(contractForm.elements.customer_id);
+      populateAssetSelectors(assetForm?.elements.asset_id?.value ? {customer_id: assetForm.elements.customer_id.value, contract_id: assetForm.elements.contract_id.value} : null);
+    }
+    if(btnCustomersRefresh) btnCustomersRefresh.onclick = () => loadCustomersContracts();
+    if(btnContractsRefresh) btnContractsRefresh.onclick = () => loadCustomersContracts();
+    if(customerForm){
+      customerForm.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(customerForm);
+        const body = Object.fromEntries(fd.entries());
+        const id = body.customer_id;
+        delete body.customer_id;
+        customerFormMsg.textContent = 'Сохраняю...';
+        const res = await fetch(id ? `/api/customers/${id}` : '/api/customers', {
+          method: id ? 'PATCH' : 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if(!res.ok){
+          customerFormMsg.textContent = extractErrorMessage(data, 'Ошибка сохранения');
+          return;
+        }
+        customerForm.reset();
+        customerForm.elements.customer_id.value = '';
+        customerFormMsg.textContent = 'Сохранено.';
+        await loadCustomersContracts();
+        await loadAssets();
+      });
+    }
+    if(contractForm){
+      contractForm.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(contractForm);
+        const body = Object.fromEntries(fd.entries());
+        const id = body.contract_id;
+        delete body.contract_id;
+        for(const key of ['start_date','end_date','sla_hours_normal','sla_hours_high','sla_hours_emergency']){
+          if(body[key] === '') delete body[key];
+        }
+        contractFormMsg.textContent = 'Сохраняю...';
+        const res = await fetch(id ? `/api/contracts/${id}` : '/api/contracts', {
+          method: id ? 'PATCH' : 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if(!res.ok){
+          contractFormMsg.textContent = extractErrorMessage(data, 'Ошибка сохранения');
+          return;
+        }
+        contractForm.reset();
+        contractForm.elements.contract_id.value = '';
+        contractFormMsg.textContent = 'Сохранено.';
+        await loadCustomersContracts();
+        await loadAssets();
+      });
+    }
     function closeAssetModal(){
       if(assetModal) assetModal.classList.remove('open');
     }
@@ -1546,6 +1800,7 @@
       assetFormMsg.textContent = '';
       assetIdInput.value = asset?.id || '';
       assetModalTitle.textContent = asset ? `Лифт #${asset.id}` : 'Новый лифт';
+      populateAssetSelectors(asset);
       if(asset){
         assetForm.elements.address.value = asset.address || '';
         assetForm.elements.entrance.value = asset.entrance || '';
@@ -1554,6 +1809,8 @@
         assetForm.elements.lat.value = asset.lat ?? '';
         assetForm.elements.lon.value = asset.lon ?? '';
         assetForm.elements.status.value = asset.status || 'ACTIVE';
+        assetForm.elements.customer_id.value = asset.customer_id || '';
+        populateContractSelect(assetForm.elements.contract_id, asset.contract_id || '', asset.customer_id || '');
       } else {
         assetForm.elements.status.value = 'ACTIVE';
       }
@@ -1570,7 +1827,7 @@
       const data = await res.json();
       const assets = Array.isArray(data) ? data : [];
       let html = '<table class="min-w-full text-sm"><thead><tr class="text-left border-b">' +
-        '<th class="py-2 px-2">ID</th><th class="py-2 px-2">Серийник</th><th class="py-2 px-2">Метка</th><th class="py-2 px-2">Адрес</th><th class="py-2 px-2">Подъезд</th><th class="py-2 px-2">Статус</th><th class="py-2 px-2">Действия</th>' +
+        '<th class="py-2 px-2">ID</th><th class="py-2 px-2">Серийник</th><th class="py-2 px-2">Метка</th><th class="py-2 px-2">Адрес</th><th class="py-2 px-2">Подъезд</th><th class="py-2 px-2">Клиент</th><th class="py-2 px-2">Договор</th><th class="py-2 px-2">Статус</th><th class="py-2 px-2">Действия</th>' +
         '</tr></thead><tbody>';
       assets.forEach(asset => {
         html += `<tr class="border-b last:border-none">
@@ -1579,6 +1836,8 @@
           <td class="py-2 px-2">${escapeHtml(asset.lift_label || '—')}</td>
           <td class="py-2 px-2">${escapeHtml(asset.address || '—')}</td>
           <td class="py-2 px-2">${escapeHtml(asset.entrance || '—')}</td>
+          <td class="py-2 px-2">${escapeHtml(asset.customer_name || '—')}</td>
+          <td class="py-2 px-2">${escapeHtml(asset.contract_title || asset.contract_number || '—')}</td>
           <td class="py-2 px-2">${escapeHtml(asset.status || 'ACTIVE')}</td>
           <td class="py-2 px-2">
             <div class="flex gap-2">
@@ -2420,8 +2679,10 @@
         }).addTo(objectsMap);
         const liftLabel = formatAssetLabel(obj);
         const entranceLine = obj.entrance ? `<div>Подъезд: ${escapeHtml(obj.entrance)}</div>` : '';
-        circle.bindPopup(`<b>${escapeHtml(liftLabel)}</b><br>${escapeHtml(obj.address ?? '')}${entranceLine}`);
-        const normalizedText = normalizeSearchText(`${obj.address ?? ''} ${obj.serial_no ?? ''} ${obj.lift_label ?? ''} ${obj.entrance ?? ''}`);
+        const customerLine = obj.customer_name ? `<div>Клиент: ${escapeHtml(obj.customer_name)}</div>` : '';
+        const contractLine = obj.contract_title ? `<div>Договор: ${escapeHtml(obj.contract_title)}</div>` : '';
+        circle.bindPopup(`<b>${escapeHtml(liftLabel)}</b><br>${escapeHtml(obj.address ?? '')}${entranceLine}${customerLine}${contractLine}`);
+        const normalizedText = normalizeSearchText(`${obj.address ?? ''} ${obj.serial_no ?? ''} ${obj.lift_label ?? ''} ${obj.entrance ?? ''} ${obj.customer_name ?? ''} ${obj.contract_title ?? ''}`);
         objectsMarkers.push({ marker: circle, data: obj, normalizedText, isVisible: true });
       });
       // Fit bounds to markers if any
@@ -2496,7 +2757,7 @@
       const params = new URLSearchParams(window.location.search);
       const tab = params.get('tab');
       if(!tab) return;
-      if(tab === 'assets'){ loadAssets(); setTab('assets'); return; }
+      if(tab === 'assets'){ loadCustomersContracts(); loadAssets(); setTab('assets'); return; }
       if(tab === 'objects'){ loadObjects(); setTab('objects'); return; }
       if(tab === 'ops'){ loadKanban(); setTab('ops'); return; }
       if(tab === 'super'){ loadDashboard(); loadMetrics(); setTab('super'); return; }
