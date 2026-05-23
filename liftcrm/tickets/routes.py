@@ -40,12 +40,55 @@ CLOSE_REASONS = [
     "OTHER",
 ]
 
-PRIORITY_VALUES = ["HIGH", "MEDIUM", "LOW"]
+PRIORITY_VALUES = ["EMERGENCY", "HIGH", "MEDIUM", "LOW"]
+PRIORITY_ALIASES = {
+    "EMERGENCY": "EMERGENCY",
+    "URGENT": "EMERGENCY",
+    "TRAPPED": "EMERGENCY",
+    "HIGH": "HIGH",
+    "NORMAL": "MEDIUM",
+    "MEDIUM": "MEDIUM",
+    "LOW": "LOW",
+}
+PRIORITY_RANK = {priority: rank for rank, priority in enumerate(PRIORITY_VALUES)}
+PRIORITY_SLA_DEFAULTS = {
+    "EMERGENCY": {"response": 5, "completion": 60},
+    "HIGH": {"response": 15, "completion": 90},
+}
 HISTORY_STATUSES = {"COMPLETED", "CANCELLED"}
 
 
 def _transition_error(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message}}), status
+
+
+def _normalize_priority(value, default="MEDIUM"):
+    raw = default if value in (None, "") else value
+    key = str(raw).strip().upper()
+    return PRIORITY_ALIASES.get(key)
+
+
+def _priority_sort_rank(ticket):
+    return PRIORITY_RANK.get(ticket.priority or "MEDIUM", PRIORITY_RANK["MEDIUM"])
+
+
+def _priority_sorted(tickets):
+    def sort_key(ticket):
+        created = to_utc(ticket.created_at)
+        created_ts = created.timestamp() if created else 0
+        return (_priority_sort_rank(ticket), -created_ts, -(ticket.id or 0))
+
+    return sorted(tickets, key=sort_key)
+
+
+def _apply_priority_sla_defaults(ticket, include_response=True, include_completion=True):
+    defaults = PRIORITY_SLA_DEFAULTS.get(ticket.priority or "MEDIUM")
+    if not defaults:
+        return
+    if include_response and ticket.custom_sla_response_minutes is None:
+        ticket.custom_sla_response_minutes = defaults["response"]
+    if include_completion and ticket.custom_sla_completion_minutes is None:
+        ticket.custom_sla_completion_minutes = defaults["completion"]
 
 
 @bp.get("/api/masters")
@@ -218,8 +261,8 @@ def list_tickets():
     master_id = request.args.get("master_id")
     priority = request.args.get("priority")
     if priority:
-        priority = str(priority).upper()
-        if priority not in PRIORITY_VALUES:
+        priority = _normalize_priority(priority, default=None)
+        if not priority:
             return jsonify({"error": "Invalid priority"}), 400
     if master_id:
         try:
@@ -247,7 +290,7 @@ def list_tickets():
             open_tickets = (
                 query.filter(Ticket.status.in_(open_statuses)).order_by(Ticket.created_at.desc()).all()
             )
-            tickets.extend(open_tickets)
+            tickets.extend(_priority_sorted(open_tickets))
             for status in closed_statuses:
                 if status == "COMPLETED":
                     closed_query = query.filter(Ticket.status == status).order_by(
@@ -260,6 +303,7 @@ def list_tickets():
                 tickets.extend(closed_query.limit(4).all())
         else:
             tickets = query.order_by(Ticket.created_at.desc()).all()
+            tickets = _priority_sorted(tickets)
         if overdue_only:
             filtered = []
             for t in tickets:
@@ -389,6 +433,7 @@ def tickets_history():
                     "object_name": ticket.object_name,
                     "address": ticket.address,
                     "status": ticket.status,
+                    "priority": ticket.priority or "MEDIUM",
                     "closed_at": closed_at.isoformat(),
                     "assigned_master_name": ticket.assigned_master.name if ticket.assigned_master else None,
                     "close_reason": ticket.close_reason,
@@ -482,6 +527,7 @@ def list_my_history():
                     "object_name": ticket.object_name,
                     "address": ticket.address,
                     "status": ticket.status,
+                    "priority": ticket.priority or "MEDIUM",
                     "closed_at": closed_at.isoformat(),
                     "updated_at": (to_utc(ticket.updated_at).isoformat() if ticket.updated_at else None),
                 }
@@ -608,8 +654,8 @@ def create_ticket():
             return jsonify({"error": "Invalid asset_id"}), 400
     if "object_name" not in data and not asset_id:
         return jsonify({"error": "Missing field: object_name"}), 400
-    priority = (data.get("priority") or "MEDIUM").upper()
-    if priority not in PRIORITY_VALUES:
+    priority = _normalize_priority(data.get("priority"))
+    if not priority:
         return jsonify({"error": "Invalid priority"}), 400
 
     def _parse_custom(val):
@@ -663,6 +709,7 @@ def create_ticket():
             custom_sla_completion_minutes=custom_comp,
             asset_id=asset.id if asset else None,
         )
+        _apply_priority_sla_defaults(t)
         if not asset and address:
             asset = upsert_asset_from_ticket(db, object_name, address, lat, lon)
             if asset:
@@ -697,7 +744,19 @@ def create_ticket():
         )
         db.commit()
         db.refresh(t)
-    return jsonify({"id": t.id, "assigned_master_id": t.assigned_master_id, "status": t.status}), 201
+    return (
+        jsonify(
+            {
+                "id": t.id,
+                "assigned_master_id": t.assigned_master_id,
+                "status": t.status,
+                "priority": t.priority or "MEDIUM",
+                "custom_sla_response_minutes": t.custom_sla_response_minutes,
+                "custom_sla_completion_minutes": t.custom_sla_completion_minutes,
+            }
+        ),
+        201,
+    )
 
 
 @bp.patch("/api/tickets/<int:ticket_id>")
@@ -719,8 +778,8 @@ def update_ticket(ticket_id):
 
     priority = data.get("priority")
     if priority is not None:
-        priority = str(priority).upper()
-        if priority not in PRIORITY_VALUES:
+        priority = _normalize_priority(priority, default=None)
+        if not priority:
             return jsonify({"error": "Invalid priority"}), 400
 
     custom_resp = _parse_custom(data.get("custom_sla_response_minutes"))
@@ -751,6 +810,12 @@ def update_ticket(ticket_id):
             t.custom_sla_completion_minutes = custom_comp
         if description is not None:
             t.description = description
+        if priority is not None:
+            _apply_priority_sla_defaults(
+                t,
+                include_response="custom_sla_response_minutes" not in data,
+                include_completion="custom_sla_completion_minutes" not in data,
+            )
         old, new = changed_fields(
             old_snapshot,
             t,
@@ -976,6 +1041,7 @@ def sync_events():
                             "id": ticket.id if ticket else ticket_id,
                             "status": ticket.status if ticket else None,
                             "version": ticket.version if ticket else None,
+                            "priority": ticket.priority if ticket else None,
                         },
                     )
                 )
@@ -1339,7 +1405,12 @@ def sync_events():
                         event_id,
                         True,
                         "OK",
-                        ticket={"id": ticket.id, "status": ticket.status, "version": ticket.version},
+                        ticket={
+                            "id": ticket.id,
+                            "status": ticket.status,
+                            "version": ticket.version,
+                            "priority": ticket.priority or "MEDIUM",
+                        },
                     )
                 )
             except Exception as exc:

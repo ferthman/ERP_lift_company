@@ -19,6 +19,18 @@ const STATUS_RU = {
   COMPLETED: "Завершена",
   CANCELLED: "Отменена",
 };
+const PRIORITY_RU = {
+  EMERGENCY: "Аварийная",
+  HIGH: "Высокая",
+  MEDIUM: "Обычная",
+  LOW: "Низкая",
+};
+const PRIORITY_STYLES = {
+  EMERGENCY: "bg-red-600 text-white",
+  HIGH: "bg-amber-100 text-amber-800",
+  MEDIUM: "bg-slate-200 text-slate-700",
+  LOW: "bg-slate-100 text-slate-500",
+};
 const EVENT_TYPE_RU = {
   TICKET_ACCEPT: "Принятие заявки",
   TICKET_IN_PROGRESS: "В работу",
@@ -94,6 +106,21 @@ function formatDate(value) {
 function getStatusLabel(status) {
   if (!status) return "—";
   return STATUS_RU[status] || status;
+}
+
+function normalizePriority(priority) {
+  return String(priority || "MEDIUM").toUpperCase();
+}
+
+function getPriorityLabel(priority) {
+  const key = normalizePriority(priority);
+  return PRIORITY_RU[key] || key;
+}
+
+function renderPriorityBadge(priority) {
+  const key = normalizePriority(priority);
+  const style = PRIORITY_STYLES[key] || PRIORITY_STYLES.MEDIUM;
+  return `<span class="text-xs font-semibold px-2 py-1 rounded-full ${style}">${escapeHtml(getPriorityLabel(key))}</span>`;
 }
 
 function escapeHtml(value) {
@@ -373,7 +400,9 @@ function updateTicketStatusBadge(ticket) {
     elements.ticketStatus.textContent = "—";
     return;
   }
-  elements.ticketStatus.textContent = `Статус: ${getStatusLabel(ticket.status)} · v${ticket.version || 1}`;
+  elements.ticketStatus.textContent = `Статус: ${getStatusLabel(ticket.status)} · ${getPriorityLabel(
+    ticket.priority
+  )} · v${ticket.version || 1}`;
 }
 
 function renderList() {
@@ -394,7 +423,10 @@ function renderList() {
           <div class="font-semibold">${escapeHtml(ticket.object_name || "Заявка")}</div>
           <div class="text-xs text-slate-500">${escapeHtml(ticket.address || "Адрес не указан")}</div>
         </div>
-        <span class="text-xs font-semibold bg-slate-200 text-slate-700 px-2 py-1 rounded-full">${getStatusLabel(ticket.status)}</span>
+        <span class="flex flex-col items-end gap-1">
+          <span class="text-xs font-semibold bg-slate-200 text-slate-700 px-2 py-1 rounded-full">${getStatusLabel(ticket.status)}</span>
+          ${renderPriorityBadge(ticket.priority)}
+        </span>
       </div>
       <div class="mt-2 text-xs text-slate-500">Обновлено: ${formatDate(ticket.updated_at)}</div>
     `;
@@ -547,6 +579,7 @@ function renderDetail(ticket) {
     <div class="space-y-2">
       <div><span class="font-semibold">Объект:</span> ${escapeHtml(ticket.object_name || "—")}</div>
       <div><span class="font-semibold">Адрес:</span> ${escapeHtml(ticket.address || "—")}</div>
+      <div><span class="font-semibold">Приоритет:</span> ${renderPriorityBadge(ticket.priority)}</div>
       ${mapButton}
       <div><span class="font-semibold">Описание:</span> ${escapeHtml(ticket.description || "—")}</div>
       <div class="text-xs text-slate-500">Назначено: ${ticket.assigned_at ? formatDate(ticket.assigned_at) : "—"}</div>
