@@ -6,6 +6,102 @@ Treat the reader as a complete beginner to this repository. The only context the
 
 ---
 
+# Asset/Lift Import Workflow PR — ExecPlan
+
+## Purpose / Big Picture
+
+Make the SQL-backed lift registry practical for a real elevator company by letting admin and dispatcher users import assets from CSV or Excel `.xlsx` files. Keep this PR focused on the existing assets area: no PWA/offline logic, no CSRF/CORS/session changes, no upload authorization changes, no backup/restore changes, no Postgres/Docker/deployment work, and no unrelated frontend/backend refactors.
+
+The import targets the existing `Asset` model fields only: `address`, `address_norm`, `entrance`, `lift_label`, `serial_no`, `lat`, `lon`, and `status`. `customer_id` exists in the database model but is not exposed in the current assets UI/export and will not be imported in this PR.
+
+## Progress
+
+- [x] (2026-05-23 18:13Z) Read `README.md`, `AGENTS.md`, `PLANS.md`, and `docs/RUNBOOK.md`.
+- [x] (2026-05-23 18:13Z) Inspect current asset implementation: `liftcrm/assets/routes.py`, `liftcrm/db.py`, `templates/index.html`, `templates/lift_detail.html`, `static/lift_detail.js`, `scripts/seed_assets_from_objects_xlsx.py`, and `tests/test_assets_api.py`.
+- [x] (2026-05-23 18:13Z) Verify existing behavior before adding import: assets already have CRUD, search, SQL-backed map usage, CSV/XLSX export, and a one-off `objects.xlsx` seed script; no admin/dispatcher upload import endpoint or UI exists.
+- [x] (2026-05-23 18:13Z) Create this focused import ExecPlan before coding.
+- [x] (2026-05-23 18:19Z) Implement backend parsing, validation, duplicate handling, and import endpoint.
+- [x] (2026-05-23 18:19Z) Add minimal assets-page upload/result UI.
+- [x] (2026-05-23 18:19Z) Update runbook import/export documentation.
+- [x] (2026-05-23 18:19Z) Add focused import tests.
+- [x] (2026-05-23 18:21Z) Run focused tests, full pytest suite, `git diff --check`, and `git status --short`.
+
+## Surprises & Discoveries
+
+- Observation: The working tree started on `codex/local-backup-restore`; `main` was behind `origin/main` by five commits. I fetched and fast-forwarded local `main` to `9558855` before creating `codex/asset-import-pr94`.
+  Evidence: `git fetch origin main`, `git pull --ff-only origin main`, and `git switch -c codex/asset-import-pr94`.
+- Observation: Existing asset export headers are `id`, `address`, `entrance`, `lift_label`, `serial_no`, `lat`, `lon`, `status`, `created_at`, and `updated_at`.
+  Evidence: `export_assets_xlsx()` and `export_assets_csv()` in `liftcrm/assets/routes.py`.
+- Observation: Existing role policy allows admin/dispatcher asset CRUD/export and blocks technicians through `@role_required("admin", "dispatcher")`.
+  Evidence: `create_asset()`, `update_asset()`, `delete_asset()`, and export routes in `liftcrm/assets/routes.py`.
+
+## Decision Log
+
+- Decision: Implement skip-existing duplicate handling, not update-existing.
+  Rationale: The current asset CRUD has minimal validation and the request prioritizes avoiding silent duplicates. Skipping existing rows is safer for a bulk import PR because it will not overwrite a live registry by accident.
+  Date/Author: 2026-05-23 / codex
+- Decision: Use `serial_no` as the strongest identity key, then fall back to normalized `(address, entrance, lift_label)` when all composite parts are available.
+  Rationale: `serial_no` already has a DB unique constraint, and the composite matches the practical fields visible in the UI without adding new schema constraints.
+  Date/Author: 2026-05-23 / codex
+- Decision: Add the import endpoint as `POST /api/assets/import` using multipart upload and in-memory parsing only.
+  Rationale: This keeps file handling small and avoids path traversal/permanent uploaded import files.
+  Date/Author: 2026-05-23 / codex
+
+## Outcomes & Retrospective
+
+- Outcome (2026-05-23): Added `POST /api/assets/import` for admin/dispatcher multipart CSV/XLSX imports. The endpoint parses files in memory, requires an address/object column, skips empty rows, validates coordinates/status, and returns `created`, `updated`, `skipped`, `skipped_duplicates`, `invalid`, and row-level `errors`.
+- Outcome (2026-05-23): Duplicate handling is skip-existing: `serial_no` is the strongest key; otherwise `(address, entrance, lift_label)` is used when all three values are present. Existing assets are not updated by import.
+- Outcome (2026-05-23): Added a small import control to the existing assets registry page and documented file format, aliases, examples, duplicate behavior, verification, and backup recommendation in `docs/RUNBOOK.md`.
+- Validation (2026-05-23): `venv/bin/python -m pytest tests/test_assets_api.py -q` passed (`15 passed in 1.47s`).
+- Validation (2026-05-23): `venv/bin/python -m pytest -q` passed (`119 passed in 16.75s`).
+- Validation (2026-05-23): `git diff --check` passed with no output.
+- Validation (2026-05-23): `git status --short` showed only intended files: `PLANS.md`, `docs/RUNBOOK.md`, `liftcrm/assets/routes.py`, `templates/index.html`, and `tests/test_assets_api.py`.
+
+## Plan of Work
+
+### Milestone 1 — Backend import workflow
+
+Goal: Admin/dispatcher users can submit `.csv` or `.xlsx` files and receive a structured import result without bad files crashing the app.
+
+Work:
+
+- Add import parsing helpers in `liftcrm/assets/routes.py` or a small assets-local helper module if the route file becomes too dense.
+- Accept multipart field `file`, enforce extension allow-list `.csv` and `.xlsx`, and rely on the app-level `MAX_CONTENT_LENGTH` for the existing 16 MB upload cap.
+- Parse CSV with `csv.DictReader` from memory and XLSX with `openpyxl.load_workbook(..., read_only=True, data_only=True)` from memory.
+- Support aliases for `address`, `entrance`, `lift_label`, `serial_no`, `lat`, `lon`, and `status`.
+- Skip fully empty rows.
+- Validate required `address`; validate `lat`/`lon` as numbers when present; accept only `ACTIVE` or `INACTIVE` status, defaulting to `ACTIVE`.
+- Use skip-existing duplicate behavior by `serial_no` first, then normalized `(address, entrance, lift_label)` when all three exist.
+- Return JSON with `created`, `updated`, `skipped`, `invalid`, and row-level `errors`.
+
+Validation:
+
+- Focused tests for valid CSV, valid XLSX, roles, bad file type, invalid coordinates, duplicate skipping, row-level errors, and result counts.
+
+### Milestone 2 — Minimal UI and docs
+
+Goal: The existing assets page exposes the import workflow without redesigning the registry.
+
+Work:
+
+- Add a compact file input and import button in the existing assets section of `templates/index.html`.
+- POST selected files to `/api/assets/import` using `FormData`.
+- Render created/skipped/invalid counts and row-level errors in the assets area.
+- Refresh the asset table and map after a successful import.
+- Update `docs/RUNBOOK.md` with supported format, aliases, examples, duplicate behavior, verification steps, and a recommendation to run a local backup before large imports.
+
+Validation:
+
+- Static/browser-level behavior is covered through route tests plus source inspection; run full pytest and `git diff --check`.
+
+## End-of-plan change log
+
+- Change: Added Asset/Lift Import Workflow PR ExecPlan.
+  Reason: The task spans backend, frontend, docs, and tests, so `AGENTS.md` requires an ExecPlan before coding.
+  Date/Author: 2026-05-23 / codex
+
+---
+
 # Local Backup/Restore Tooling PR — ExecPlan
 
 ## Purpose / Big Picture

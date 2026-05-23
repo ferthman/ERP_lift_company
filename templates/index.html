@@ -226,6 +226,11 @@
             <input id="assets-search" placeholder="Поиск по адресу, серийному номеру, метке, подъезду" class="w-full px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50">
           </div>
         </div>
+        <form id="assets-import-form" class="mt-3 flex flex-col gap-2 md:flex-row md:items-center">
+          <input id="assets-import-file" name="file" type="file" accept=".csv,.xlsx" class="block w-full text-sm text-slate-600 file:mr-3 file:px-3 file:py-2 file:rounded-xl file:border-0 file:bg-slate-100 file:text-slate-700">
+          <button type="submit" class="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm md:shrink-0">Импорт</button>
+        </form>
+        <div id="assets-import-result" class="mt-3 text-sm"></div>
         <div id="assets-table" class="mt-4 overflow-x-auto"></div>
       </div>
     </section>
@@ -853,6 +858,9 @@
     const btnAssetsNew = document.getElementById('btn-assets-new');
     const btnAssetsExportXlsx = document.getElementById('btn-assets-export-xlsx');
     const btnAssetsExportCsv = document.getElementById('btn-assets-export-csv');
+    const assetsImportForm = document.getElementById('assets-import-form');
+    const assetsImportFile = document.getElementById('assets-import-file');
+    const assetsImportResult = document.getElementById('assets-import-result');
     const assetModal = document.getElementById('asset-modal');
     const assetModalTitle = document.getElementById('asset-modal-title');
     const assetModalClose = document.getElementById('asset-modal-close');
@@ -1600,6 +1608,49 @@
     }
     if(btnAssetsExportCsv){
       btnAssetsExportCsv.onclick = () => { window.open('/api/assets/export.csv', '_blank'); };
+    }
+    function renderAssetImportResult(data, ok){
+      if(!assetsImportResult) return;
+      if(!ok){
+        assetsImportResult.innerHTML = `<div class="text-red-700">${escapeHtml(extractErrorMessage(data, 'Ошибка импорта'))}</div>`;
+        return;
+      }
+      const errors = Array.isArray(data.errors) ? data.errors : [];
+      const summary = `Создано: ${data.created || 0}, обновлено: ${data.updated || 0}, пропущено: ${data.skipped || 0}, ошибок: ${data.invalid || 0}`;
+      let html = `<div class="text-slate-700">${escapeHtml(summary)}</div>`;
+      if(errors.length){
+        html += '<ul class="mt-2 space-y-1 text-red-700">';
+        errors.slice(0, 20).forEach(err => {
+          const row = err.row ? `Строка ${err.row}` : 'Строка';
+          const field = err.field ? `, ${err.field}` : '';
+          html += `<li>${escapeHtml(`${row}${field}: ${err.message || 'Ошибка'}`)}</li>`;
+        });
+        if(errors.length > 20){
+          html += `<li>${escapeHtml(`Показаны первые 20 ошибок из ${errors.length}`)}</li>`;
+        }
+        html += '</ul>';
+      }
+      assetsImportResult.innerHTML = html;
+    }
+    if(assetsImportForm){
+      assetsImportForm.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        if(!assetsImportFile?.files?.length){
+          renderAssetImportResult({error: 'Выберите CSV или XLSX файл'}, false);
+          return;
+        }
+        const fd = new FormData();
+        fd.append('file', assetsImportFile.files[0]);
+        assetsImportResult.textContent = 'Импортирую...';
+        const res = await fetch('/api/assets/import', { method: 'POST', body: fd });
+        const data = await res.json();
+        renderAssetImportResult(data, res.ok);
+        if(res.ok){
+          assetsImportFile.value = '';
+          loadAssets();
+          if(!viewObjects.classList.contains('hidden')) loadObjects();
+        }
+      });
     }
     if(assetForm){
       assetForm.addEventListener('submit', async (ev) => {

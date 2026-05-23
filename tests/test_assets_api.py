@@ -1,8 +1,11 @@
+import io
 import unittest
 from uuid import uuid4
 
+from werkzeug.security import generate_password_hash
+
 from liftcrm import create_app, config
-from liftcrm.db import SessionLocal, Asset, Ticket
+from liftcrm.db import SessionLocal, Asset, Ticket, User, Master
 from liftcrm.utils.rate_limit import clear_rate_limits
 
 
@@ -22,6 +25,48 @@ class AssetsApiTest(unittest.TestCase):
         res = self.client.post("/api/login", json={"username": username, "password": password})
         self.assertEqual(res.status_code, 200)
         return res
+
+    def post_import(self, content, filename):
+        return self.client.post(
+            "/api/assets/import",
+            data={"file": (io.BytesIO(content), filename)},
+            content_type="multipart/form-data",
+        )
+
+    def make_csv(self, rows):
+        lines = ["address,entrance,lift_label,serial_no,lat,lon,status"]
+        lines.extend(rows)
+        return ("\n".join(lines) + "\n").encode("utf-8")
+
+    def make_xlsx(self, rows):
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["объект", "подъезд", "лифт", "заводской номер", "широта", "долгота", "статус"])
+        for row in rows:
+            ws.append(row)
+        buf = io.BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+
+    def create_technician_user(self):
+        username = f"tech-{uuid4().hex[:8]}"
+        password = "tech-pass"
+        with SessionLocal() as db:
+            master = Master(name=f"Tech {uuid4().hex[:6]}", is_active=1)
+            db.add(master)
+            db.flush()
+            user = User(
+                username=username,
+                password_hash=generate_password_hash(password),
+                role="technician",
+                master_id=master.id,
+                is_active=1,
+            )
+            db.add(user)
+            db.commit()
+        return username, password
 
     def test_assets_crud_and_search(self):
         serial_no = f"SN-{uuid4().hex[:8]}"
@@ -138,3 +183,133 @@ class AssetsApiTest(unittest.TestCase):
             ticket = db.get(Ticket, ticket_id)
             self.assertEqual(ticket.asset_id, asset_id)
         self.assertEqual(before_count, after_count)
+
+    def test_admin_can_import_valid_csv(self):
+        token = uuid4().hex[:8]
+        res = self.post_import(
+            self.make_csv([f"Алматы CSV {token},1,A,{token}-CSV,43.21,76.89,ACTIVE"]),
+            "assets.csv",
+        )
+        self.assertEqual(res.status_code, 200)
+        payload = res.get_json()
+        self.assertEqual(payload["created"], 1)
+        self.assertEqual(payload["updated"], 0)
+        self.assertEqual(payload["skipped"], 0)
+        self.assertEqual(payload["invalid"], 0)
+        with SessionLocal() as db:
+            asset = db.query(Asset).filter_by(serial_no=f"{token}-CSV").first()
+            self.assertIsNotNone(asset)
+            self.assertEqual(asset.address, f"Алматы CSV {token}")
+
+    def test_admin_can_import_valid_xlsx(self):
+        token = uuid4().hex[:8]
+        res = self.post_import(
+            self.make_xlsx([[f"Алматы XLSX {token}", "2", "B", f"{token}-XLSX", 43.22, 76.90, "INACTIVE"]]),
+            "assets.xlsx",
+        )
+        self.assertEqual(res.status_code, 200)
+        payload = res.get_json()
+        self.assertEqual(payload["created"], 1)
+        self.assertEqual(payload["invalid"], 0)
+        with SessionLocal() as db:
+            asset = db.query(Asset).filter_by(serial_no=f"{token}-XLSX").first()
+            self.assertIsNotNone(asset)
+            self.assertEqual(asset.status, "INACTIVE")
+
+    def test_dispatcher_can_import_assets(self):
+        self.client.post("/api/logout")
+        self.login(config.DISPATCHER_USERNAME, config.DISPATCHER_PASSWORD)
+        token = uuid4().hex[:8]
+        res = self.post_import(
+            self.make_csv([f"Алматы DISP {token},3,C,{token}-DISP,,,ACTIVE"]),
+            "dispatcher-assets.csv",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.get_json()["created"], 1)
+
+    def test_technician_cannot_import_assets(self):
+        username, password = self.create_technician_user()
+        self.client.post("/api/logout")
+        self.login(username, password)
+        res = self.post_import(
+            self.make_csv([f"Алматы TECH {uuid4().hex[:8]},1,A,{uuid4().hex[:8]},,,ACTIVE"]),
+            "technician-assets.csv",
+        )
+        self.assertEqual(res.status_code, 403)
+
+    def test_anonymous_cannot_import_assets(self):
+        client = self.app.test_client()
+        res = client.post(
+            "/api/assets/import",
+            data={"file": (io.BytesIO(self.make_csv(["Алматы Anonymous,1,A,ANON-1,,,ACTIVE"])), "assets.csv")},
+            content_type="multipart/form-data",
+        )
+        self.assertIn(res.status_code, {302, 401})
+
+    def test_invalid_file_type_is_rejected(self):
+        res = self.post_import(b"not an asset import", "assets.txt")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn(".csv or .xlsx", res.get_json()["error"]["message"])
+
+    def test_invalid_coordinates_are_reported(self):
+        token = uuid4().hex[:8]
+        res = self.post_import(
+            self.make_csv([f"Алматы BAD COORD {token},1,A,{token}-BAD,not-a-number,76.89,ACTIVE"]),
+            "assets.csv",
+        )
+        self.assertEqual(res.status_code, 200)
+        payload = res.get_json()
+        self.assertEqual(payload["created"], 0)
+        self.assertEqual(payload["invalid"], 1)
+        self.assertEqual(payload["errors"][0]["row"], 2)
+        self.assertEqual(payload["errors"][0]["field"], "lat")
+
+    def test_duplicate_rows_do_not_create_duplicate_assets(self):
+        token = uuid4().hex[:8]
+        content = self.make_csv(
+            [
+                f"Алматы DUP {token},1,A,{token}-DUP,43.21,76.89,ACTIVE",
+                f"Алматы DUP Changed {token},2,B,{token}-DUP,43.22,76.90,ACTIVE",
+            ]
+        )
+        res = self.post_import(content, "assets.csv")
+        self.assertEqual(res.status_code, 200)
+        payload = res.get_json()
+        self.assertEqual(payload["created"], 1)
+        self.assertEqual(payload["skipped_duplicates"], 1)
+        with SessionLocal() as db:
+            count = db.query(Asset).filter_by(serial_no=f"{token}-DUP").count()
+        self.assertEqual(count, 1)
+
+    def test_composite_duplicate_without_serial_is_skipped(self):
+        token = uuid4().hex[:8]
+        content = self.make_csv(
+            [
+                f"Алматы COMPOSITE {token},1,A,,43.21,76.89,ACTIVE",
+                f"Алматы COMPOSITE {token},1,A,,43.22,76.90,ACTIVE",
+            ]
+        )
+        res = self.post_import(content, "assets.csv")
+        self.assertEqual(res.status_code, 200)
+        payload = res.get_json()
+        self.assertEqual(payload["created"], 1)
+        self.assertEqual(payload["skipped_duplicates"], 1)
+
+    def test_row_level_errors_and_counts_are_returned(self):
+        token = uuid4().hex[:8]
+        content = self.make_csv(
+            [
+                f"Алматы VALID {token},1,A,{token}-VALID,43.21,76.89,ACTIVE",
+                f",2,B,{token}-NOADDRESS,43.22,76.90,ACTIVE",
+                f"Алматы BAD STATUS {token},3,C,{token}-BADSTATUS,43.23,76.91,BROKEN",
+            ]
+        )
+        res = self.post_import(content, "assets.csv")
+        self.assertEqual(res.status_code, 200)
+        payload = res.get_json()
+        self.assertEqual(payload["created"], 1)
+        self.assertEqual(payload["updated"], 0)
+        self.assertEqual(payload["skipped"], 0)
+        self.assertEqual(payload["invalid"], 2)
+        self.assertEqual(len(payload["errors"]), 2)
+        self.assertEqual({err["row"] for err in payload["errors"]}, {3, 4})
