@@ -137,8 +137,9 @@
               <input name="email" type="email" class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200" placeholder="client@example.com"></div>
             <div><label class="block text-sm">Приоритет</label>
               <select name="priority" class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200">
-                <option value="HIGH">Очень важно</option>
-                <option value="MEDIUM" selected>Нужно сделать</option>
+                <option value="EMERGENCY">Аварийная / срочная</option>
+                <option value="HIGH">Высокая</option>
+                <option value="MEDIUM" selected>Обычная</option>
                 <option value="LOW">Не срочно</option>
               </select>
             </div>
@@ -189,9 +190,10 @@
               <span class="text-xs text-slate-500">Приоритет</span>
               <select id="filter-priority" class="px-2 py-1 rounded-lg ring-1 ring-slate-200 bg-white text-sm min-w-[160px]">
                 <option value="">Все</option>
-                <option value="HIGH">HIGH</option>
-                <option value="MEDIUM">MEDIUM</option>
-                <option value="LOW">LOW</option>
+                <option value="EMERGENCY">Аварийная</option>
+                <option value="HIGH">Высокая</option>
+                <option value="MEDIUM">Обычная</option>
+                <option value="LOW">Низкая</option>
               </select>
             </div>
           </div>
@@ -678,14 +680,15 @@
       OTHER: 'Другое',
       UNSPECIFIED: 'Не указана',
     };
-    const PRIORITY_ORDER = ['HIGH','MEDIUM','LOW'];
-    const PRIORITY_LABELS = { HIGH: 'Очень важно', MEDIUM: 'Нужно сделать', LOW: 'Не срочно' };
+    const PRIORITY_ORDER = ['EMERGENCY','HIGH','MEDIUM','LOW'];
+    const PRIORITY_LABELS = { EMERGENCY: 'Аварийная', HIGH: 'Высокая', MEDIUM: 'Обычная', LOW: 'Низкая' };
     const PRIORITY_STYLES = {
-      HIGH: 'bg-red-50 text-red-700 ring-1 ring-red-200',
+      EMERGENCY: 'bg-red-600 text-white ring-1 ring-red-700',
+      HIGH: 'bg-amber-100 text-amber-800 ring-1 ring-amber-300',
       MEDIUM: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200',
       LOW: 'bg-slate-50 text-slate-500 ring-1 ring-slate-200'
     };
-    const PRIORITY_DOTS = { HIGH: 'bg-red-500', MEDIUM: 'bg-slate-400', LOW: 'bg-slate-300' };
+    const PRIORITY_DOTS = { EMERGENCY: 'bg-white', HIGH: 'bg-amber-500', MEDIUM: 'bg-slate-400', LOW: 'bg-slate-300' };
     const ROLE_LABELS = {
       {% if user_role == 'admin' %}
       admin: 'Админ',
@@ -1102,7 +1105,7 @@
         `<div><span class="text-slate-500">Лифт:</span> ${escapeHtml(renderAssetSummary(ticket) || '—')}</div>`,
         `<div><span class="text-slate-500">Адрес:</span> ${escapeHtml(ticket.address ?? '—')}</div>`,
         `<div><span class="text-slate-500">Описание:</span> ${escapeHtml(ticket.description ?? '—')}</div>`,
-        `<div><span class="text-slate-500">Приоритет:</span> ${escapeHtml(ticket.priority ?? 'MEDIUM')}</div>`,
+        `<div><span class="text-slate-500">Приоритет:</span> ${renderPriorityBadge(ticket.priority)}</div>`,
         `<div><span class="text-slate-500">SLA:</span> ${renderSla(ticket)}</div>`,
       ];
       ticketModalBody.innerHTML = `
@@ -1413,6 +1416,7 @@
           : '';
         const files=t.attachments?.map(a=>`<a class="underline" href="${escapeHtml(a.url)}" target="_blank">${escapeHtml(a.name)}</a>`).join(', ')||'—';
         const priorityBadge = renderPriorityBadge(t.priority);
+        const emergencyRowClass = normalizePriority(t.priority) === 'EMERGENCY' ? 'bg-red-50/80' : '';
         const prioritySelect = canEditPriority ? `<select data-edit-priority="${t.id}" class="px-2 py-1 text-xs rounded-lg ring-1 ring-slate-200 bg-white">${renderPriorityOptions(t.priority)}</select>` : '';
         const priorityCell = canEditPriority ? `<div class="flex items-center gap-2">${priorityBadge}${prioritySelect}</div>` : priorityBadge;
         const unassignedTimer = `<span class="font-mono text-xs" data-unassigned-timer data-created-at="${t.created_at ?? ''}" data-assigned-at="${t.assigned_at ?? ''}" data-updated-at="${t.updated_at ?? ''}" data-assigned="${t.assigned_master_id ? '1' : '0'}">—</span>`;
@@ -1426,7 +1430,7 @@
           <button data-save-sla="${t.id}" class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white">Сохранить</button>
           <p class="text-[10px] text-slate-500">Overrides default SLA if set</p>
         </div>` : '';
-        html+=`<tr class="border-b last:border-none"><td class="py-2 px-2 font-mono">${t.id}</td>
+        html+=`<tr class="border-b last:border-none ${emergencyRowClass}"><td class="py-2 px-2 font-mono">${t.id}</td>
         <td class="py-2 px-2">${escapeHtml(t.object_name ?? '')}<div class="text-xs text-slate-500">${escapeHtml(t.description ?? '')}</div></td>
         <td class="py-2 px-2 text-xs">${escapeHtml(renderAssetSummary(t) || '—')}</td>
         <td class="py-2 px-2">${escapeHtml(t.address ?? '')}</td><td class="py-2 px-2"><button class="underline" onclick="openMap(${t.lat},${t.lon})">${coords}</button>${mapButton}</td>
@@ -1783,7 +1787,8 @@
         const slaBlock = slaInfo ? `<div class="text-[11px] mt-1">${slaInfo}</div>` : '';
         const reasonLine = t.close_reason ? `<div class="text-[11px] text-slate-600 mt-1">Причина: ${escapeHtml(formatCloseReason(t.close_reason))}</div>` : '';
         const priorityBadge = renderPriorityBadge(t.priority);
-        const card=document.createElement('div'); card.className='kanban-card p-3 rounded-xl ring-1 ring-slate-200 bg-white';
+        const isEmergency = normalizePriority(t.priority) === 'EMERGENCY';
+        const card=document.createElement('div'); card.className=`kanban-card p-3 rounded-xl ring-1 ${isEmergency ? 'ring-red-300 bg-red-50' : 'ring-slate-200 bg-white'}`;
         card.innerHTML=`<div class="flex items-center justify-between"><div class="font-semibold">#${t.id} — ${escapeHtml(t.object_name ?? '')}</div><div class="flex items-center gap-2 text-xs">${priorityBadge}${escapeHtml(t.assigned_master_name ?? '—')}</div></div>
         <div class="text-xs text-slate-500 mt-1">Лифт: ${escapeHtml(renderAssetSummary(t) || '—')}</div>
         <div class="text-xs text-slate-600 mt-1">${escapeHtml(t.description ?? '')}</div>

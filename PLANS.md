@@ -6,6 +6,105 @@ Treat the reader as a complete beginner to this repository. The only context the
 
 ---
 
+# Emergency / High-Priority Ticket Workflow PR — ExecPlan
+
+## Purpose / Big Picture
+
+Make the existing ticket workflow safer for real elevator service operations by clearly representing emergency and high-priority tickets. Dispatchers and admins must be able to create and edit emergency tickets, technicians must see emergency tickets clearly on `/mobile`, and APIs/docs/tests must preserve existing `HIGH` / `MEDIUM` / `LOW` compatibility while adding an explicit emergency path.
+
+This PR is intentionally small: no PWA/offline storage changes, no CSRF/CORS/session changes, no upload authorization changes, no backup/restore changes, no asset import changes, no Postgres/Docker/deployment work, and no unrelated frontend/backend refactors.
+
+## Progress
+
+- [x] (2026-05-23 18:23Z) Read `README.md`, `AGENTS.md`, `PLANS.md`, and `docs/RUNBOOK.md`.
+- [x] (2026-05-23 18:23Z) Inspect ticket model/workflow in `liftcrm/db.py`, `liftcrm/tickets/routes.py`, `liftcrm/tickets/service.py`, `liftcrm/tickets/repository.py`, `templates/index.html`, `static/mobile.js`, and existing ticket/status/SLA/mobile tests.
+- [x] (2026-05-23 18:23Z) Verify existing behavior: `Ticket.priority` exists as a string defaulting to `MEDIUM`; `PRIORITY_VALUES` are `HIGH`, `MEDIUM`, `LOW`; create/update validate priorities; `/api/tickets`, `/api/me/tickets`, `/api/tickets/{id}`, archive export, filters, metrics, and audit logging already include priority in some form; UI/mobile show priority inconsistently and do not have an emergency value.
+- [x] (2026-05-23 18:23Z) Create this focused emergency-priority ExecPlan before coding.
+- [x] (2026-05-23 18:28Z) Implement priority normalization, emergency/high sorting, SLA defaults, API/history/mobile payload consistency, and audit coverage.
+- [x] (2026-05-23 18:28Z) Add minimal dispatcher/admin and technician UI emphasis.
+- [x] (2026-05-23 18:28Z) Update runbook emergency operating guidance.
+- [x] (2026-05-23 18:28Z) Add focused regression tests.
+- [x] (2026-05-23 18:28Z) Run focused tests, full pytest suite, `git diff --check`, and `git status --short`.
+
+## Surprises & Discoveries
+
+- Observation: The checkout started on `codex/asset-import-pr94`; local `main` was at `9558855` and `origin/main` had advanced to `32841a0`.
+  Evidence: `git fetch origin main` followed by `git pull --ff-only origin main` fast-forwarded local `main` and brought in the asset import PR files.
+- Observation: The existing project already has priority UI, priority filter, metrics by priority, `priority` in archive export, and `EDIT` audit logging for priority changes.
+  Evidence: `PRIORITY_VALUES` in `liftcrm/tickets/routes.py`, `serialize_ticket()` in `liftcrm/tickets/repository.py`, `archive_ticket()` in `liftcrm/tickets/service.py`, and priority controls in `templates/index.html`.
+- Observation: Existing priorities are operationally vague for emergencies: `HIGH` is labeled "Очень важно", `MEDIUM` is default, and `LOW` is legacy-compatible. There is no explicit trapped-passenger/safety/emergency value.
+  Evidence: `docs/RUNBOOK.md` "Приоритеты заявок" section and the create form priority select in `templates/index.html`.
+- Observation: The existing mobile payload already came from `repository.serialize_ticket()`, so `/api/me/tickets` already included `priority`; the mobile UI simply did not emphasize it.
+  Evidence: `list_my_tickets()` returns `repository.serialize_ticket(t)` in `liftcrm/tickets/routes.py`.
+
+## Decision Log
+
+- Decision: Add `EMERGENCY` as a new stored priority value and keep accepting existing `HIGH`, `MEDIUM`, and `LOW` values.
+  Rationale: The model already has a string `Ticket.priority`, so a new table or schema migration is unnecessary. Preserving legacy values avoids breaking existing data, metrics, filters, and tests.
+  Date/Author: 2026-05-23 / codex
+- Decision: Accept lowercase/business aliases (`emergency`, `urgent`, `normal`, `medium`, `low`) at API boundaries, normalize them to stored uppercase values, and keep `normal` mapped to existing `MEDIUM`.
+  Rationale: The requested clear values are useful for API callers, while existing UI/data compatibility depends on `MEDIUM` remaining the default normal priority.
+  Date/Author: 2026-05-23 / codex
+- Decision: Apply shorter default SLA overrides for `EMERGENCY` and `HIGH` only when the dispatcher/admin has not provided custom SLA fields.
+  Rationale: Existing per-ticket SLA columns support this without an escalation engine. Explicit dispatcher values should win.
+  Date/Author: 2026-05-23 / codex
+
+## Outcomes & Retrospective
+
+- Outcome (2026-05-23): Added `EMERGENCY` as a stored priority while preserving `HIGH`, `MEDIUM`, and `LOW`. API create/update/filter paths accept aliases including `emergency`, `urgent`, `high`, `normal`, `medium`, and `low`; invalid values still return 400.
+- Outcome (2026-05-23): Active `/api/tickets` lists and kanban open-ticket payloads are priority-sorted, with `EMERGENCY` before `HIGH`, then normal/low tickets. Ops and technician history list payloads now include `priority`; sync-event result ticket snippets keep priority so mobile caches do not lose it after status sync.
+- Outcome (2026-05-23): Emergency create/update applies default per-ticket SLA overrides of 5/60 minutes when no custom SLA is present; high priority applies 15/90 minutes. Dispatcher-provided custom SLA values remain authoritative.
+- Outcome (2026-05-23): Desktop create form, filters, badges, table rows, ticket modal, and kanban cards now show emergency/high/normal/low labels. `/mobile` ticket list/detail/status now shows priority badges without changing offline queue or sync logic.
+- Outcome (2026-05-23): `docs/RUNBOOK.md` now documents emergency/high priority meanings, dispatcher response steps, verification steps, and current limitations.
+- Validation (2026-05-23): `venv/bin/python -m pytest tests/test_emergency_priority.py -q` passed (`8 passed in 1.42s`).
+- Validation (2026-05-23): `venv/bin/python -m pytest tests/test_emergency_priority.py tests/test_ticket_filters.py tests/test_audit_log.py tests/test_ticket_status_transitions.py tests/test_sync_events.py tests/test_mobile_login_flow.py tests/test_mobile_ticket_coords.py tests/test_metrics_api.py tests/test_pwa_offline_reliability.py -q` passed (`56 passed in 7.66s`).
+- Validation (2026-05-23): `venv/bin/python -m py_compile liftcrm/tickets/routes.py liftcrm/tickets/repository.py liftcrm/tickets/service.py` passed with no output.
+- Validation (2026-05-23): `venv/bin/python -m pytest -q` passed (`127 passed in 17.89s`).
+- Validation (2026-05-23): `git diff --check` passed with no output.
+- Validation (2026-05-23): `git status --short` showed only intended files: `PLANS.md`, `docs/RUNBOOK.md`, `liftcrm/tickets/routes.py`, `static/mobile.js`, `templates/index.html`, and untracked `tests/test_emergency_priority.py`.
+
+## Plan of Work
+
+### Milestone 1 — Backend priority contract
+
+Goal: Ticket APIs consistently validate, normalize, return, sort, filter, and audit emergency/high priorities using the existing `Ticket.priority` column.
+
+Work:
+
+- Add route-local helpers in `liftcrm/tickets/routes.py` for priority normalization, priority ordering, and default SLA targets.
+- Support `EMERGENCY`, `HIGH`, `MEDIUM`, and `LOW` as stored values; accept aliases such as `emergency`, `urgent`, `high`, `normal`, `medium`, and `low`.
+- Sort active ticket lists and kanban open tickets by priority severity before recency, with `EMERGENCY` and `HIGH` above normal tickets.
+- Keep invalid priority rejection on create, update, and filter.
+- Include priority in ops history and technician history list payloads where practical.
+- Keep priority change audit logging via existing `EDIT` audit behavior and add coverage.
+
+Validation:
+
+- Focused tests for admin/dispatcher emergency creation, invalid priority rejection, alias normalization, API payloads, mobile payloads, priority filtering/sorting, and audit logging.
+
+### Milestone 2 — Minimal desktop/mobile UI and docs
+
+Goal: Emergency tickets are obvious without redesigning the dashboard or changing offline sync behavior.
+
+Work:
+
+- Update `templates/index.html` priority options, labels, badges, filters, table rows, kanban cards, and ticket modal to make emergency tickets visually stand out.
+- Update `static/mobile.js` only for priority label/badge display in ticket list/detail/status; do not change offline queue/sync behavior.
+- Update `docs/RUNBOOK.md` with emergency/high-priority meanings, dispatcher usage, suggested response, verification steps, and limitations.
+
+Validation:
+
+- Source/static tests or focused API/UI source checks where no frontend runner exists.
+- Full pytest suite and diff checks.
+
+## End-of-plan change log
+
+- Change: Added Emergency / High-Priority Ticket Workflow PR ExecPlan.
+  Reason: The task spans backend APIs, dispatcher/admin UI, technician mobile display, docs, and tests, so `AGENTS.md` requires an ExecPlan before coding.
+  Date/Author: 2026-05-23 / codex
+
+---
+
 # Asset/Lift Import Workflow PR — ExecPlan
 
 ## Purpose / Big Picture
