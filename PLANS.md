@@ -25,6 +25,7 @@ This PR is intentionally small: no PWA/offline storage changes, no CSRF/CORS/ses
 - [x] (2026-05-23 18:28Z) Update runbook emergency operating guidance.
 - [x] (2026-05-23 18:28Z) Add focused regression tests.
 - [x] (2026-05-23 18:28Z) Run focused tests, full pytest suite, `git diff --check`, and `git status --short`.
+- [x] (2026-05-23 19:58Z) Address PR review comment by applying priority SLA defaults per omitted field on priority updates.
 
 ## Surprises & Discoveries
 
@@ -36,6 +37,8 @@ This PR is intentionally small: no PWA/offline storage changes, no CSRF/CORS/ses
   Evidence: `docs/RUNBOOK.md` "Приоритеты заявок" section and the create form priority select in `templates/index.html`.
 - Observation: The existing mobile payload already came from `repository.serialize_ticket()`, so `/api/me/tickets` already included `priority`; the mobile UI simply did not emphasize it.
   Evidence: `list_my_tickets()` returns `repository.serialize_ticket(t)` in `liftcrm/tickets/routes.py`.
+- Observation: The initial priority-update implementation skipped all SLA defaults when either custom SLA key was present, unlike create-time behavior which fills only missing fields.
+  Evidence: PR review comment on `liftcrm/tickets/routes.py` lines adding `_apply_priority_sla_defaults(t)` after priority updates.
 
 ## Decision Log
 
@@ -56,12 +59,17 @@ This PR is intentionally small: no PWA/offline storage changes, no CSRF/CORS/ses
 - Outcome (2026-05-23): Emergency create/update applies default per-ticket SLA overrides of 5/60 minutes when no custom SLA is present; high priority applies 15/90 minutes. Dispatcher-provided custom SLA values remain authoritative.
 - Outcome (2026-05-23): Desktop create form, filters, badges, table rows, ticket modal, and kanban cards now show emergency/high/normal/low labels. `/mobile` ticket list/detail/status now shows priority badges without changing offline queue or sync logic.
 - Outcome (2026-05-23): `docs/RUNBOOK.md` now documents emergency/high priority meanings, dispatcher response steps, verification steps, and current limitations.
+- Outcome (2026-05-23): Priority updates now apply SLA defaults per omitted field. If a dispatcher changes a ticket to emergency and provides only response SLA, the completion SLA receives the emergency default when it is still unset.
 - Validation (2026-05-23): `venv/bin/python -m pytest tests/test_emergency_priority.py -q` passed (`8 passed in 1.42s`).
 - Validation (2026-05-23): `venv/bin/python -m pytest tests/test_emergency_priority.py tests/test_ticket_filters.py tests/test_audit_log.py tests/test_ticket_status_transitions.py tests/test_sync_events.py tests/test_mobile_login_flow.py tests/test_mobile_ticket_coords.py tests/test_metrics_api.py tests/test_pwa_offline_reliability.py -q` passed (`56 passed in 7.66s`).
 - Validation (2026-05-23): `venv/bin/python -m py_compile liftcrm/tickets/routes.py liftcrm/tickets/repository.py liftcrm/tickets/service.py` passed with no output.
 - Validation (2026-05-23): `venv/bin/python -m pytest -q` passed (`127 passed in 17.89s`).
 - Validation (2026-05-23): `git diff --check` passed with no output.
 - Validation (2026-05-23): `git status --short` showed only intended files: `PLANS.md`, `docs/RUNBOOK.md`, `liftcrm/tickets/routes.py`, `static/mobile.js`, `templates/index.html`, and untracked `tests/test_emergency_priority.py`.
+- Validation (2026-05-23): `venv/bin/python -m pytest tests/test_emergency_priority.py -q` passed after review fix (`9 passed in 1.75s`).
+- Validation (2026-05-23): `venv/bin/python -m pytest tests/test_emergency_priority.py tests/test_ticket_filters.py tests/test_audit_log.py tests/test_metrics_api.py -q` passed after review fix (`19 passed in 3.65s`).
+- Validation (2026-05-23): `venv/bin/python -m pytest -q` passed after review fix (`128 passed in 18.44s`).
+- Validation (2026-05-23): `git diff --check` passed after review fix with no output.
 
 ## Plan of Work
 

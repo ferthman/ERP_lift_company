@@ -159,6 +159,20 @@ class EmergencyPriorityTest(unittest.TestCase):
         self.assertEqual(diff["old"]["priority"], "MEDIUM")
         self.assertEqual(diff["new"]["priority"], "EMERGENCY")
 
+    def test_priority_update_applies_omitted_sla_default_per_field(self):
+        self.login(config.ADMIN_USERNAME, config.ADMIN_PASSWORD)
+        created = self.create_ticket(priority="normal")
+
+        res = self.client.patch(
+            f"/api/tickets/{created['id']}",
+            json={"priority": "emergency", "custom_sla_response_minutes": 8},
+        )
+        self.assertEqual(res.status_code, 200)
+        payload = res.get_json()
+        self.assertEqual(payload["priority"], "EMERGENCY")
+        self.assertEqual(payload["custom_sla_response_minutes"], 8)
+        self.assertEqual(payload["custom_sla_completion_minutes"], 60)
+
     def test_existing_normal_ticket_flow_still_uses_medium_default(self):
         self.login(config.ADMIN_USERNAME, config.ADMIN_PASSWORD)
         res = self.client.post("/api/tickets", json=self.ticket_payload())

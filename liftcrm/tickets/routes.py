@@ -81,13 +81,13 @@ def _priority_sorted(tickets):
     return sorted(tickets, key=sort_key)
 
 
-def _apply_priority_sla_defaults(ticket):
+def _apply_priority_sla_defaults(ticket, include_response=True, include_completion=True):
     defaults = PRIORITY_SLA_DEFAULTS.get(ticket.priority or "MEDIUM")
     if not defaults:
         return
-    if ticket.custom_sla_response_minutes is None:
+    if include_response and ticket.custom_sla_response_minutes is None:
         ticket.custom_sla_response_minutes = defaults["response"]
-    if ticket.custom_sla_completion_minutes is None:
+    if include_completion and ticket.custom_sla_completion_minutes is None:
         ticket.custom_sla_completion_minutes = defaults["completion"]
 
 
@@ -810,8 +810,12 @@ def update_ticket(ticket_id):
             t.custom_sla_completion_minutes = custom_comp
         if description is not None:
             t.description = description
-        if priority is not None and "custom_sla_response_minutes" not in data and "custom_sla_completion_minutes" not in data:
-            _apply_priority_sla_defaults(t)
+        if priority is not None:
+            _apply_priority_sla_defaults(
+                t,
+                include_response="custom_sla_response_minutes" not in data,
+                include_completion="custom_sla_completion_minutes" not in data,
+            )
         old, new = changed_fields(
             old_snapshot,
             t,
