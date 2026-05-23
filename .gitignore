@@ -1,6 +1,7 @@
 lift_crm.db
 uploads/
 archive*.xlsx
+backups/
 venv/
 .venv/
 .pytest_cache/
