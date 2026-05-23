@@ -76,7 +76,50 @@
 ## Реестр лифтов (Assets)
 - CRUD доступен для admin/dispatcher: `GET/POST/PATCH /api/assets`.【F:liftcrm/assets/routes.py†L1-L129】
 - Экспорт реестра: `GET /api/assets/export.xlsx` и `GET /api/assets/export.csv`.【F:liftcrm/assets/routes.py†L132-L176】
+- Импорт реестра: вкладка «Реестр лифтов» → выбрать `.csv` или `.xlsx` → «Импорт». API: `POST /api/assets/import` с multipart-полем `file`; доступен только admin/dispatcher.
 - Разовый сид из Excel: `python scripts/seed_assets_from_objects_xlsx.py` (читает `objects/objects.xlsx`, идемпотентно создаёт/обновляет assets и по возможности связывает существующие тикеты).【F:scripts/seed_assets_from_objects_xlsx.py†L1-L104】
+
+### Импорт лифтов из CSV/XLSX
+Перед большим импортом сделайте локальный backup: `python scripts/backup_local.py`. Это позволит вернуться к прежнему `lift_crm.db`, если файл был подготовлен неверно.
+
+Поддерживаемые файлы:
+- `.csv` в UTF-8, первая строка — заголовки.
+- `.xlsx`, первый лист, первая строка — заголовки.
+- Файл читается из памяти и не сохраняется в `uploads/` или на диск.
+
+Поддерживаемые поля и aliases:
+- `address`: `address`, `object`, `object_name`, `объект`, `адрес` — обязательное поле.
+- `entrance`: `entrance`, `подъезд`.
+- `lift_label`: `lift_label`, `lift`, `elevator`, `elevator_label`, `лифт`, `метка лифта`.
+- `serial_no`: `serial_no`, `serial`, `заводской номер`, `серийный номер`.
+- `lat`: `latitude`, `lat`, `широта`.
+- `lon`: `longitude`, `lng`, `lon`, `долгота`.
+- `status`: `status`, `статус`; допустимо только `ACTIVE` или `INACTIVE`, пустое значение становится `ACTIVE`.
+
+Пример CSV:
+```csv
+address,entrance,lift_label,serial_no,lat,lon,status
+"Алматы, Абая 10",1,Лифт A,SN-001,43.238949,76.889709,ACTIVE
+"Алматы, Толе би 5",2,Лифт B,SN-002,,,ACTIVE
+```
+
+Проверки импорта:
+- Пустые строки пропускаются.
+- Строки без `address` попадают в row-level errors и не создаются.
+- `lat` и `lon`, если заполнены, должны быть числами; запятая в дробной части допустима.
+- Неподдерживаемые расширения возвращают понятную ошибку.
+- Плохой CSV/XLSX не должен ронять приложение; результат показывает ошибки.
+
+Дубли:
+- Если указан `serial_no`, он считается главным ключом идентичности.
+- Если `serial_no` пустой, дубль ищется по составному ключу `address + entrance + lift_label`, когда все три поля заполнены.
+- Текущий импорт **не обновляет** существующие assets. Найденные дубли пропускаются и считаются в `skipped` / `skipped_duplicates`.
+
+Как проверить после импорта:
+1. В результате импорта проверьте `created`, `skipped`, `invalid` и row-level errors.
+2. Нажмите «Обновить» в реестре или воспользуйтесь поиском по адресу/серийному номеру.
+3. Откройте вкладку «Объекты» и убедитесь, что лифты с координатами появились на карте.
+4. Скачайте `GET /api/assets/export.xlsx` или кнопку `XLSX`, чтобы сверить загруженный реестр.
 
 ## Типовой флоу проверки
 1. Запустить сервер.  

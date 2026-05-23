@@ -15,6 +15,53 @@ from .service import normalize_text
 bp = Blueprint("assets", __name__)
 logger = logging.getLogger(__name__)
 
+ASSET_IMPORT_ALLOWED_EXTENSIONS = {".csv", ".xlsx"}
+ASSET_IMPORT_HEADERS = {
+    "address": {
+        "address",
+        "object",
+        "object_name",
+        "объект",
+        "адрес",
+    },
+    "entrance": {
+        "entrance",
+        "подъезд",
+    },
+    "lift_label": {
+        "lift_label",
+        "lift",
+        "elevator",
+        "elevator_label",
+        "лифт",
+        "метка лифта",
+    },
+    "serial_no": {
+        "serial_no",
+        "serial",
+        "заводской номер",
+        "серийный номер",
+    },
+    "lat": {
+        "latitude",
+        "lat",
+        "широта",
+    },
+    "lon": {
+        "longitude",
+        "lng",
+        "lon",
+        "долгота",
+    },
+    "status": {
+        "status",
+        "статус",
+    },
+}
+ASSET_IMPORT_ALIAS_TO_FIELD = {
+    alias: field for field, aliases in ASSET_IMPORT_HEADERS.items() for alias in aliases
+}
+
 
 def serialize_asset(asset: Asset):
     return {
@@ -140,6 +187,149 @@ def _ensure_unique_serial(db, serial_no, asset_id=None):
     return q.first()
 
 
+def _normalize_import_header(value):
+    return " ".join(str(value or "").strip().lower().replace("_", " ").split())
+
+
+def _canonical_import_header(value):
+    normalized = _normalize_import_header(value)
+    underscored = normalized.replace(" ", "_")
+    return ASSET_IMPORT_ALIAS_TO_FIELD.get(underscored) or ASSET_IMPORT_ALIAS_TO_FIELD.get(normalized)
+
+
+def _is_empty_import_row(row):
+    return all(str(value or "").strip() == "" for value in row.values())
+
+
+def _parse_optional_float(value, field, row_number, errors):
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return float(raw.replace(",", "."))
+    except ValueError:
+        errors.append({"row": row_number, "field": field, "message": f"{field} must be a valid number"})
+        return None
+
+
+def _normalize_import_status(value, row_number, errors):
+    status = str(value or "").strip().upper() or "ACTIVE"
+    if status not in {"ACTIVE", "INACTIVE"}:
+        errors.append({"row": row_number, "field": "status", "message": "status must be ACTIVE or INACTIVE"})
+        return None
+    return status
+
+
+def _asset_composite_key(address, entrance, lift_label):
+    if not address or not entrance or not lift_label:
+        return None
+    return (
+        normalize_text(address),
+        normalize_text(entrance),
+        normalize_text(lift_label),
+    )
+
+
+def _find_asset_by_composite(db, address, entrance, lift_label):
+    key = _asset_composite_key(address, entrance, lift_label)
+    if not key:
+        return None
+    address_norm, entrance_norm, lift_label_norm = key
+    for asset in db.query(Asset).filter(Asset.address_norm == address_norm).all():
+        if normalize_text(asset.entrance or "") == entrance_norm and normalize_text(asset.lift_label or "") == lift_label_norm:
+            return asset
+    return None
+
+
+def _parse_import_rows_csv(file_storage):
+    raw = file_storage.read()
+    text = raw.decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        return [], ["Import file must contain a header row"]
+    mapped_headers = [_canonical_import_header(name) for name in reader.fieldnames]
+    if "address" not in mapped_headers:
+        return [], ["Import file must include an address/object column"]
+    rows = []
+    for row_number, row in enumerate(reader, start=2):
+        canonical = {}
+        for original, field in zip(reader.fieldnames, mapped_headers):
+            if field and field not in canonical:
+                canonical[field] = row.get(original)
+        rows.append((row_number, canonical))
+    return rows, []
+
+
+def _parse_import_rows_xlsx(file_storage):
+    try:
+        from openpyxl import load_workbook
+    except Exception as exc:
+        logger.exception("openpyxl missing", exc_info=exc)
+        return [], ["openpyxl is required to read XLSX files"]
+    try:
+        wb = load_workbook(io.BytesIO(file_storage.read()), read_only=True, data_only=True)
+    except Exception:
+        logger.exception("asset_import_xlsx_parse_failed")
+        return [], ["XLSX file could not be read"]
+    ws = wb.active
+    iterator = ws.iter_rows(values_only=True)
+    try:
+        header_row = next(iterator)
+    except StopIteration:
+        return [], ["Import file must contain a header row"]
+    mapped_headers = [_canonical_import_header(value) for value in header_row]
+    if "address" not in mapped_headers:
+        return [], ["Import file must include an address/object column"]
+    rows = []
+    for row_number, row in enumerate(iterator, start=2):
+        canonical = {}
+        for index, field in enumerate(mapped_headers):
+            if field and field not in canonical:
+                canonical[field] = row[index] if index < len(row) else None
+        rows.append((row_number, canonical))
+    return rows, []
+
+
+def _parse_asset_import_file(file_storage):
+    filename = (file_storage.filename or "").strip().lower()
+    extension = ""
+    if "." in filename:
+        extension = filename[filename.rfind(".") :]
+    if extension not in ASSET_IMPORT_ALLOWED_EXTENSIONS:
+        return [], [f"Unsupported file type. Use .csv or .xlsx."]
+    if extension == ".csv":
+        try:
+            return _parse_import_rows_csv(file_storage)
+        except UnicodeDecodeError:
+            return [], ["CSV file must be UTF-8 encoded"]
+    return _parse_import_rows_xlsx(file_storage)
+
+
+def _validate_import_row(row_number, row):
+    errors = []
+    if _is_empty_import_row(row):
+        return None, []
+
+    address = str(row.get("address") or "").strip()
+    if not address:
+        errors.append({"row": row_number, "field": "address", "message": "address is required"})
+    lat = _parse_optional_float(row.get("lat"), "lat", row_number, errors)
+    lon = _parse_optional_float(row.get("lon"), "lon", row_number, errors)
+    status = _normalize_import_status(row.get("status"), row_number, errors)
+    if errors:
+        return None, errors
+    return {
+        "address": address,
+        "address_norm": normalize_text(address),
+        "entrance": str(row.get("entrance") or "").strip() or None,
+        "lift_label": str(row.get("lift_label") or "").strip() or None,
+        "serial_no": str(row.get("serial_no") or "").strip() or None,
+        "lat": lat,
+        "lon": lon,
+        "status": status,
+    }, []
+
+
 @bp.get("/api/assets")
 @login_required
 def list_assets():
@@ -251,6 +441,91 @@ def delete_asset(asset_id):
         asset.status = "INACTIVE"
         db.commit()
         return jsonify({"ok": True})
+
+
+@bp.post("/api/assets/import")
+@login_required
+@role_required("admin", "dispatcher")
+def import_assets():
+    file_storage = request.files.get("file")
+    if not file_storage or not file_storage.filename:
+        return jsonify({"error": {"code": 400, "message": "Import file is required"}}), 400
+
+    parsed_rows, parse_errors = _parse_asset_import_file(file_storage)
+    if parse_errors:
+        return jsonify({"error": {"code": 400, "message": parse_errors[0]}, "errors": parse_errors}), 400
+
+    result = {
+        "created": 0,
+        "updated": 0,
+        "skipped": 0,
+        "skipped_duplicates": 0,
+        "invalid": 0,
+        "errors": [],
+    }
+    validated_rows = []
+    for row_number, row in parsed_rows:
+        values, row_errors = _validate_import_row(row_number, row)
+        if values is None:
+            if row_errors:
+                result["invalid"] += 1
+                result["errors"].extend(row_errors)
+            else:
+                result["skipped"] += 1
+            continue
+        validated_rows.append((row_number, values))
+
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        seen_serials = set()
+        seen_composites = set()
+        for row_number, values in validated_rows:
+            existing = None
+            serial_key = values["serial_no"]
+            composite_key = _asset_composite_key(
+                values["address"],
+                values["entrance"],
+                values["lift_label"],
+            )
+            if serial_key and serial_key in seen_serials:
+                existing = True
+            elif composite_key and composite_key in seen_composites:
+                existing = True
+            elif serial_key:
+                existing = _ensure_unique_serial(db, serial_key)
+            if existing is None and composite_key:
+                existing = _find_asset_by_composite(
+                    db,
+                    values["address"],
+                    values["entrance"],
+                    values["lift_label"],
+                )
+            if existing is not None:
+                result["skipped"] += 1
+                result["skipped_duplicates"] += 1
+                continue
+
+            asset = Asset(
+                address=values["address"],
+                address_norm=values["address_norm"],
+                entrance=values["entrance"],
+                lift_label=values["lift_label"],
+                serial_no=values["serial_no"],
+                lat=values["lat"],
+                lon=values["lon"],
+                status=values["status"],
+                created_at=now,
+                updated_at=now,
+            )
+            db.add(asset)
+            if serial_key:
+                seen_serials.add(serial_key)
+            if composite_key:
+                seen_composites.add(composite_key)
+            result["created"] += 1
+        db.commit()
+
+    return jsonify(result), 200
 
 
 @bp.get("/api/lifts/<int:asset_id>/history")
