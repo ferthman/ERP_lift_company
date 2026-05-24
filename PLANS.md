@@ -6,6 +6,116 @@ Treat the reader as a complete beginner to this repository. The only context the
 
 ---
 
+# Planned Maintenance Calendar and Due Queue PR — ExecPlan
+
+## Purpose / Big Picture
+
+Make the existing planned maintenance foundation operationally useful for admin and dispatcher users. The system should show active overdue and upcoming ТО plans in a clear due queue, provide a simple date-grouped list with filters, and allow a due plan to generate one normal ticket without creating duplicate active tickets for the same maintenance due date. This PR intentionally does not add cron jobs, drag-and-drop calendars, PWA/offline changes, CSRF/CORS/session changes, upload authorization changes, backup/restore changes, asset import changes, seed/demo cleanup changes, billing, Docker/deployment, Postgres, or unrelated refactors.
+
+## Progress
+
+- [x] (2026-05-24 21:20 +05) Read `README.md`, `AGENTS.md`, `PLANS.md`, and `docs/RUNBOOK.md`.
+- [x] (2026-05-24 21:20 +05) Inspect planned maintenance model, routes/API, template UI, tests, and runbook docs from PR #97.
+- [x] (2026-05-24 21:20 +05) Verify current latest `main` has maintenance CRUD and complete action, but no due queue, no date/master filters, no calendar/list grouping, and no ticket generation.
+- [x] (2026-05-24 21:20 +05) Create this focused ExecPlan before coding.
+- [x] (2026-05-24 21:34 +05) Implement backend due queue endpoint, derived status serialization, ticket link fields, and generate-ticket endpoint.
+- [x] (2026-05-24 21:34 +05) Add focused due queue and generate-ticket tests.
+- [x] (2026-05-24 21:45 +05) Add minimal ТО queue UI with counters, filters, grouped list, complete/edit, and generate-ticket action.
+- [x] (2026-05-24 21:45 +05) Update `docs/RUNBOOK.md` with dispatcher due queue, overdue handling, ticket generation, completion, and no-cron limits.
+- [x] (2026-05-24 21:52 +05) Run focused planned maintenance, ticket, asset, full suite, `git diff --check`, and `git status --short` validation.
+
+## Surprises & Discoveries
+
+- Observation: The checkout started on `codex/planned-maintenance-pr97`, but local `main` was behind `origin/main`.
+  Evidence: `git fetch origin main` showed `97b9696..03b2552`; `git pull --ff-only origin main` fast-forwarded local `main`.
+- Observation: PR #97 intentionally did not implement ticket generation from maintenance plans.
+  Evidence: Existing Decision Log entry says safe ticket generation was deferred; current code has `GET/POST/PATCH /api/maintenance-plans` and `/complete` only.
+- Observation: Maintenance status currently accepts `overdue` as a stored status even though the requested queue needs overdue calculated from active `next_due_date`.
+  Evidence: `MAINTENANCE_STATUSES = {"active", "paused", "completed", "overdue"}` and `serialize_maintenance_plan()` returns `plan.status` only.
+- Observation: Focused maintenance tests passed after backend queue and ticket generation work.
+  Evidence: `venv/bin/python -m pytest tests/test_maintenance_plans.py -q` returned `11 passed, 6 subtests passed in 1.08s`.
+
+## Decision Log
+
+- Decision: Derive queue status as `overdue` when `status == "active"` and `next_due_date < today`, without mutating the stored status.
+  Rationale: The user explicitly requested consistent overdue calculation and no permanent mutation unless existing design requires it.
+  Date/Author: 2026-05-24 / codex
+- Decision: Add a nullable `tickets.maintenance_plan_id` and `maintenance_due_date` link for generated tickets.
+  Rationale: This is the smallest durable way to make generated-ticket visibility and duplicate prevention testable without creating a scheduler or new workflow.
+  Date/Author: 2026-05-24 / codex
+
+## Outcomes & Retrospective
+
+- Outcome (2026-05-24): Added `GET /api/maintenance-plans/due` with counters, active plans, optional inactive plans, derived overdue/today/next-7/next-30 buckets, and filters for status, assigned master, date range, and overdue-only mode.
+- Outcome (2026-05-24): Added nullable `tickets.maintenance_plan_id` and `tickets.maintenance_due_date`, plus `POST /api/maintenance-plans/<id>/generate-ticket` with duplicate prevention for open generated tickets on the same plan/due date.
+- Outcome (2026-05-24): Updated the existing ТО tab with queue counters, filters, date-bucket grouping, customer/contract context, generated ticket visibility, and ticket generation action.
+- Outcome (2026-05-24): Updated runbook instructions for checking upcoming maintenance, handling overdue plans, generating tickets, marking completion, and current no-cron/no-heavy-calendar limitations.
+- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_maintenance_plans.py -q` passed (`11 passed, 6 subtests passed in 1.08s`).
+- Validation (2026-05-24): `venv/bin/python -m py_compile liftcrm/db.py liftcrm/assets/routes.py liftcrm/tickets/repository.py` passed with no output.
+- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_maintenance_plans.py -q` passed after UI/docs changes (`11 passed, 6 subtests passed in 1.09s`).
+- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_maintenance_plans.py -q` passed in final focused run (`11 passed, 6 subtests passed in 1.09s`).
+- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_ticket_status_transitions.py -q` passed (`8 passed in 1.49s`).
+- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_assets_api.py -q` passed (`15 passed in 1.34s`).
+- Validation (2026-05-24): `venv/bin/python -m pytest -q` passed (`150 passed, 6 subtests passed in 22.88s`).
+- Validation (2026-05-24): `git diff --check` passed with no output.
+- Validation (2026-05-24): `git status --short` showed intended modified files only: `PLANS.md`, `docs/RUNBOOK.md`, `liftcrm/assets/routes.py`, `liftcrm/db.py`, `liftcrm/tickets/repository.py`, `templates/index.html`, and `tests/test_maintenance_plans.py`.
+
+## Plan of Work
+
+### Milestone 1 — Backend due queue and filters
+
+Goal: Admin/dispatcher users can fetch a structured ТО due queue with overdue, today, next-7-day, and next-30-day groups; technicians and anonymous users cannot manage it.
+
+Work:
+
+- Add derived maintenance queue helpers in `liftcrm/assets/routes.py`.
+- Add `GET /api/maintenance-plans/due` with filters for stored/derived status, assigned master, date range, and overdue-only mode.
+- Extend maintenance serialization with asset address, customer/contract context, derived due status, due bucket, and generated ticket visibility.
+- Keep paused/completed plans hidden from the active due queue by default and include them separately only when explicitly requested.
+
+Validation:
+
+- Focused due queue tests for overdue, today, upcoming 7/30, inactive visibility, access rules, and filters.
+
+### Milestone 2 — Generate ticket from a due plan
+
+Goal: Admin/dispatcher users can create one normal ticket from a due maintenance plan; duplicate active tickets for the same plan/due date are prevented.
+
+Work:
+
+- Extend `Ticket` with nullable `maintenance_plan_id` and `maintenance_due_date`; add idempotent SQLite migration.
+- Add `POST /api/maintenance-plans/<id>/generate-ticket`.
+- Use the linked asset for object/address/coordinates, include planned maintenance context in the ticket description, keep priority `MEDIUM`, and assign through the existing ticket auto-assignment helper.
+- Reject generation when the asset has no coordinates because existing ticket creation requires lat/lon.
+- Return an existing open generated ticket instead of creating a duplicate for the same plan and due date.
+
+Validation:
+
+- Focused tests for ticket creation, link fields, description context, duplicate prevention, and role access.
+
+### Milestone 3 — Minimal UI, docs, and full validation
+
+Goal: Dispatchers/admins can operate the queue from the existing ТО tab without a dashboard redesign.
+
+Work:
+
+- Add counters, filter controls, date-grouped list/table, derived overdue badges, and action buttons to `templates/index.html`.
+- Wire generate-ticket, mark-completed, and edit-plan actions into the existing maintenance UI.
+- Update `docs/RUNBOOK.md` with dispatcher workflow, overdue handling, ticket generation, completion, and no-cron limitation.
+- Run focused and full validation commands.
+
+Validation:
+
+- Run focused planned maintenance/due queue tests, ticket-generation tests, existing maintenance tests, full pytest, `git diff --check`, and `git status --short`.
+
+## End-of-plan change log
+
+- Change: Added Planned Maintenance Calendar and Due Queue PR ExecPlan.
+  Reason: The task spans schema, backend APIs, ticket workflow, UI, docs, and tests, so `AGENTS.md` requires an ExecPlan before coding.
+  Date/Author: 2026-05-24 / codex
+
+---
+
 # Planned Maintenance Foundation and Demo Data Cleanup PR — ExecPlan
 
 ## Purpose / Big Picture

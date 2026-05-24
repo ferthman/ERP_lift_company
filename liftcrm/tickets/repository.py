@@ -71,6 +71,8 @@ def serialize_ticket(t: Ticket):
         "status": t.status,
         "version": t.version or 1,
         "asset_id": t.asset_id,
+        "maintenance_plan_id": t.maintenance_plan_id,
+        "maintenance_due_date": t.maintenance_due_date.isoformat() if t.maintenance_due_date else None,
         "asset_serial_no": (t.asset.serial_no if t.asset else None),
         "asset_lift_label": (t.asset.lift_label if t.asset else None),
         "asset_entrance": (t.asset.entrance if t.asset else None),

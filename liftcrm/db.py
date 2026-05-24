@@ -77,6 +77,8 @@ class Ticket(Base):
     comments = relationship("TicketComment", back_populates="ticket", cascade="all, delete-orphan")
     email = Column(String, nullable=True)
     asset_id = Column(Integer, ForeignKey("assets.id"), nullable=True)
+    maintenance_plan_id = Column(Integer, ForeignKey("maintenance_plans.id"), nullable=True)
+    maintenance_due_date = Column(Date, nullable=True)
     asset = relationship("Asset", back_populates="tickets")
 
 
@@ -385,6 +387,12 @@ def ensure_migrations():
                 conn.commit()
             if "asset_id" not in tcols:
                 cur.execute("ALTER TABLE tickets ADD COLUMN asset_id INTEGER")
+                conn.commit()
+            if "maintenance_plan_id" not in tcols:
+                cur.execute("ALTER TABLE tickets ADD COLUMN maintenance_plan_id INTEGER")
+                conn.commit()
+            if "maintenance_due_date" not in tcols:
+                cur.execute("ALTER TABLE tickets ADD COLUMN maintenance_due_date DATE")
                 conn.commit()
             if "version" in tcols:
                 cur.execute("UPDATE tickets SET version = 1 WHERE version IS NULL")
