@@ -6,6 +6,131 @@ Treat the reader as a complete beginner to this repository. The only context the
 
 ---
 
+# Planned Maintenance Foundation and Demo Data Cleanup PR — ExecPlan
+
+## Purpose / Big Picture
+
+Add the smallest useful planned/preventive maintenance foundation for elevator service operations while cleaning fresh local seed data. A new local database should start with one admin, one dispatcher, five active technician masters with linked technician users, and no default operational tickets or assets. Admin and dispatcher users can list, create, update, and complete maintenance plans. This PR intentionally does not add cron scheduling, calendar UI, billing, invoices, tariffs, payroll, Docker/deployment, Postgres, PWA/offline changes, CSRF/CORS/session changes, upload authorization changes, backup/restore tooling changes, or unrelated refactors.
+
+## Progress
+
+- [x] (2026-05-24 20:55 +05) Read `README.md`, `AGENTS.md`, `PLANS.md`, and `docs/RUNBOOK.md`.
+- [x] (2026-05-24 20:55 +05) Inspect `liftcrm/db.py`, `liftcrm/assets/routes.py`, `liftcrm/tickets/routes.py`, `liftcrm/tickets/service.py`, `templates/index.html`, seed/bootstrap logic, and existing tests for tickets/assets/users/customers/contracts.
+- [x] (2026-05-24 20:55 +05) Verify planned maintenance does not already exist.
+- [x] (2026-05-24 20:55 +05) Verify fresh seed currently creates 10 unlinked masters plus admin/dispatcher users; tickets/assets are not seeded by `init_db()`.
+- [x] (2026-05-24 20:55 +05) Create this focused ExecPlan before coding.
+- [x] (2026-05-24 20:55 +05) Implement fresh seed baseline cleanup.
+- [x] (2026-05-24 20:55 +05) Implement minimal planned maintenance model, migrations, API, and validation.
+- [x] (2026-05-24 20:55 +05) Add simple admin/dispatcher UI.
+- [x] (2026-05-24 20:55 +05) Update runbook and login/seed docs.
+- [x] (2026-05-24 20:55 +05) Add focused tests and run requested validation commands.
+
+## Surprises & Discoveries
+
+- Observation: `git fetch origin main` confirmed local `main` and `origin/main` both point to `97b9696963292195536537fbf166833f54f36524`.
+  Evidence: `git rev-parse HEAD origin/main`.
+- Observation: There is no current maintenance/preventive model or route; repository hits for "maintenance" were limited to plans/docs/tooling names, not application behavior.
+  Evidence: `rg -n "maintenance|preventive|planned|plan" .`.
+- Observation: Fresh seed data is centralized in `liftcrm/db.py:init_db()`, creating 10 `Master` rows when no masters exist and only admin/dispatcher users when no users exist.
+  Evidence: `Master(name=f"Мастер #{i+1}") for i in range(10)` and admin/dispatcher creation in `init_db()`.
+- Observation: Focused seed and maintenance tests passed after implementation.
+  Evidence: `venv/bin/python -m pytest tests/test_seed_demo_cleanup.py -q` returned `1 passed in 0.93s`; `venv/bin/python -m pytest tests/test_maintenance_plans.py -q` returned `5 passed, 6 subtests passed in 0.95s`.
+- Observation: The full suite exposed two old seed-count assumptions and one history pagination assumption. Tests now create/target their own fixture behavior around the new five-technician baseline.
+  Evidence: First full `venv/bin/python -m pytest -q` failed on `tests/test_db_init.py` and `tests/test_metrics_api.py`; second full run failed on `tests/test_ops_history.py`; final full run passed.
+
+## Decision Log
+
+- Decision: Keep seed cleanup non-destructive and apply it only when tables are empty.
+  Rationale: Existing databases may contain real staff, tickets, assets, and archive state; the request forbids automatic real-data deletion.
+  Date/Author: 2026-05-24 / codex
+- Decision: Create five linked technician users (`master1` through `master5`) for the five seeded masters.
+  Rationale: `auto_assign_master()` only considers active masters linked to active technician users, so unlinked masters are not operational technicians.
+  Date/Author: 2026-05-24 / codex
+- Decision: Put maintenance plan APIs in the existing assets blueprint for this foundation.
+  Rationale: Plans are asset-bound operational records and this avoids broader blueprint/package churn for a minimal PR.
+  Date/Author: 2026-05-24 / codex
+- Decision: Do not implement ticket generation from maintenance plans in this PR.
+  Rationale: Safe ticket generation needs product decisions about priority, coordinates, scheduling cadence, and technician workflow. List/create/update/complete is the minimal foundation requested.
+  Date/Author: 2026-05-24 / codex
+
+## Outcomes & Retrospective
+
+- Outcome (2026-05-24): Fresh empty databases now seed one admin, one dispatcher, five active masters, and five linked active technician users (`master1` ... `master5`) without creating tickets or assets.
+- Outcome (2026-05-24): Added `MaintenancePlan` model/table, idempotent SQLite table creation, admin/dispatcher CRUD APIs, validation, and complete action.
+- Outcome (2026-05-24): Added a compact desktop «ТО» tab for admin/dispatcher users with list, create/edit form, status badges, asset label, assigned master, and complete action.
+- Outcome (2026-05-24): Updated `docs/RUNBOOK.md` and `README.md` for planned maintenance and clean local demo setup guidance.
+- Validation (2026-05-24): `venv/bin/python -m py_compile liftcrm/db.py liftcrm/assets/routes.py` passed with no output.
+- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_seed_demo_cleanup.py -q` passed (`1 passed in 0.93s`).
+- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_maintenance_plans.py -q` passed (`5 passed, 6 subtests passed in 0.95s`).
+- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_maintenance_plans.py -q` passed after docs/UI/test updates (`5 passed, 6 subtests passed in 0.64s`).
+- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_seed_demo_cleanup.py -q` passed after docs/UI/test updates (`1 passed in 0.61s`).
+- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_assets_api.py -q` passed (`15 passed in 1.54s`).
+- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_ticket_status_transitions.py -q` passed (`8 passed in 1.50s`).
+- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_db_init.py tests/test_metrics_api.py -q` passed after updating old seed-count assumptions (`5 passed in 2.25s`).
+- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_maintenance_plans.py tests/test_seed_demo_cleanup.py tests/test_assets_api.py tests/test_ticket_status_transitions.py -q` passed (`29 passed, 6 subtests passed in 2.97s`).
+- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_ops_history.py -q` passed after making the history test explicit about limit (`4 passed in 0.64s`).
+- Validation (2026-05-24): Final `venv/bin/python -m pytest -q` passed (`144 passed, 6 subtests passed in 22.08s`).
+- Validation (2026-05-24): `git diff --check` passed with no output.
+- Validation (2026-05-24): `git status --short` showed intended files only: `PLANS.md`, `README.md`, `docs/RUNBOOK.md`, `liftcrm/assets/routes.py`, `liftcrm/db.py`, `templates/index.html`, `tests/test_db_init.py`, `tests/test_metrics_api.py`, `tests/test_ops_history.py`, and untracked `tests/test_maintenance_plans.py`, `tests/test_seed_demo_cleanup.py`.
+
+## Plan of Work
+
+### Milestone 1 — Fresh seed cleanup
+
+Goal: A fresh local database starts with a realistic staff baseline and no default operational data.
+
+Work:
+
+- Update `liftcrm/db.py:init_db()` so empty masters/users tables seed one admin, one dispatcher, five active masters, and five linked active technician users.
+- Preserve non-destructive behavior: do not delete or rewrite existing rows when tables already contain data.
+- Add tests that initialize a temp database and assert user/master/ticket/asset counts.
+
+Validation:
+
+- Focused seed cleanup test.
+
+### Milestone 2 — Maintenance foundation
+
+Goal: Admin/dispatcher can manage basic preventive maintenance plans tied to assets; invalid payloads return 400s.
+
+Work:
+
+- Add a `MaintenancePlan` model in `liftcrm/db.py` with fields `id`, `asset_id`, `title`, `description`, `interval_type`, `next_due_date`, `last_completed_date`, `assigned_master_id`, `status`, `notes`, `created_at`, and `updated_at`.
+- Extend `ensure_migrations()` with idempotent SQLite table creation and indexes; do not introduce Alembic.
+- Add serializers and endpoints in `liftcrm/assets/routes.py`:
+  - `GET /api/maintenance-plans`
+  - `POST /api/maintenance-plans`
+  - `PATCH /api/maintenance-plans/<id>`
+  - `POST /api/maintenance-plans/<id>/complete`
+- Validate existing asset/master, required title, date format, allowed interval/status values, and role access.
+- Mark complete by setting `last_completed_date` and keeping active plans active with the next due date advanced by the interval when possible.
+
+Validation:
+
+- Focused maintenance API tests for admin, dispatcher, technician, anonymous, and invalid payloads.
+
+### Milestone 3 — UI, docs, and regression validation
+
+Goal: Operators get a compact maintenance section without dashboard redesign, and docs explain safe local cleanup.
+
+Work:
+
+- Add a simple maintenance tab/section in `templates/index.html` for admin/dispatcher users: list, create/edit form, status badge, asset label, assigned master, and complete action.
+- Update `docs/RUNBOOK.md` with planned maintenance usage, difference from reactive tickets, fresh local database baseline, safe demo cleanup guidance, and backup warning.
+- Update `README.md` test account notes for five seeded technician accounts.
+
+Validation:
+
+- Run focused maintenance tests, focused seed tests, asset tests, ticket tests, full pytest, `git diff --check`, and `git status --short`.
+
+## End-of-plan change log
+
+- Change: Added Planned Maintenance Foundation and Demo Data Cleanup PR ExecPlan.
+  Reason: The task spans database seed behavior, schema, backend APIs, UI, docs, and tests, so `AGENTS.md` requires an ExecPlan before coding.
+  Date/Author: 2026-05-24 / codex
+
+---
+
 # Customers and Contracts Foundation PR — ExecPlan
 
 ## Purpose / Big Picture

@@ -2,12 +2,12 @@ import csv
 import io
 import json
 import logging
-from datetime import datetime, timezone, timedelta, time
+from datetime import date, datetime, timezone, timedelta, time
 
 from flask import Blueprint, jsonify, request, send_file
 from flask_login import login_required
 
-from ..db import SessionLocal, Asset, Ticket, TicketComment, Attachment, AuditLog, User, Master, Customer, Contract
+from ..db import SessionLocal, Asset, Ticket, TicketComment, Attachment, AuditLog, User, Master, Customer, Contract, MaintenancePlan
 from ..utils.security import role_required
 from ..utils.time import to_utc
 from .service import normalize_text
@@ -62,6 +62,8 @@ ASSET_IMPORT_ALIAS_TO_FIELD = {
     alias: field for field, aliases in ASSET_IMPORT_HEADERS.items() for alias in aliases
 }
 CONTRACT_STATUSES = {"active", "paused", "expired"}
+MAINTENANCE_INTERVALS = {"monthly", "quarterly", "semiannual", "annual", "custom"}
+MAINTENANCE_STATUSES = {"active", "paused", "completed", "overdue"}
 
 
 def serialize_asset(asset: Asset):
@@ -120,6 +122,38 @@ def serialize_contract(contract: Contract):
     }
 
 
+def _asset_label(asset):
+    if not asset:
+        return None
+    parts = [asset.address]
+    details = " / ".join([part for part in (asset.entrance, asset.lift_label, asset.serial_no) if part])
+    if details:
+        parts.append(details)
+    return " — ".join([part for part in parts if part])
+
+
+def serialize_maintenance_plan(plan: MaintenancePlan):
+    asset = plan.asset
+    master = plan.assigned_master
+    return {
+        "id": plan.id,
+        "asset_id": plan.asset_id,
+        "asset_label": _asset_label(asset),
+        "asset_address": asset.address if asset else None,
+        "title": plan.title,
+        "description": plan.description,
+        "interval_type": plan.interval_type,
+        "next_due_date": plan.next_due_date.isoformat() if plan.next_due_date else None,
+        "last_completed_date": plan.last_completed_date.isoformat() if plan.last_completed_date else None,
+        "assigned_master_id": plan.assigned_master_id,
+        "assigned_master_name": master.name if master else None,
+        "status": plan.status,
+        "notes": plan.notes,
+        "created_at": (to_utc(plan.created_at).isoformat() if plan.created_at else None),
+        "updated_at": (to_utc(plan.updated_at).isoformat() if plan.updated_at else None),
+    }
+
+
 def _clean_optional(value):
     return str(value or "").strip() or None
 
@@ -146,6 +180,15 @@ def _parse_contract_date(value, field):
         raise ValueError(f"{field} must use YYYY-MM-DD") from exc
 
 
+def _parse_required_date(value, field):
+    if value in (None, ""):
+        raise ValueError(f"{field} is required")
+    try:
+        return datetime.strptime(str(value).strip(), "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ValueError(f"{field} must use YYYY-MM-DD") from exc
+
+
 def _parse_positive_float(value, field):
     if value in (None, ""):
         return None
@@ -165,6 +208,70 @@ def _parse_optional_int(value, field):
         return int(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{field} must be an integer") from exc
+
+
+def _add_months(value, months):
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    month_lengths = [31, 29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    day = min(value.day, month_lengths[month - 1])
+    return date(year, month, day)
+
+
+def _next_due_after_completion(completed_date, interval_type):
+    if interval_type == "monthly":
+        return _add_months(completed_date, 1)
+    if interval_type == "quarterly":
+        return _add_months(completed_date, 3)
+    if interval_type == "semiannual":
+        return _add_months(completed_date, 6)
+    if interval_type == "annual":
+        return _add_months(completed_date, 12)
+    return None
+
+
+def _maintenance_values_from_payload(data, db, existing=None):
+    values = {}
+    if existing is None or "asset_id" in data:
+        asset_id = _parse_optional_int(data.get("asset_id"), "asset_id")
+        if asset_id is None:
+            raise ValueError("asset_id is required")
+        asset = db.get(Asset, asset_id)
+        if not asset:
+            raise ValueError("Asset not found")
+        values["asset_id"] = asset_id
+    if existing is None or "title" in data:
+        title = str(data.get("title") or "").strip()
+        if not title:
+            raise ValueError("title is required")
+        values["title"] = title
+    if existing is None or "interval_type" in data:
+        interval_type = str(data.get("interval_type") or "").strip().lower()
+        if interval_type not in MAINTENANCE_INTERVALS:
+            raise ValueError("interval_type must be monthly, quarterly, semiannual, annual, or custom")
+        values["interval_type"] = interval_type
+    if existing is None or "next_due_date" in data:
+        values["next_due_date"] = _parse_required_date(data.get("next_due_date"), "next_due_date")
+    if "last_completed_date" in data:
+        value = data.get("last_completed_date")
+        values["last_completed_date"] = None if value in (None, "") else _parse_required_date(value, "last_completed_date")
+    if existing is None or "status" in data:
+        status = str(data.get("status") or "active").strip().lower()
+        if status not in MAINTENANCE_STATUSES:
+            raise ValueError("status must be active, paused, completed, or overdue")
+        values["status"] = status
+    if existing is None or "assigned_master_id" in data:
+        assigned_master_id = _parse_optional_int(data.get("assigned_master_id"), "assigned_master_id")
+        if assigned_master_id is not None:
+            master = db.get(Master, assigned_master_id)
+            if not master:
+                raise ValueError("Assigned master not found")
+        values["assigned_master_id"] = assigned_master_id
+    for field in ("description", "notes"):
+        if existing is None or field in data:
+            values[field] = _clean_optional(data.get(field))
+    return values
 
 
 def _validate_customer_contract_link(db, customer_id, contract_id):
@@ -627,6 +734,109 @@ def update_contract(contract_id):
         db.commit()
         db.refresh(contract)
         return jsonify(serialize_contract(contract))
+
+
+@bp.get("/api/maintenance-plans")
+@login_required
+@role_required("admin", "dispatcher")
+def list_maintenance_plans():
+    with SessionLocal() as db:
+        query = db.query(MaintenancePlan).order_by(MaintenancePlan.next_due_date.asc(), MaintenancePlan.id.asc())
+        asset_id = request.args.get("asset_id")
+        status = request.args.get("status")
+        try:
+            parsed_asset_id = _parse_optional_int(asset_id, "asset_id")
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        if parsed_asset_id is not None:
+            query = query.filter(MaintenancePlan.asset_id == parsed_asset_id)
+        if status:
+            normalized_status = status.strip().lower()
+            if normalized_status not in MAINTENANCE_STATUSES:
+                return jsonify({"error": "status must be active, paused, completed, or overdue"}), 400
+            query = query.filter(MaintenancePlan.status == normalized_status)
+        return jsonify([serialize_maintenance_plan(plan) for plan in query.all()])
+
+
+@bp.post("/api/maintenance-plans")
+@login_required
+@role_required("admin", "dispatcher")
+def create_maintenance_plan():
+    data = request.get_json() or {}
+    with SessionLocal() as db:
+        try:
+            values = _maintenance_values_from_payload(data, db)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        now = datetime.now(timezone.utc)
+        plan = MaintenancePlan(**values, created_at=now, updated_at=now)
+        db.add(plan)
+        db.commit()
+        db.refresh(plan)
+        return jsonify(serialize_maintenance_plan(plan)), 201
+
+
+@bp.get("/api/maintenance-plans/<int:plan_id>")
+@login_required
+@role_required("admin", "dispatcher")
+def get_maintenance_plan(plan_id):
+    with SessionLocal() as db:
+        plan = db.get(MaintenancePlan, plan_id)
+        if not plan:
+            return jsonify({"error": "Maintenance plan not found"}), 404
+        return jsonify(serialize_maintenance_plan(plan))
+
+
+@bp.patch("/api/maintenance-plans/<int:plan_id>")
+@login_required
+@role_required("admin", "dispatcher")
+def update_maintenance_plan(plan_id):
+    data = request.get_json() or {}
+    with SessionLocal() as db:
+        plan = db.get(MaintenancePlan, plan_id)
+        if not plan:
+            return jsonify({"error": "Maintenance plan not found"}), 404
+        try:
+            values = _maintenance_values_from_payload(data, db, existing=plan)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        for field, value in values.items():
+            setattr(plan, field, value)
+        plan.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(plan)
+        return jsonify(serialize_maintenance_plan(plan))
+
+
+@bp.post("/api/maintenance-plans/<int:plan_id>/complete")
+@login_required
+@role_required("admin", "dispatcher")
+def complete_maintenance_plan(plan_id):
+    data = request.get_json() or {}
+    with SessionLocal() as db:
+        plan = db.get(MaintenancePlan, plan_id)
+        if not plan:
+            return jsonify({"error": "Maintenance plan not found"}), 404
+        try:
+            completed_date = _parse_required_date(data.get("completed_date"), "completed_date") if data.get("completed_date") else date.today()
+            next_due_date = None
+            if data.get("next_due_date"):
+                next_due_date = _parse_required_date(data.get("next_due_date"), "next_due_date")
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        plan.last_completed_date = completed_date
+        calculated_next_due = next_due_date or _next_due_after_completion(completed_date, plan.interval_type)
+        if calculated_next_due:
+            plan.next_due_date = calculated_next_due
+            plan.status = "active"
+        else:
+            plan.status = "completed"
+        if "notes" in data:
+            plan.notes = _clean_optional(data.get("notes"))
+        plan.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(plan)
+        return jsonify(serialize_maintenance_plan(plan))
 
 
 @bp.get("/api/assets")

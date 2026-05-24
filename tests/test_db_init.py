@@ -59,6 +59,10 @@ class DatabaseInitTest(unittest.TestCase):
 
             db_module.init_db()
             with db_module.SessionLocal() as db:
+                for user in db.query(db_module.User).filter(db_module.User.master_id.isnot(None)).all():
+                    user.is_active = 0
+                db.commit()
+
                 master = db_module.Master(name="Без доступа", is_active=1)
                 db.add(master)
                 db.commit()

@@ -112,7 +112,7 @@ class OpsHistoryTest(unittest.TestCase):
             db.commit()
 
         res = self.client.get(
-            "/api/tickets/history?date_from=2026-01-10&date_to=2026-01-31&statuses=COMPLETED,CANCELLED"
+            "/api/tickets/history?date_from=2026-01-10&date_to=2026-01-31&statuses=COMPLETED,CANCELLED&limit=200"
         )
         self.assertEqual(res.status_code, 200)
         items = res.get_json()["items"]

@@ -60,7 +60,7 @@ class MetricsApiTest(unittest.TestCase):
 
         self.assertEqual(data["total_tickets"], 0)
         self.assertEqual(data["overall"]["total"], 0)
-        self.assertEqual(len(data["masters"]), 10)
+        self.assertEqual(len(data["masters"]), 5)
         self.assertEqual(data["response_sla_breach_percent"], 0)
         self.assertEqual(data["completion_sla_breach_percent"], 0)
         self.assert_metrics_shape(data)
