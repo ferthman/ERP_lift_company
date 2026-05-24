@@ -122,6 +122,28 @@ class Contract(Base):
     assets = relationship("Asset", back_populates="contract")
 
 
+class MaintenancePlan(Base):
+    __tablename__ = "maintenance_plans"
+    id = Column(Integer, primary_key=True)
+    asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    interval_type = Column(String, nullable=False)
+    next_due_date = Column(Date, nullable=False)
+    last_completed_date = Column(Date, nullable=True)
+    assigned_master_id = Column(Integer, ForeignKey("masters.id"), nullable=True)
+    status = Column(String, nullable=False, default="active")
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    asset = relationship("Asset", back_populates="maintenance_plans")
+    assigned_master = relationship("Master")
+
+
 class Asset(Base):
     __tablename__ = "assets"
     id = Column(Integer, primary_key=True)
@@ -144,6 +166,7 @@ class Asset(Base):
     tickets = relationship("Ticket", back_populates="asset")
     customer = relationship("Customer", back_populates="assets")
     contract = relationship("Contract", back_populates="assets")
+    maintenance_plans = relationship("MaintenancePlan", back_populates="asset")
 
 
 class Attachment(Base):
@@ -205,10 +228,13 @@ def init_db():
     Base.metadata.create_all(engine)
     with SessionLocal() as db:
         master_count = db.execute(text("SELECT COUNT(*) FROM masters")).scalar() or 0
+        seeded_masters = []
         if master_count == 0:
-            masters = [Master(name=f"Мастер #{i+1}") for i in range(10)]
-            db.add_all(masters)
+            seeded_masters = [Master(name=f"Мастер #{i+1}", is_active=1) for i in range(5)]
+            db.add_all(seeded_masters)
             db.commit()
+            for master in seeded_masters:
+                db.refresh(master)
         user_count = db.execute(text("SELECT COUNT(*) FROM users")).scalar() or 0
         if user_count == 0:
             admin = User(
@@ -223,7 +249,20 @@ def init_db():
                 role="dispatcher",
                 is_active=1,
             )
-            db.add_all([admin, disp])
+            users = [admin, disp]
+            if not seeded_masters:
+                seeded_masters = db.query(Master).order_by(Master.id).limit(5).all()
+            for index, master in enumerate(seeded_masters[:5], start=1):
+                users.append(
+                    User(
+                        username=f"master{index}",
+                        password_hash=generate_password_hash(f"master{index}123"),
+                        role=ROLE_TECHNICIAN,
+                        master_id=master.id,
+                        is_active=1,
+                    )
+                )
+            db.add_all(users)
             db.commit()
 
 
@@ -388,6 +427,30 @@ def ensure_migrations():
                 )
                 """
             )
+            conn.commit()
+        if not _table_exists(cur, "maintenance_plans"):
+            cur.execute(
+                """
+                CREATE TABLE maintenance_plans (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    asset_id INTEGER NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT NULL,
+                    interval_type TEXT NOT NULL,
+                    next_due_date DATE NOT NULL,
+                    last_completed_date DATE NULL,
+                    assigned_master_id INTEGER NULL,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    notes TEXT NULL,
+                    created_at DATETIME,
+                    updated_at DATETIME,
+                    FOREIGN KEY(asset_id) REFERENCES assets(id),
+                    FOREIGN KEY(assigned_master_id) REFERENCES masters(id)
+                )
+                """
+            )
+            cur.execute("CREATE INDEX idx_maintenance_plans_asset_id ON maintenance_plans (asset_id)")
+            cur.execute("CREATE INDEX idx_maintenance_plans_next_due_date ON maintenance_plans (next_due_date)")
             conn.commit()
         if not _table_exists(cur, "assets"):
             cur.execute(

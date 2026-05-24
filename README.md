@@ -170,9 +170,9 @@ Dispatcher
 login: dispatcher  
 password: disp123  
 
-Masters  
-- login: master1 … master10  
-- password: уникальный временный (выдаётся администратором при создании или через сброс пароля)
+Masters
+- login: master1 … master5
+- password: master1123 … master5123 для свежей локальной базы. В реальной работе администратор должен заменить пароли через страницу «Пользователи и допуск».
 
 ---
 
