@@ -5,9 +5,11 @@ import logging
 from datetime import date, datetime, timezone, timedelta, time
 
 from flask import Blueprint, jsonify, request, send_file
-from flask_login import login_required
+from flask_login import current_user, login_required
 
 from ..db import SessionLocal, Asset, Ticket, TicketComment, Attachment, AuditLog, User, Master, Customer, Contract, MaintenancePlan
+from ..tickets.service import auto_assign_master
+from ..utils.audit import log_audit
 from ..utils.security import role_required
 from ..utils.time import to_utc
 from .service import normalize_text
@@ -64,6 +66,8 @@ ASSET_IMPORT_ALIAS_TO_FIELD = {
 CONTRACT_STATUSES = {"active", "paused", "expired"}
 MAINTENANCE_INTERVALS = {"monthly", "quarterly", "semiannual", "annual", "custom"}
 MAINTENANCE_STATUSES = {"active", "paused", "completed", "overdue"}
+MAINTENANCE_ACTIVE_STATUSES = {"active", "overdue"}
+OPEN_TICKET_STATUSES = {"NEW", "ASSIGNED", "ACCEPTED", "IN_PROGRESS", "WAITING"}
 
 
 def serialize_asset(asset: Asset):
@@ -132,14 +136,66 @@ def _asset_label(asset):
     return " — ".join([part for part in parts if part])
 
 
-def serialize_maintenance_plan(plan: MaintenancePlan):
+def _maintenance_due_status(plan: MaintenancePlan, today=None):
+    today = today or date.today()
+    status = plan.status or "active"
+    if status == "active" and plan.next_due_date and plan.next_due_date < today:
+        return "overdue"
+    return status
+
+
+def _maintenance_due_bucket(plan: MaintenancePlan, today=None):
+    today = today or date.today()
+    due_status = _maintenance_due_status(plan, today)
+    if due_status in {"paused", "completed"}:
+        return due_status
+    if due_status == "overdue":
+        return "overdue"
+    if plan.next_due_date == today:
+        return "today"
+    if plan.next_due_date and plan.next_due_date <= today + timedelta(days=7):
+        return "next_7_days"
+    if plan.next_due_date and plan.next_due_date <= today + timedelta(days=30):
+        return "next_30_days"
+    return "later"
+
+
+def _generated_ticket_for_due_date(db, plan):
+    if not plan.id or not plan.next_due_date:
+        return None
+    return (
+        db.query(Ticket)
+        .filter(
+            Ticket.maintenance_plan_id == plan.id,
+            Ticket.maintenance_due_date == plan.next_due_date,
+            Ticket.archived_at.is_(None),
+            Ticket.status.in_(OPEN_TICKET_STATUSES),
+        )
+        .order_by(Ticket.id.asc())
+        .first()
+    )
+
+
+def serialize_maintenance_plan(plan: MaintenancePlan, today=None, generated_ticket=None):
     asset = plan.asset
     master = plan.assigned_master
+    customer = asset.customer if asset else None
+    contract = asset.contract if asset else None
+    due_status = _maintenance_due_status(plan, today)
+    due_bucket = _maintenance_due_bucket(plan, today)
     return {
         "id": plan.id,
         "asset_id": plan.asset_id,
         "asset_label": _asset_label(asset),
         "asset_address": asset.address if asset else None,
+        "asset_lift_label": asset.lift_label if asset else None,
+        "asset_entrance": asset.entrance if asset else None,
+        "customer_id": asset.customer_id if asset else None,
+        "customer_name": customer.name if customer else None,
+        "contract_id": asset.contract_id if asset else None,
+        "contract_title": contract.title if contract else None,
+        "contract_number": contract.contract_number if contract else None,
+        "contract_status": contract.status if contract else None,
         "title": plan.title,
         "description": plan.description,
         "interval_type": plan.interval_type,
@@ -148,6 +204,10 @@ def serialize_maintenance_plan(plan: MaintenancePlan):
         "assigned_master_id": plan.assigned_master_id,
         "assigned_master_name": master.name if master else None,
         "status": plan.status,
+        "due_status": due_status,
+        "due_bucket": due_bucket,
+        "generated_ticket_id": generated_ticket.id if generated_ticket else None,
+        "generated_ticket_status": generated_ticket.status if generated_ticket else None,
         "notes": plan.notes,
         "created_at": (to_utc(plan.created_at).isoformat() if plan.created_at else None),
         "updated_at": (to_utc(plan.updated_at).isoformat() if plan.updated_at else None),
@@ -187,6 +247,19 @@ def _parse_required_date(value, field):
         return datetime.strptime(str(value).strip(), "%Y-%m-%d").date()
     except ValueError as exc:
         raise ValueError(f"{field} must use YYYY-MM-DD") from exc
+
+
+def _parse_optional_date(value, field):
+    if value in (None, ""):
+        return None
+    try:
+        return datetime.strptime(str(value).strip(), "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ValueError(f"{field} must use YYYY-MM-DD") from exc
+
+
+def _parse_bool_query(value):
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _parse_positive_float(value, field):
@@ -758,6 +831,84 @@ def list_maintenance_plans():
         return jsonify([serialize_maintenance_plan(plan) for plan in query.all()])
 
 
+@bp.get("/api/maintenance-plans/due")
+@login_required
+@role_required("admin", "dispatcher")
+def list_due_maintenance_plans():
+    today = date.today()
+    default_until = today + timedelta(days=30)
+    with SessionLocal() as db:
+        query = db.query(MaintenancePlan).order_by(MaintenancePlan.next_due_date.asc(), MaintenancePlan.id.asc())
+        status = request.args.get("status")
+        assigned_master_id = request.args.get("assigned_master_id")
+        overdue_only = _parse_bool_query(request.args.get("overdue_only"))
+        include_inactive = _parse_bool_query(request.args.get("include_inactive"))
+        try:
+            date_from = _parse_optional_date(request.args.get("date_from"), "date_from")
+            date_to = _parse_optional_date(request.args.get("date_to"), "date_to")
+            parsed_master_id = _parse_optional_int(assigned_master_id, "assigned_master_id")
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        if date_from and date_to and date_to < date_from:
+            return jsonify({"error": "date_to must be on or after date_from"}), 400
+        if parsed_master_id is not None:
+            query = query.filter(MaintenancePlan.assigned_master_id == parsed_master_id)
+        if status:
+            normalized_status = status.strip().lower()
+            if normalized_status not in MAINTENANCE_STATUSES:
+                return jsonify({"error": "status must be active, paused, completed, or overdue"}), 400
+            if normalized_status == "overdue":
+                query = query.filter(MaintenancePlan.status == "active", MaintenancePlan.next_due_date < today)
+            else:
+                query = query.filter(MaintenancePlan.status == normalized_status)
+                if normalized_status in {"paused", "completed"}:
+                    include_inactive = True
+        elif not include_inactive:
+            query = query.filter(MaintenancePlan.status.in_(MAINTENANCE_ACTIVE_STATUSES))
+        if overdue_only:
+            query = query.filter(MaintenancePlan.status == "active", MaintenancePlan.next_due_date < today)
+        if date_from:
+            query = query.filter(MaintenancePlan.next_due_date >= date_from)
+        if date_to:
+            query = query.filter(MaintenancePlan.next_due_date <= date_to)
+        elif not overdue_only and not status:
+            query = query.filter(MaintenancePlan.next_due_date <= default_until)
+
+        plans = query.all()
+        counters = {
+            "overdue": 0,
+            "today": 0,
+            "next_7_days": 0,
+            "next_30_days": 0,
+            "paused": 0,
+            "completed": 0,
+        }
+        active_items = []
+        inactive_items = []
+        for plan in plans:
+            generated_ticket = _generated_ticket_for_due_date(db, plan)
+            item = serialize_maintenance_plan(plan, today=today, generated_ticket=generated_ticket)
+            bucket = item["due_bucket"]
+            if bucket in counters:
+                counters[bucket] += 1
+            if bucket in {"paused", "completed"}:
+                inactive_items.append(item)
+            else:
+                active_items.append(item)
+        return jsonify(
+            {
+                "today": today.isoformat(),
+                "range": {
+                    "date_from": date_from.isoformat() if date_from else None,
+                    "date_to": date_to.isoformat() if date_to else (None if status or overdue_only else default_until.isoformat()),
+                },
+                "counters": counters,
+                "plans": active_items,
+                "inactive_plans": inactive_items,
+            }
+        )
+
+
 @bp.post("/api/maintenance-plans")
 @login_required
 @role_required("admin", "dispatcher")
@@ -806,6 +957,88 @@ def update_maintenance_plan(plan_id):
         db.commit()
         db.refresh(plan)
         return jsonify(serialize_maintenance_plan(plan))
+
+
+@bp.post("/api/maintenance-plans/<int:plan_id>/generate-ticket")
+@login_required
+@role_required("admin", "dispatcher")
+def generate_ticket_from_maintenance_plan(plan_id):
+    with SessionLocal() as db:
+        plan = db.get(MaintenancePlan, plan_id)
+        if not plan:
+            return jsonify({"error": "Maintenance plan not found"}), 404
+        if plan.status not in MAINTENANCE_ACTIVE_STATUSES:
+            return jsonify({"error": "Only active maintenance plans can generate tickets"}), 400
+        asset = plan.asset
+        if not asset:
+            return jsonify({"error": "Maintenance plan asset not found"}), 400
+        existing = _generated_ticket_for_due_date(db, plan)
+        if existing:
+            return jsonify(
+                {
+                    "ticket_id": existing.id,
+                    "status": existing.status,
+                    "duplicate": True,
+                    "plan": serialize_maintenance_plan(plan, generated_ticket=existing),
+                }
+            )
+        if asset.lat is None or asset.lon is None:
+            return jsonify({"error": "Asset must have coordinates before generating a ticket"}), 400
+        due_date = plan.next_due_date
+        description_parts = [
+            f"Плановое ТО: {plan.title}",
+            f"Дата ТО: {due_date.isoformat() if due_date else 'не указана'}",
+        ]
+        if plan.description:
+            description_parts.append(plan.description)
+        if plan.notes:
+            description_parts.append(f"Заметки: {plan.notes}")
+        ticket = Ticket(
+            object_name=asset.lift_label or asset.serial_no or asset.address or f"Лифт #{asset.id}",
+            address=asset.address,
+            lat=asset.lat,
+            lon=asset.lon,
+            description="\n".join(description_parts),
+            priority="MEDIUM",
+            status="NEW",
+            asset_id=asset.id,
+            assigned_master_id=plan.assigned_master_id,
+            maintenance_plan_id=plan.id,
+            maintenance_due_date=due_date,
+        )
+        if ticket.assigned_master_id:
+            ticket.status = "ASSIGNED"
+            ticket.assigned_at = datetime.now(timezone.utc)
+        else:
+            master = auto_assign_master(db)
+            if master:
+                ticket.assigned_master_id = master.id
+                ticket.status = "ASSIGNED"
+                ticket.assigned_at = datetime.now(timezone.utc)
+        db.add(ticket)
+        db.flush()
+        log_audit(
+            db,
+            entity_type="ticket",
+            entity_id=ticket.id,
+            action="CREATE",
+            actor_user_id=current_user.id,
+            old={},
+            new={
+                "object_name": ticket.object_name,
+                "address": ticket.address,
+                "priority": ticket.priority,
+                "description": ticket.description,
+                "asset_id": ticket.asset_id,
+                "assigned_master_id": ticket.assigned_master_id,
+                "status": ticket.status,
+                "maintenance_plan_id": ticket.maintenance_plan_id,
+                "maintenance_due_date": ticket.maintenance_due_date.isoformat() if ticket.maintenance_due_date else None,
+            },
+        )
+        db.commit()
+        db.refresh(ticket)
+        return jsonify({"ticket_id": ticket.id, "status": ticket.status, "duplicate": False}), 201
 
 
 @bp.post("/api/maintenance-plans/<int:plan_id>/complete")

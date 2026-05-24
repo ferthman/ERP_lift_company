@@ -362,6 +362,44 @@
           </form>
         </div>
         <div class="bg-white rounded-2xl shadow p-4 lg:col-span-2">
+          <div class="grid gap-2 sm:grid-cols-4 text-sm mb-4">
+            <div class="rounded-xl bg-red-50 ring-1 ring-red-100 p-3">
+              <div class="text-xs text-red-700">Просрочено</div>
+              <div id="maintenance-count-overdue" class="text-2xl font-semibold text-red-800">0</div>
+            </div>
+            <div class="rounded-xl bg-amber-50 ring-1 ring-amber-100 p-3">
+              <div class="text-xs text-amber-700">Сегодня</div>
+              <div id="maintenance-count-today" class="text-2xl font-semibold text-amber-800">0</div>
+            </div>
+            <div class="rounded-xl bg-sky-50 ring-1 ring-sky-100 p-3">
+              <div class="text-xs text-sky-700">7 дней</div>
+              <div id="maintenance-count-week" class="text-2xl font-semibold text-sky-800">0</div>
+            </div>
+            <div class="rounded-xl bg-indigo-50 ring-1 ring-indigo-100 p-3">
+              <div class="text-xs text-indigo-700">30 дней</div>
+              <div id="maintenance-count-month" class="text-2xl font-semibold text-indigo-800">0</div>
+            </div>
+          </div>
+          <form id="maintenance-filters" class="grid gap-3 md:grid-cols-5 text-sm mb-4">
+            <select name="status" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50">
+              <option value="">Активные на 30 дней</option>
+              <option value="overdue">Только просроченные</option>
+              <option value="active">active</option>
+              <option value="paused">paused</option>
+              <option value="completed">completed</option>
+            </select>
+            <select name="assigned_master_id" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50"></select>
+            <input name="date_from" type="date" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50">
+            <input name="date_to" type="date" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50">
+            <div class="flex items-center gap-2">
+              <label class="flex items-center gap-2 text-xs text-slate-600">
+                <input name="overdue_only" type="checkbox" class="rounded border-slate-300">
+                overdue only
+              </label>
+              <button class="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm">Показать</button>
+            </div>
+          </form>
+          <div id="maintenance-filter-msg" class="text-xs text-slate-500 mb-2"></div>
           <div id="maintenance-table" class="overflow-x-auto"></div>
         </div>
       </div>
@@ -1019,6 +1057,12 @@
     const maintenanceFormMsg = document.getElementById('maintenance-form-msg');
     const maintenanceFormReset = document.getElementById('maintenance-form-reset');
     const btnMaintenanceRefresh = document.getElementById('btn-maintenance-refresh');
+    const maintenanceFilters = document.getElementById('maintenance-filters');
+    const maintenanceFilterMsg = document.getElementById('maintenance-filter-msg');
+    const maintenanceCountOverdue = document.getElementById('maintenance-count-overdue');
+    const maintenanceCountToday = document.getElementById('maintenance-count-today');
+    const maintenanceCountWeek = document.getElementById('maintenance-count-week');
+    const maintenanceCountMonth = document.getElementById('maintenance-count-month');
     const assetModal = document.getElementById('asset-modal');
     const assetModalTitle = document.getElementById('asset-modal-title');
     const assetModalClose = document.getElementById('asset-modal-close');
@@ -1039,6 +1083,7 @@
     let assetsCache = [];
     let maintenancePlansCache = [];
     let maintenanceMastersCache = [];
+    let maintenanceDueQueueCache = null;
     const ticketFilters = {
       overdue: false,
       masterId: '',
@@ -1930,6 +1975,17 @@
           return `<option value="${id}" ${id === selected ? 'selected' : ''}>${escapeHtml(master.name || `Мастер #${master.id}`)}</option>`;
         }).join('');
     }
+    function populateMaintenanceFilterMasterSelect(){
+      if(!maintenanceFilters) return;
+      const select = maintenanceFilters.elements.assigned_master_id;
+      const selected = select.value ? String(select.value) : '';
+      select.innerHTML = '<option value="">Все мастера</option>' + maintenanceMastersCache
+        .filter(master => master.is_active)
+        .map(master => {
+          const id = String(master.id);
+          return `<option value="${id}" ${id === selected ? 'selected' : ''}>${escapeHtml(master.name || `Мастер #${master.id}`)}</option>`;
+        }).join('');
+    }
     function maintenanceStatusBadge(status){
       const value = status || 'active';
       const classes = {
@@ -1950,35 +2006,93 @@
       populateMaintenanceAssetSelect();
       populateMaintenanceMasterSelect();
     }
+    function buildMaintenanceDueQuery(){
+      if(!maintenanceFilters) return '';
+      const params = new URLSearchParams();
+      const fd = new FormData(maintenanceFilters);
+      ['status','assigned_master_id','date_from','date_to'].forEach(key => {
+        const value = String(fd.get(key) || '').trim();
+        if(value) params.set(key, value);
+      });
+      if(fd.get('overdue_only')) params.set('overdue_only', '1');
+      const status = String(fd.get('status') || '').trim();
+      if(status === 'paused' || status === 'completed') params.set('include_inactive', '1');
+      const query = params.toString();
+      return query ? `?${query}` : '';
+    }
+    function updateMaintenanceCounters(){
+      const counters = maintenanceDueQueueCache?.counters || {};
+      if(maintenanceCountOverdue) maintenanceCountOverdue.textContent = counters.overdue || 0;
+      if(maintenanceCountToday) maintenanceCountToday.textContent = counters.today || 0;
+      if(maintenanceCountWeek) maintenanceCountWeek.textContent = counters.next_7_days || 0;
+      if(maintenanceCountMonth) maintenanceCountMonth.textContent = counters.next_30_days || 0;
+    }
+    function maintenanceBucketLabel(bucket){
+      return {
+        overdue: 'Просрочено',
+        today: 'Сегодня',
+        next_7_days: 'Следующие 7 дней',
+        next_30_days: 'Следующие 30 дней',
+        later: 'Позже',
+        paused: 'На паузе',
+        completed: 'Завершено',
+      }[bucket] || bucket || 'Без даты';
+    }
+    function maintenanceContextText(plan){
+      const parts = [];
+      if(plan.customer_name) parts.push(plan.customer_name);
+      if(plan.contract_title || plan.contract_number) parts.push([plan.contract_title, plan.contract_number].filter(Boolean).join(' / '));
+      return parts.join(' · ');
+    }
     function renderMaintenancePlans(){
       if(!maintenanceTable) return;
+      updateMaintenanceCounters();
       if(!maintenancePlansCache.length){
         maintenanceTable.innerHTML = '<div class="text-sm text-slate-500">Планы ТО не заведены.</div>';
         return;
       }
-      let html = '<table class="min-w-full text-sm"><thead><tr class="text-left border-b">' +
-        '<th class="py-2 px-2">ID</th><th class="py-2 px-2">План</th><th class="py-2 px-2">Лифт</th><th class="py-2 px-2">Следующая дата</th><th class="py-2 px-2">Статус</th><th class="py-2 px-2">Мастер</th><th class="py-2 px-2">Действия</th>' +
-        '</tr></thead><tbody>';
+      const grouped = new Map();
       maintenancePlansCache.forEach(plan => {
-        html += `<tr class="border-b last:border-none">
-          <td class="py-2 px-2 font-mono">${plan.id}</td>
-          <td class="py-2 px-2">
-            <div class="font-medium">${escapeHtml(plan.title || '—')}</div>
-            <div class="text-xs text-slate-500">${escapeHtml(plan.interval_type || '—')}</div>
-          </td>
-          <td class="py-2 px-2">${escapeHtml(plan.asset_label || `Asset #${plan.asset_id}`)}</td>
-          <td class="py-2 px-2">${escapeHtml(plan.next_due_date || '—')}</td>
-          <td class="py-2 px-2">${maintenanceStatusBadge(plan.status)}</td>
-          <td class="py-2 px-2">${escapeHtml(plan.assigned_master_name || '—')}</td>
-          <td class="py-2 px-2">
-            <div class="flex flex-wrap gap-2">
-              <button type="button" data-edit-maintenance="${plan.id}" class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200">Редактировать</button>
-              <button type="button" data-complete-maintenance="${plan.id}" class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white">Выполнено</button>
-            </div>
-          </td>
-        </tr>`;
+        const key = plan.due_bucket || 'later';
+        if(!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key).push(plan);
       });
-      html += '</tbody></table>';
+      let html = '';
+      ['overdue','today','next_7_days','next_30_days','later','paused','completed'].forEach(bucket => {
+        const rows = grouped.get(bucket) || [];
+        if(!rows.length) return;
+        html += `<div class="mb-4 last:mb-0">
+          <h3 class="text-sm font-semibold mb-2">${escapeHtml(maintenanceBucketLabel(bucket))}</h3>
+          <table class="min-w-full text-sm"><thead><tr class="text-left border-b">
+            <th class="py-2 px-2">План</th><th class="py-2 px-2">Лифт / объект</th><th class="py-2 px-2">Дата</th><th class="py-2 px-2">Статус</th><th class="py-2 px-2">Мастер</th><th class="py-2 px-2">Действия</th>
+          </tr></thead><tbody>`;
+        rows.forEach(plan => {
+          const context = maintenanceContextText(plan);
+          const canGenerateTicket = !plan.generated_ticket_id && ['overdue','today','next_7_days','next_30_days'].includes(plan.due_bucket);
+          html += `<tr class="border-b last:border-none">
+            <td class="py-2 px-2">
+              <div class="font-medium">${escapeHtml(plan.title || '—')}</div>
+              <div class="text-xs text-slate-500">${escapeHtml(plan.interval_type || '—')}</div>
+            </td>
+            <td class="py-2 px-2">
+              <div>${escapeHtml(plan.asset_label || `Asset #${plan.asset_id}`)}</div>
+              ${context ? `<div class="text-xs text-slate-500">${escapeHtml(context)}</div>` : ''}
+            </td>
+            <td class="py-2 px-2">${escapeHtml(plan.next_due_date || '—')}</td>
+            <td class="py-2 px-2">${maintenanceStatusBadge(plan.due_status || plan.status)}</td>
+            <td class="py-2 px-2">${escapeHtml(plan.assigned_master_name || '—')}</td>
+            <td class="py-2 px-2">
+              <div class="flex flex-wrap gap-2">
+                <button type="button" data-edit-maintenance="${plan.id}" class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200">Редактировать</button>
+                <button type="button" data-complete-maintenance="${plan.id}" class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white">Выполнено</button>
+                ${plan.generated_ticket_id ? `<span class="px-2 py-1 text-xs rounded-lg bg-emerald-50 ring-1 ring-emerald-200 text-emerald-700">Заявка #${plan.generated_ticket_id}</span>` : ''}
+                ${canGenerateTicket ? `<button type="button" data-generate-maintenance-ticket="${plan.id}" class="px-2 py-1 text-xs rounded-lg bg-amber-100 ring-1 ring-amber-200 text-amber-900">Создать заявку</button>` : ''}
+              </div>
+            </td>
+          </tr>`;
+        });
+        html += '</tbody></table></div>';
+      });
       maintenanceTable.innerHTML = html;
       maintenanceTable.querySelectorAll('button[data-edit-maintenance]').forEach(btn => {
         btn.onclick = () => {
@@ -2005,22 +2119,48 @@
           await loadMaintenance();
         };
       });
+      maintenanceTable.querySelectorAll('button[data-generate-maintenance-ticket]').forEach(btn => {
+        btn.onclick = async () => {
+          const id = btn.getAttribute('data-generate-maintenance-ticket');
+          const res = await fetch(`/api/maintenance-plans/${id}/generate-ticket`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({})});
+          const data = await res.json();
+          if(!res.ok){ alert(extractErrorMessage(data, 'Ошибка создания заявки')); return; }
+          await loadMaintenance();
+        };
+      });
     }
     async function loadMaintenance(){
       if(!maintenanceTable) return;
       const [assetsRes, mastersRes, plansRes] = await Promise.all([
         fetch('/api/assets', {cache:'no-store'}),
         fetch('/api/masters', {cache:'no-store'}),
-        fetch('/api/maintenance-plans', {cache:'no-store'}),
+        fetch(`/api/maintenance-plans/due${buildMaintenanceDueQuery()}`, {cache:'no-store'}),
       ]);
       if(assetsRes.ok) assetsCache = await assetsRes.json();
       if(mastersRes.ok) maintenanceMastersCache = await mastersRes.json();
-      if(plansRes.ok) maintenancePlansCache = await plansRes.json();
+      populateMaintenanceFilterMasterSelect();
+      if(plansRes.ok){
+        maintenanceDueQueueCache = await plansRes.json();
+        maintenancePlansCache = [
+          ...(maintenanceDueQueueCache.plans || []),
+          ...(maintenanceDueQueueCache.inactive_plans || []),
+        ];
+        if(maintenanceFilterMsg) {
+          const range = maintenanceDueQueueCache.range || {};
+          maintenanceFilterMsg.textContent = range.date_to ? `Показаны планы до ${range.date_to}` : '';
+        }
+      }
       populateMaintenanceAssetSelect(maintenanceForm?.elements.asset_id?.value || '');
       populateMaintenanceMasterSelect(maintenanceForm?.elements.assigned_master_id?.value || '');
       renderMaintenancePlans();
     }
     if(btnMaintenanceRefresh) btnMaintenanceRefresh.onclick = () => loadMaintenance();
+    if(maintenanceFilters){
+      maintenanceFilters.addEventListener('submit', (ev) => {
+        ev.preventDefault();
+        loadMaintenance();
+      });
+    }
     if(maintenanceFormReset) maintenanceFormReset.onclick = resetMaintenanceForm;
     if(maintenanceForm){
       maintenanceForm.addEventListener('submit', async (ev) => {
