@@ -134,6 +134,8 @@ Add the smallest useful planned/preventive maintenance foundation for elevator s
 - [x] (2026-05-24 20:55 +05) Add simple admin/dispatcher UI.
 - [x] (2026-05-24 20:55 +05) Update runbook and login/seed docs.
 - [x] (2026-05-24 20:55 +05) Add focused tests and run requested validation commands.
+- [x] (2026-05-24 21:39 +05) Clean the current local `lift_crm.db` runtime data back to admin, dispatcher, and five linked technician masters.
+- [x] (2026-05-24 21:39 +05) Isolate pytest runs through `tests/conftest.py` so future tests write to a temporary database, archive, and uploads folder instead of `lift_crm.db`.
 
 ## Surprises & Discoveries
 
@@ -147,6 +149,8 @@ Add the smallest useful planned/preventive maintenance foundation for elevator s
   Evidence: `venv/bin/python -m pytest tests/test_seed_demo_cleanup.py -q` returned `1 passed in 0.93s`; `venv/bin/python -m pytest tests/test_maintenance_plans.py -q` returned `5 passed, 6 subtests passed in 0.95s`.
 - Observation: The full suite exposed two old seed-count assumptions and one history pagination assumption. Tests now create/target their own fixture behavior around the new five-technician baseline.
   Evidence: First full `venv/bin/python -m pytest -q` failed on `tests/test_db_init.py` and `tests/test_metrics_api.py`; second full run failed on `tests/test_ops_history.py`; final full run passed.
+- Observation: The working `lift_crm.db` had accumulated test-created runtime records even though fresh seed code no longer creates demo operational data.
+  Evidence: Before cleanup, SQLite counts showed 1493 masters, 1406 users, 1317 tickets, 363 assets, 63 customers, 36 contracts, and 78 maintenance plans.
 
 ## Decision Log
 
@@ -162,6 +166,12 @@ Add the smallest useful planned/preventive maintenance foundation for elevator s
 - Decision: Do not implement ticket generation from maintenance plans in this PR.
   Rationale: Safe ticket generation needs product decisions about priority, coordinates, scheduling cadence, and technician workflow. List/create/update/complete is the minimal foundation requested.
   Date/Author: 2026-05-24 / codex
+- Decision: Keep only the existing first five master rows in the local cleanup and link them to `master1` through `master5`.
+  Rationale: This matches the fresh seed baseline while avoiding arbitrary selection among hundreds of test-created masters.
+  Date/Author: 2026-05-24 / codex
+- Decision: Point tests at a temporary SQLite database from `tests/conftest.py`.
+  Rationale: The suite creates many role, ticket, asset, and sync fixtures; those should not pollute the operator-facing local database.
+  Date/Author: 2026-05-24 / codex
 
 ## Outcomes & Retrospective
 
@@ -169,6 +179,8 @@ Add the smallest useful planned/preventive maintenance foundation for elevator s
 - Outcome (2026-05-24): Added `MaintenancePlan` model/table, idempotent SQLite table creation, admin/dispatcher CRUD APIs, validation, and complete action.
 - Outcome (2026-05-24): Added a compact desktop «ТО» tab for admin/dispatcher users with list, create/edit form, status badges, asset label, assigned master, and complete action.
 - Outcome (2026-05-24): Updated `docs/RUNBOOK.md` and `README.md` for planned maintenance and clean local demo setup guidance.
+- Outcome (2026-05-24): Current `lift_crm.db` was cleaned to 7 users (`admin`, `dispatcher`, `master1` ... `master5`), 5 active masters, and zero tickets/assets/customers/contracts/maintenance plans.
+- Outcome (2026-05-24): Pytest now uses a temporary DB/archive/uploads path created by `tests/conftest.py`, preventing future test fixtures from appearing in the live UI.
 - Validation (2026-05-24): `venv/bin/python -m py_compile liftcrm/db.py liftcrm/assets/routes.py` passed with no output.
 - Validation (2026-05-24): `venv/bin/python -m pytest tests/test_seed_demo_cleanup.py -q` passed (`1 passed in 0.93s`).
 - Validation (2026-05-24): `venv/bin/python -m pytest tests/test_maintenance_plans.py -q` passed (`5 passed, 6 subtests passed in 0.95s`).
