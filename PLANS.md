@@ -1,1962 +1,582 @@
-# Technician Mobile App (PWA + Offline Outbox + Sync) — ExecPlan
+# CRM-ядро Lift CRM - ExecPlan
 
-This PLANS.md file is a living execution plan. The sections `Progress`, `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work proceeds.
+Этот `PLANS.md` является источником истины для работ по CRM-ядру. Во время реализации обязательно поддерживать актуальными разделы `Progress`, `Surprises & Discoveries`, `Decision Log` и `Outcomes & Retrospective`.
 
-Treat the reader as a complete beginner to this repository. The only context they have is the working tree and this file. Do not assume any prior conversation.
+Читатель плана не обязан знать предыдущий контекст. Достаточно текущего рабочего дерева и этого файла.
 
----
+Весь план сразу не реализовывать. Код приложения не менять, пока пользователь отдельно не разрешит реализацию Sprint 1.
 
-# Planned Maintenance Calendar and Due Queue PR — ExecPlan
+## Цель
 
-## Purpose / Big Picture
+Довести текущий Lift CRM до практичного CRM-ядра для одной лифтовой сервисной компании:
 
-Make the existing planned maintenance foundation operationally useful for admin and dispatcher users. The system should show active overdue and upcoming ТО plans in a clear due queue, provide a simple date-grouped list with filters, and allow a due plan to generate one normal ticket without creating duplicate active tickets for the same maintenance due date. This PR intentionally does not add cron jobs, drag-and-drop calendars, PWA/offline changes, CSRF/CORS/session changes, upload authorization changes, backup/restore changes, asset import changes, seed/demo cleanup changes, billing, Docker/deployment, Postgres, or unrelated refactors.
+- быстрый учет заявок диспетчером;
+- контроль заявок и базовая фильтрация;
+- отдельные объекты/здания;
+- лифты как оборудование внутри объекта;
+- история по лифтам;
+- история по объектам;
+- отчетность по мастерам;
+- отчетность по типам поломок;
+- проблемные лифты;
+- проблемные объекты;
+- удобный интерфейс для диспетчера, мастера и администратора.
 
-## Progress
+Это план только для CRM-ядра. ERP-модули в него не входят.
 
-- [x] (2026-05-24 21:20 +05) Read `README.md`, `AGENTS.md`, `PLANS.md`, and `docs/RUNBOOK.md`.
-- [x] (2026-05-24 21:20 +05) Inspect planned maintenance model, routes/API, template UI, tests, and runbook docs from PR #97.
-- [x] (2026-05-24 21:20 +05) Verify current latest `main` has maintenance CRUD and complete action, but no due queue, no date/master filters, no calendar/list grouping, and no ticket generation.
-- [x] (2026-05-24 21:20 +05) Create this focused ExecPlan before coding.
-- [x] (2026-05-24 21:34 +05) Implement backend due queue endpoint, derived status serialization, ticket link fields, and generate-ticket endpoint.
-- [x] (2026-05-24 21:34 +05) Add focused due queue and generate-ticket tests.
-- [x] (2026-05-24 21:45 +05) Add minimal ТО queue UI with counters, filters, grouped list, complete/edit, and generate-ticket action.
-- [x] (2026-05-24 21:45 +05) Update `docs/RUNBOOK.md` with dispatcher due queue, overdue handling, ticket generation, completion, and no-cron limits.
-- [x] (2026-05-24 21:52 +05) Run focused planned maintenance, ticket, asset, full suite, `git diff --check`, and `git status --short` validation.
+## Ограничения
 
-## Surprises & Discoveries
+Не делать и не добавлять в рамках этого плана:
 
-- Observation: The checkout started on `codex/planned-maintenance-pr97`, but local `main` was behind `origin/main`.
-  Evidence: `git fetch origin main` showed `97b9696..03b2552`; `git pull --ff-only origin main` fast-forwarded local `main`.
-- Observation: PR #97 intentionally did not implement ticket generation from maintenance plans.
-  Evidence: Existing Decision Log entry says safe ticket generation was deferred; current code has `GET/POST/PATCH /api/maintenance-plans` and `/complete` only.
-- Observation: Maintenance status currently accepts `overdue` as a stored status even though the requested queue needs overdue calculated from active `next_due_date`.
-  Evidence: `MAINTENANCE_STATUSES = {"active", "paused", "completed", "overdue"}` and `serialize_maintenance_plan()` returns `plan.status` only.
-- Observation: Focused maintenance tests passed after backend queue and ticket generation work.
-  Evidence: `venv/bin/python -m pytest tests/test_maintenance_plans.py -q` returned `11 passed, 6 subtests passed in 1.08s`.
+- склад;
+- складские остатки;
+- запчасти;
+- списание запчастей в заявках;
+- зарплаты;
+- счета;
+- платежи;
+- закупки;
+- финансовую часть;
+- multi-company;
+- SaaS;
+- сложный RBAC;
+- роли/permissions на уровне отдельных действий;
+- телефонию, SMS, push, BI, Docker, Postgres или deployment-работы без отдельного запроса.
 
-## Decision Log
+Сохранить текущую простую модель ролей:
 
-- Decision: Derive queue status as `overdue` when `status == "active"` and `next_due_date < today`, without mutating the stored status.
-  Rationale: The user explicitly requested consistent overdue calculation and no permanent mutation unless existing design requires it.
-  Date/Author: 2026-05-24 / codex
-- Decision: Add a nullable `tickets.maintenance_plan_id` and `maintenance_due_date` link for generated tickets.
-  Rationale: This is the smallest durable way to make generated-ticket visibility and duplicate prevention testable without creating a scheduler or new workflow.
-  Date/Author: 2026-05-24 / codex
+- `admin`;
+- `dispatcher`;
+- `technician`.
 
-## Outcomes & Retrospective
+Сохранить текущую архитектуру Flask + SQLAlchemy + SQLite. Новые таблицы, колонки и индексы добавлять только через безопасные идемпотентные SQLite-миграции в стиле текущего проекта.
 
-- Outcome (2026-05-24): Added `GET /api/maintenance-plans/due` with counters, active plans, optional inactive plans, derived overdue/today/next-7/next-30 buckets, and filters for status, assigned master, date range, and overdue-only mode.
-- Outcome (2026-05-24): Added nullable `tickets.maintenance_plan_id` and `tickets.maintenance_due_date`, plus `POST /api/maintenance-plans/<id>/generate-ticket` with duplicate prevention for open generated tickets on the same plan/due date.
-- Outcome (2026-05-24): Updated the existing ТО tab with queue counters, filters, date-bucket grouping, customer/contract context, generated ticket visibility, and ticket generation action.
-- Outcome (2026-05-24): Updated runbook instructions for checking upcoming maintenance, handling overdue plans, generating tickets, marking completion, and current no-cron/no-heavy-calendar limitations.
-- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_maintenance_plans.py -q` passed (`11 passed, 6 subtests passed in 1.08s`).
-- Validation (2026-05-24): `venv/bin/python -m py_compile liftcrm/db.py liftcrm/assets/routes.py liftcrm/tickets/repository.py` passed with no output.
-- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_maintenance_plans.py -q` passed after UI/docs changes (`11 passed, 6 subtests passed in 1.09s`).
-- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_maintenance_plans.py -q` passed in final focused run (`11 passed, 6 subtests passed in 1.09s`).
-- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_ticket_status_transitions.py -q` passed (`8 passed in 1.49s`).
-- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_assets_api.py -q` passed (`15 passed in 1.34s`).
-- Validation (2026-05-24): `venv/bin/python -m pytest -q` passed (`150 passed, 6 subtests passed in 22.88s`).
-- Validation (2026-05-24): `git diff --check` passed with no output.
-- Validation (2026-05-24): `git status --short` showed intended modified files only: `PLANS.md`, `docs/RUNBOOK.md`, `liftcrm/assets/routes.py`, `liftcrm/db.py`, `liftcrm/tickets/repository.py`, `templates/index.html`, and `tests/test_maintenance_plans.py`.
+## Текущие факты по проекту
 
-## Plan of Work
+- Вход в приложение: [app.py](/Users/dmitriy/Projects/ERP_lift_company/app.py).
+- Фабрика приложения и page routes: [liftcrm/__init__.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/__init__.py).
+- Модели и ручные SQLite-миграции: [liftcrm/db.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/db.py).
+- API заявок: [liftcrm/tickets/routes.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/tickets/routes.py).
+- Сериализация заявок и SLA: [liftcrm/tickets/repository.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/tickets/repository.py).
+- API лифтов, клиентов, договоров и ТО: [liftcrm/assets/routes.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/assets/routes.py).
+- Старый alias объектов: [liftcrm/objects/routes.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/objects/routes.py).
+- Desktop UI почти полностью находится в [templates/index.html](/Users/dmitriy/Projects/ERP_lift_company/templates/index.html).
+- Мобильный интерфейс мастера: [templates/mobile.html](/Users/dmitriy/Projects/ERP_lift_company/templates/mobile.html) и [static/mobile.js](/Users/dmitriy/Projects/ERP_lift_company/static/mobile.js).
+- Карточка и история лифта: [templates/lift_detail.html](/Users/dmitriy/Projects/ERP_lift_company/templates/lift_detail.html) и [static/lift_detail.js](/Users/dmitriy/Projects/ERP_lift_company/static/lift_detail.js).
+- В тестах уже есть покрытие заявок, лифтов, истории лифта, истории мастера, sync, metrics, access, XSS guards и ТО.
 
-### Milestone 1 — Backend due queue and filters
+Текущая цепочка данных:
 
-Goal: Admin/dispatcher users can fetch a structured ТО due queue with overdue, today, next-7-day, and next-30-day groups; technicians and anonymous users cannot manage it.
+`Asset` как лифт + адрес объекта -> `Ticket` -> `AuditLog` / `TicketComment` / `Attachment`.
 
-Work:
+Целевая цепочка CRM-ядра:
 
-- Add derived maintenance queue helpers in `liftcrm/assets/routes.py`.
-- Add `GET /api/maintenance-plans/due` with filters for stored/derived status, assigned master, date range, and overdue-only mode.
-- Extend maintenance serialization with asset address, customer/contract context, derived due status, due bucket, and generated ticket visibility.
-- Keep paused/completed plans hidden from the active due queue by default and include them separately only when explicitly requested.
-
-Validation:
-
-- Focused due queue tests for overdue, today, upcoming 7/30, inactive visibility, access rules, and filters.
-
-### Milestone 2 — Generate ticket from a due plan
-
-Goal: Admin/dispatcher users can create one normal ticket from a due maintenance plan; duplicate active tickets for the same plan/due date are prevented.
-
-Work:
-
-- Extend `Ticket` with nullable `maintenance_plan_id` and `maintenance_due_date`; add idempotent SQLite migration.
-- Add `POST /api/maintenance-plans/<id>/generate-ticket`.
-- Use the linked asset for object/address/coordinates, include planned maintenance context in the ticket description, keep priority `MEDIUM`, and assign through the existing ticket auto-assignment helper.
-- Reject generation when the asset has no coordinates because existing ticket creation requires lat/lon.
-- Return an existing open generated ticket instead of creating a duplicate for the same plan and due date.
-
-Validation:
-
-- Focused tests for ticket creation, link fields, description context, duplicate prevention, and role access.
-
-### Milestone 3 — Minimal UI, docs, and full validation
-
-Goal: Dispatchers/admins can operate the queue from the existing ТО tab without a dashboard redesign.
-
-Work:
-
-- Add counters, filter controls, date-grouped list/table, derived overdue badges, and action buttons to `templates/index.html`.
-- Wire generate-ticket, mark-completed, and edit-plan actions into the existing maintenance UI.
-- Update `docs/RUNBOOK.md` with dispatcher workflow, overdue handling, ticket generation, completion, and no-cron limitation.
-- Run focused and full validation commands.
-
-Validation:
-
-- Run focused planned maintenance/due queue tests, ticket-generation tests, existing maintenance tests, full pytest, `git diff --check`, and `git status --short`.
-
-## End-of-plan change log
-
-- Change: Added Planned Maintenance Calendar and Due Queue PR ExecPlan.
-  Reason: The task spans schema, backend APIs, ticket workflow, UI, docs, and tests, so `AGENTS.md` requires an ExecPlan before coding.
-  Date/Author: 2026-05-24 / codex
-
----
-
-# Planned Maintenance Foundation and Demo Data Cleanup PR — ExecPlan
-
-## Purpose / Big Picture
-
-Add the smallest useful planned/preventive maintenance foundation for elevator service operations while cleaning fresh local seed data. A new local database should start with one admin, one dispatcher, five active technician masters with linked technician users, and no default operational tickets or assets. Admin and dispatcher users can list, create, update, and complete maintenance plans. This PR intentionally does not add cron scheduling, calendar UI, billing, invoices, tariffs, payroll, Docker/deployment, Postgres, PWA/offline changes, CSRF/CORS/session changes, upload authorization changes, backup/restore tooling changes, or unrelated refactors.
+`Building/Object` -> `Asset` как лифт -> `Ticket` -> история, комментарии, вложения, отчеты.
 
 ## Progress
 
-- [x] (2026-05-24 20:55 +05) Read `README.md`, `AGENTS.md`, `PLANS.md`, and `docs/RUNBOOK.md`.
-- [x] (2026-05-24 20:55 +05) Inspect `liftcrm/db.py`, `liftcrm/assets/routes.py`, `liftcrm/tickets/routes.py`, `liftcrm/tickets/service.py`, `templates/index.html`, seed/bootstrap logic, and existing tests for tickets/assets/users/customers/contracts.
-- [x] (2026-05-24 20:55 +05) Verify planned maintenance does not already exist.
-- [x] (2026-05-24 20:55 +05) Verify fresh seed currently creates 10 unlinked masters plus admin/dispatcher users; tickets/assets are not seeded by `init_db()`.
-- [x] (2026-05-24 20:55 +05) Create this focused ExecPlan before coding.
-- [x] (2026-05-24 20:55 +05) Implement fresh seed baseline cleanup.
-- [x] (2026-05-24 20:55 +05) Implement minimal planned maintenance model, migrations, API, and validation.
-- [x] (2026-05-24 20:55 +05) Add simple admin/dispatcher UI.
-- [x] (2026-05-24 20:55 +05) Update runbook and login/seed docs.
-- [x] (2026-05-24 20:55 +05) Add focused tests and run requested validation commands.
-- [x] (2026-05-24 21:39 +05) Clean the current local `lift_crm.db` runtime data back to admin, dispatcher, and five linked technician masters.
-- [x] (2026-05-24 21:39 +05) Isolate pytest runs through `tests/conftest.py` so future tests write to a temporary database, archive, and uploads folder instead of `lift_crm.db`.
+- [x] (2026-06-17 17:00 +0500) Прочитан `CRM_AUDIT_REPORT.md`.
+- [x] (2026-06-17 17:00 +0500) Изучены структура проекта, модели, API заявок, API лифтов, metrics API, desktop UI, mobile UI и существующие тесты.
+- [x] (2026-06-17 17:00 +0500) Старый исторический `PLANS.md` заменен актуальным ExecPlan для CRM-ядра.
+- [ ] Sprint 1 разрешен пользователем.
+- [ ] Sprint 1 реализован и проверен.
+- [ ] Sprint 2 разрешен пользователем.
+- [ ] Sprint 2 реализован и проверен.
+- [ ] Sprint 3 разрешен пользователем.
+- [ ] Sprint 3 реализован и проверен.
+- [ ] Sprint 4 разрешен пользователем.
+- [ ] Sprint 4 реализован и проверен.
+- [ ] Sprint 5 разрешен пользователем.
+- [ ] Sprint 5 реализован и проверен.
 
 ## Surprises & Discoveries
 
-- Observation: `git fetch origin main` confirmed local `main` and `origin/main` both point to `97b9696963292195536537fbf166833f54f36524`.
-  Evidence: `git rev-parse HEAD origin/main`.
-- Observation: There is no current maintenance/preventive model or route; repository hits for "maintenance" were limited to plans/docs/tooling names, not application behavior.
-  Evidence: `rg -n "maintenance|preventive|planned|plan" .`.
-- Observation: Fresh seed data is centralized in `liftcrm/db.py:init_db()`, creating 10 `Master` rows when no masters exist and only admin/dispatcher users when no users exist.
-  Evidence: `Master(name=f"Мастер #{i+1}") for i in range(10)` and admin/dispatcher creation in `init_db()`.
-- Observation: Focused seed and maintenance tests passed after implementation.
-  Evidence: `venv/bin/python -m pytest tests/test_seed_demo_cleanup.py -q` returned `1 passed in 0.93s`; `venv/bin/python -m pytest tests/test_maintenance_plans.py -q` returned `5 passed, 6 subtests passed in 0.95s`.
-- Observation: The full suite exposed two old seed-count assumptions and one history pagination assumption. Tests now create/target their own fixture behavior around the new five-technician baseline.
-  Evidence: First full `venv/bin/python -m pytest -q` failed on `tests/test_db_init.py` and `tests/test_metrics_api.py`; second full run failed on `tests/test_ops_history.py`; final full run passed.
-- Observation: The working `lift_crm.db` had accumulated test-created runtime records even though fresh seed code no longer creates demo operational data.
-  Evidence: Before cleanup, SQLite counts showed 1493 masters, 1406 users, 1317 tickets, 363 assets, 63 customers, 36 contracts, and 78 maintenance plans.
+- Наблюдение: прежний `PLANS.md` содержал несколько старых завершенных ExecPlan-блоков по ТО, клиентам/договорам и другим работам. Он не был компактным источником истины для нового CRM-core плана.
+  Evidence: файл начинался с "Technician Mobile App", затем шел набор завершенных планов.
+- Наблюдение: `/api/metrics` возвращает по мастерам `name`, `total`, `avg_close_sec`, `median_close_sec`, а desktop UI читает `master_name`, `count`, `avg_sec`, `median_sec`.
+  Evidence: endpoint `/api/metrics` в [liftcrm/tickets/routes.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/tickets/routes.py) и `loadMetrics()` в [templates/index.html](/Users/dmitriy/Projects/ERP_lift_company/templates/index.html).
+- Наблюдение: `TicketComment` уже есть, mobile sync умеет добавлять комментарии, но desktop-карточка заявки не имеет поля для комментария диспетчера.
+  Evidence: `TICKET_ADD_COMMENT` в [static/mobile.js](/Users/dmitriy/Projects/ERP_lift_company/static/mobile.js) и `openTicketModal()` в [templates/index.html](/Users/dmitriy/Projects/ERP_lift_company/templates/index.html).
+- Наблюдение: отдельной модели `Building` или `Object` нет. `Asset` сейчас одновременно хранит лифт и адресный контекст объекта.
+  Evidence: модель `Asset` в [liftcrm/db.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/db.py).
+- Наблюдение: `/api/lifts/<asset_id>/history` есть для admin/dispatcher, но мобильный интерфейс мастера пока не показывает историю лифта в потоке работы по заявке.
+  Evidence: route истории лифта в [liftcrm/assets/routes.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/assets/routes.py) и mobile UI в [static/mobile.js](/Users/dmitriy/Projects/ERP_lift_company/static/mobile.js).
 
 ## Decision Log
 
-- Decision: Keep seed cleanup non-destructive and apply it only when tables are empty.
-  Rationale: Existing databases may contain real staff, tickets, assets, and archive state; the request forbids automatic real-data deletion.
-  Date/Author: 2026-05-24 / codex
-- Decision: Create five linked technician users (`master1` through `master5`) for the five seeded masters.
-  Rationale: `auto_assign_master()` only considers active masters linked to active technician users, so unlinked masters are not operational technicians.
-  Date/Author: 2026-05-24 / codex
-- Decision: Put maintenance plan APIs in the existing assets blueprint for this foundation.
-  Rationale: Plans are asset-bound operational records and this avoids broader blueprint/package churn for a minimal PR.
-  Date/Author: 2026-05-24 / codex
-- Decision: Do not implement ticket generation from maintenance plans in this PR.
-  Rationale: Safe ticket generation needs product decisions about priority, coordinates, scheduling cadence, and technician workflow. List/create/update/complete is the minimal foundation requested.
-  Date/Author: 2026-05-24 / codex
-- Decision: Keep only the existing first five master rows in the local cleanup and link them to `master1` through `master5`.
-  Rationale: This matches the fresh seed baseline while avoiding arbitrary selection among hundreds of test-created masters.
-  Date/Author: 2026-05-24 / codex
-- Decision: Point tests at a temporary SQLite database from `tests/conftest.py`.
-  Rationale: The suite creates many role, ticket, asset, and sync fixtures; those should not pollute the operator-facing local database.
-  Date/Author: 2026-05-24 / codex
+- Решение: план ограничен CRM-ядром и явно исключает склад, финансы, запчасти, зарплаты, закупки, SaaS и сложный RBAC.
+  Обоснование: пользователь прямо задал эти ограничения.
+  Дата/Автор: 2026-06-17 / codex
+- Решение: Sprint 1 должен быть быстрым и низкорисковым перед добавлением объектной модели.
+  Обоснование: сначала нужно закрыть известный дефект отчетности, комментарии диспетчера и перегруженность создания заявки без большой миграции данных.
+  Дата/Автор: 2026-06-17 / codex
+- Решение: backend-модель объекта назвать `Building`.
+  Обоснование: `Object` неоднозначен в коде, а в UI можно продолжать использовать бизнес-термин "Объект".
+  Дата/Автор: 2026-06-17 / codex
+- Решение: оставить backend-модель `Asset` для лифтов на время этой roadmap.
+  Обоснование: переименование `Asset` в `Elevator` даст большой шум в коде; достаточно добавить `building_id` и последовательно называть `Asset` лифтом в UI.
+  Дата/Автор: 2026-06-17 / codex
+- Решение: признак проблемного лифта/объекта сначала делать как вычисляемый показатель.
+  Обоснование: повторные заявки по лифту/объекту и `problem_type` достаточно покрывают управленческий контроль без нового ручного workflow.
+  Дата/Автор: 2026-06-17 / codex
 
 ## Outcomes & Retrospective
 
-- Outcome (2026-05-24): Fresh empty databases now seed one admin, one dispatcher, five active masters, and five linked active technician users (`master1` ... `master5`) without creating tickets or assets.
-- Outcome (2026-05-24): Added `MaintenancePlan` model/table, idempotent SQLite table creation, admin/dispatcher CRUD APIs, validation, and complete action.
-- Outcome (2026-05-24): Added a compact desktop «ТО» tab for admin/dispatcher users with list, create/edit form, status badges, asset label, assigned master, and complete action.
-- Outcome (2026-05-24): Updated `docs/RUNBOOK.md` and `README.md` for planned maintenance and clean local demo setup guidance.
-- Outcome (2026-05-24): Current `lift_crm.db` was cleaned to 7 users (`admin`, `dispatcher`, `master1` ... `master5`), 5 active masters, and zero tickets/assets/customers/contracts/maintenance plans.
-- Outcome (2026-05-24): Pytest now uses a temporary DB/archive/uploads path created by `tests/conftest.py`, preventing future test fixtures from appearing in the live UI.
-- Validation (2026-05-24): `venv/bin/python -m py_compile liftcrm/db.py liftcrm/assets/routes.py` passed with no output.
-- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_seed_demo_cleanup.py -q` passed (`1 passed in 0.93s`).
-- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_maintenance_plans.py -q` passed (`5 passed, 6 subtests passed in 0.95s`).
-- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_maintenance_plans.py -q` passed after docs/UI/test updates (`5 passed, 6 subtests passed in 0.64s`).
-- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_seed_demo_cleanup.py -q` passed after docs/UI/test updates (`1 passed in 0.61s`).
-- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_assets_api.py -q` passed (`15 passed in 1.54s`).
-- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_ticket_status_transitions.py -q` passed (`8 passed in 1.50s`).
-- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_db_init.py tests/test_metrics_api.py -q` passed after updating old seed-count assumptions (`5 passed in 2.25s`).
-- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_maintenance_plans.py tests/test_seed_demo_cleanup.py tests/test_assets_api.py tests/test_ticket_status_transitions.py -q` passed (`29 passed, 6 subtests passed in 2.97s`).
-- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_ops_history.py -q` passed after making the history test explicit about limit (`4 passed in 0.64s`).
-- Validation (2026-05-24): Final `venv/bin/python -m pytest -q` passed (`144 passed, 6 subtests passed in 22.08s`).
-- Validation (2026-05-24): `git diff --check` passed with no output.
-- Validation (2026-05-24): `git status --short` showed intended files only: `PLANS.md`, `README.md`, `docs/RUNBOOK.md`, `liftcrm/assets/routes.py`, `liftcrm/db.py`, `templates/index.html`, `tests/test_db_init.py`, `tests/test_metrics_api.py`, `tests/test_ops_history.py`, and untracked `tests/test_maintenance_plans.py`, `tests/test_seed_demo_cleanup.py`.
-
-## Plan of Work
-
-### Milestone 1 — Fresh seed cleanup
-
-Goal: A fresh local database starts with a realistic staff baseline and no default operational data.
-
-Work:
-
-- Update `liftcrm/db.py:init_db()` so empty masters/users tables seed one admin, one dispatcher, five active masters, and five linked active technician users.
-- Preserve non-destructive behavior: do not delete or rewrite existing rows when tables already contain data.
-- Add tests that initialize a temp database and assert user/master/ticket/asset counts.
-
-Validation:
-
-- Focused seed cleanup test.
-
-### Milestone 2 — Maintenance foundation
-
-Goal: Admin/dispatcher can manage basic preventive maintenance plans tied to assets; invalid payloads return 400s.
-
-Work:
-
-- Add a `MaintenancePlan` model in `liftcrm/db.py` with fields `id`, `asset_id`, `title`, `description`, `interval_type`, `next_due_date`, `last_completed_date`, `assigned_master_id`, `status`, `notes`, `created_at`, and `updated_at`.
-- Extend `ensure_migrations()` with idempotent SQLite table creation and indexes; do not introduce Alembic.
-- Add serializers and endpoints in `liftcrm/assets/routes.py`:
-  - `GET /api/maintenance-plans`
-  - `POST /api/maintenance-plans`
-  - `PATCH /api/maintenance-plans/<id>`
-  - `POST /api/maintenance-plans/<id>/complete`
-- Validate existing asset/master, required title, date format, allowed interval/status values, and role access.
-- Mark complete by setting `last_completed_date` and keeping active plans active with the next due date advanced by the interval when possible.
-
-Validation:
-
-- Focused maintenance API tests for admin, dispatcher, technician, anonymous, and invalid payloads.
-
-### Milestone 3 — UI, docs, and regression validation
-
-Goal: Operators get a compact maintenance section without dashboard redesign, and docs explain safe local cleanup.
-
-Work:
-
-- Add a simple maintenance tab/section in `templates/index.html` for admin/dispatcher users: list, create/edit form, status badge, asset label, assigned master, and complete action.
-- Update `docs/RUNBOOK.md` with planned maintenance usage, difference from reactive tickets, fresh local database baseline, safe demo cleanup guidance, and backup warning.
-- Update `README.md` test account notes for five seeded technician accounts.
-
-Validation:
-
-- Run focused maintenance tests, focused seed tests, asset tests, ticket tests, full pytest, `git diff --check`, and `git status --short`.
-
-## End-of-plan change log
-
-- Change: Added Planned Maintenance Foundation and Demo Data Cleanup PR ExecPlan.
-  Reason: The task spans database seed behavior, schema, backend APIs, UI, docs, and tests, so `AGENTS.md` requires an ExecPlan before coding.
-  Date/Author: 2026-05-24 / codex
-
----
-
-# Customers and Contracts Foundation PR — ExecPlan
-
-## Purpose / Big Picture
-
-Add the smallest durable customer/company and service contract foundation needed for real elevator service operations. Admin and dispatcher users must be able to manage customers/contracts, link lifts/assets to them, and see that context on asset and ticket payloads/UI. This PR intentionally does not add billing, invoices, tariff calculation, payments, a full contract lifecycle, an SLA escalation engine, Postgres, Docker/deployment, PWA/offline changes, CSRF/CORS/session security changes, upload authorization changes, backup/restore changes, or unrelated refactors.
-
-## Progress
-
-- [x] (2026-05-24 00:00 +05) Read `README.md`, `AGENTS.md`, `PLANS.md`, and `docs/RUNBOOK.md`.
-- [x] (2026-05-24 00:00 +05) Inspect existing implementation in `liftcrm/db.py`, `liftcrm/assets/routes.py`, `liftcrm/tickets/routes.py`, `liftcrm/tickets/service.py`, `templates/index.html`, asset/lift JS/templates, and existing asset/ticket/import/access tests.
-- [x] (2026-05-24 00:00 +05) Verify existing customer/company/contract concepts: `Asset.customer_id` exists as an unreferenced nullable integer, but there are no Customer/Contract models, contract fields, API routes, serializers, or UI controls.
-- [x] (2026-05-24 00:00 +05) Create this focused ExecPlan before coding.
-- [x] (2026-05-24 00:00 +05) Implement migration-compatible Customer and Contract models plus asset contract linking.
-- [x] (2026-05-24 00:00 +05) Add minimal admin/dispatcher API routes and validation.
-- [x] (2026-05-24 00:00 +05) Surface customer/contract context in asset and ticket serializers.
-- [x] (2026-05-24 00:00 +05) Add simple admin UI for customers/contracts and asset selectors.
-- [x] (2026-05-24 00:00 +05) Update `docs/RUNBOOK.md`.
-- [x] (2026-05-24 00:00 +05) Add focused regression tests and run focused/full validation commands.
-
-## Surprises & Discoveries
-
-- Observation: The checkout started on `codex/emergency-priority-pr95`; local `main` was at `32841a0` and `origin/main` had advanced to `a6e4e3a`.
-  Evidence: `git fetch origin main` and `git pull --ff-only origin main` fast-forwarded local `main` and brought in PR #95 files.
-- Observation: `assets.customer_id` already exists in `Asset` and in the SQLite migration-created assets table, but it is not a foreign key and is not serialized or edited.
-  Evidence: `Asset.customer_id = Column(Integer, nullable=True)` and the assets table DDL in `liftcrm/db.py`.
-- Observation: Tickets already link to assets through `Ticket.asset_id`, and `repository.serialize_ticket()` already returns asset context fields.
-  Evidence: `Ticket.asset_id`, `Ticket.asset = relationship("Asset", back_populates="tickets")`, and `asset_*` keys in `liftcrm/tickets/repository.py`.
-
-## Decision Log
-
-- Decision: Add explicit `Customer` and `Contract` models and reuse the existing `assets.customer_id` column instead of creating a duplicate company/client concept.
-  Rationale: The existing column is the intended seam for asset ownership/management; normalizing it avoids parallel customer fields.
-  Date/Author: 2026-05-24 / codex
-- Decision: Add `assets.contract_id` and keep ticket customer/contract context derived from `ticket.asset` for this foundation PR.
-  Rationale: Derivation is the smallest safe approach and avoids a partial historical snapshot model. Historical tickets remain readable because inactive customers and expired contracts stay visible.
-  Date/Author: 2026-05-24 / codex
-- Decision: Allow admin and dispatcher to list/create/update customers/contracts and link assets, while technicians remain blocked from management APIs.
-  Rationale: This matches existing operational asset CRUD permissions in `liftcrm/assets/routes.py`.
-  Date/Author: 2026-05-24 / codex
-- Decision: Keep import behavior unchanged in this PR except preserving compatibility; imported assets can be linked after import.
-  Rationale: Customer/contract import matching needs product rules for names/numbers and is not required for the foundation.
-  Date/Author: 2026-05-24 / codex
-
-## Outcomes & Retrospective
-
-- Outcome (2026-05-24): Added `Customer` and `Contract` models, idempotent SQLite table creation, and automatic `assets.contract_id` migration while reusing existing `assets.customer_id`.
-- Outcome (2026-05-24): Added admin/dispatcher APIs for customer and contract list/create/update plus asset customer/contract linking with 400 validation for required names, valid customers, date order, SLA hours, and mismatched contract/customer links.
-- Outcome (2026-05-24): Ticket customer/contract context is derived from the linked asset and returned in ticket serializers; tickets without assets continue returning null context.
-- Outcome (2026-05-24): Added compact customer/contract forms in the existing Lifts registry, asset customer/contract selectors, asset table labels, map popup/search labels, and ticket modal context.
-- Outcome (2026-05-24): Documented customer/contract meaning, creation, linking, ticket context behavior, import limitation, and MVP limits in `docs/RUNBOOK.md`.
-- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_customers_contracts.py -q` passed (`10 passed in 1.14s`).
-- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_customers_contracts.py tests/test_assets_api.py tests/test_ticket_status_transitions.py -q` passed (`33 passed in 3.17s`).
-- Validation (2026-05-24): `venv/bin/python -m py_compile liftcrm/db.py liftcrm/assets/routes.py liftcrm/tickets/repository.py` passed with no output.
-- Validation (2026-05-24): `venv/bin/python -m pytest tests/test_xss_rendering_guards.py tests/test_customers_contracts.py tests/test_assets_api.py tests/test_ticket_status_transitions.py -q` passed (`36 passed in 3.26s`).
-- Validation (2026-05-24): First `venv/bin/python -m pytest -q` run failed with one outdated source guard in `tests/test_xss_rendering_guards.py`; updated the guard to assert escaped customer/contract popup fields.
-- Validation (2026-05-24): Final `venv/bin/python -m pytest -q` passed (`138 passed in 22.76s`).
-- Validation (2026-05-24): `git diff --check` passed with no output.
-- Validation (2026-05-24): `git status --short` showed intended files only: `PLANS.md`, `docs/RUNBOOK.md`, `liftcrm/assets/routes.py`, `liftcrm/db.py`, `liftcrm/tickets/repository.py`, `templates/index.html`, `tests/test_xss_rendering_guards.py`, and untracked `tests/test_customers_contracts.py`.
-- Validation (2026-05-24): Browser smoke was attempted with `venv/bin/python app.py`, but local server startup is blocked by sandbox permissions and escalation was rejected by the approval reviewer; no workaround was attempted.
-
-## Plan of Work
-
-### Milestone 1 — Data model and API foundation
-
-Goal: Existing SQLite databases start without manual edits, and admin/dispatcher users can manage customers/contracts through small JSON APIs.
-
-Work:
-
-- Update `liftcrm/db.py` with `Customer` and `Contract` models, relationships to `Asset`, and an `Asset.contract_id` column.
-- Extend `ensure_migrations()` to create `customers` and `contracts` tables idempotently and add missing `assets.customer_id` / `assets.contract_id` columns to existing databases.
-- Add route-local validation and serializers in `liftcrm/assets/routes.py` for customers, contracts, and asset customer/contract labels.
-- Add endpoints:
-  - `GET/POST /api/customers`
-  - `GET/PATCH /api/customers/<id>`
-  - `GET/POST /api/contracts`
-  - `GET/PATCH /api/contracts/<id>`
-  - extend `POST/PATCH /api/assets` for `customer_id` and `contract_id`
-- Validate required customer name, existing customer for contracts, optional date order, positive SLA hours, contract status, and contract/customer consistency on assets.
-
-Validation:
-
-- Focused tests for customer/contract CRUD, role access, migration creation, bad payload 400s, and asset linking.
-
-### Milestone 2 — Ticket/asset context, UI, and docs
-
-Goal: Operators can link lifts to customers/contracts and see that context without dashboard redesign.
-
-Work:
-
-- Extend `serialize_asset()` and `repository.serialize_ticket()` to include customer/contract IDs and labels derived through assets.
-- Add a compact Customers/Contracts section in `templates/index.html` for list/create/update forms.
-- Add customer/contract selectors to the existing asset modal and show labels in the asset table.
-- Show customer/contract context in the ticket modal/list where the existing asset summary is already displayed.
-- Update `docs/RUNBOOK.md` with customer/contract meaning, creation/linking steps, ticket context behavior, import limitations, and MVP limits.
-
-Validation:
-
-- Focused customer/contract tests, asset tests, ticket smoke tests, import tests, full pytest suite, `git diff --check`, and `git status --short`.
-
-## End-of-plan change log
-
-- Change: Added Customers and Contracts Foundation PR ExecPlan.
-  Reason: The task spans database schema, backend APIs, asset/ticket serializers, UI, docs, and tests, so `AGENTS.md` requires an ExecPlan before coding.
-  Date/Author: 2026-05-24 / codex
-
----
-
-# Emergency / High-Priority Ticket Workflow PR — ExecPlan
-
-## Purpose / Big Picture
-
-Make the existing ticket workflow safer for real elevator service operations by clearly representing emergency and high-priority tickets. Dispatchers and admins must be able to create and edit emergency tickets, technicians must see emergency tickets clearly on `/mobile`, and APIs/docs/tests must preserve existing `HIGH` / `MEDIUM` / `LOW` compatibility while adding an explicit emergency path.
-
-This PR is intentionally small: no PWA/offline storage changes, no CSRF/CORS/session changes, no upload authorization changes, no backup/restore changes, no asset import changes, no Postgres/Docker/deployment work, and no unrelated frontend/backend refactors.
-
-## Progress
-
-- [x] (2026-05-23 18:23Z) Read `README.md`, `AGENTS.md`, `PLANS.md`, and `docs/RUNBOOK.md`.
-- [x] (2026-05-23 18:23Z) Inspect ticket model/workflow in `liftcrm/db.py`, `liftcrm/tickets/routes.py`, `liftcrm/tickets/service.py`, `liftcrm/tickets/repository.py`, `templates/index.html`, `static/mobile.js`, and existing ticket/status/SLA/mobile tests.
-- [x] (2026-05-23 18:23Z) Verify existing behavior: `Ticket.priority` exists as a string defaulting to `MEDIUM`; `PRIORITY_VALUES` are `HIGH`, `MEDIUM`, `LOW`; create/update validate priorities; `/api/tickets`, `/api/me/tickets`, `/api/tickets/{id}`, archive export, filters, metrics, and audit logging already include priority in some form; UI/mobile show priority inconsistently and do not have an emergency value.
-- [x] (2026-05-23 18:23Z) Create this focused emergency-priority ExecPlan before coding.
-- [x] (2026-05-23 18:28Z) Implement priority normalization, emergency/high sorting, SLA defaults, API/history/mobile payload consistency, and audit coverage.
-- [x] (2026-05-23 18:28Z) Add minimal dispatcher/admin and technician UI emphasis.
-- [x] (2026-05-23 18:28Z) Update runbook emergency operating guidance.
-- [x] (2026-05-23 18:28Z) Add focused regression tests.
-- [x] (2026-05-23 18:28Z) Run focused tests, full pytest suite, `git diff --check`, and `git status --short`.
-- [x] (2026-05-23 19:58Z) Address PR review comment by applying priority SLA defaults per omitted field on priority updates.
-
-## Surprises & Discoveries
-
-- Observation: The checkout started on `codex/asset-import-pr94`; local `main` was at `9558855` and `origin/main` had advanced to `32841a0`.
-  Evidence: `git fetch origin main` followed by `git pull --ff-only origin main` fast-forwarded local `main` and brought in the asset import PR files.
-- Observation: The existing project already has priority UI, priority filter, metrics by priority, `priority` in archive export, and `EDIT` audit logging for priority changes.
-  Evidence: `PRIORITY_VALUES` in `liftcrm/tickets/routes.py`, `serialize_ticket()` in `liftcrm/tickets/repository.py`, `archive_ticket()` in `liftcrm/tickets/service.py`, and priority controls in `templates/index.html`.
-- Observation: Existing priorities are operationally vague for emergencies: `HIGH` is labeled "Очень важно", `MEDIUM` is default, and `LOW` is legacy-compatible. There is no explicit trapped-passenger/safety/emergency value.
-  Evidence: `docs/RUNBOOK.md` "Приоритеты заявок" section and the create form priority select in `templates/index.html`.
-- Observation: The existing mobile payload already came from `repository.serialize_ticket()`, so `/api/me/tickets` already included `priority`; the mobile UI simply did not emphasize it.
-  Evidence: `list_my_tickets()` returns `repository.serialize_ticket(t)` in `liftcrm/tickets/routes.py`.
-- Observation: The initial priority-update implementation skipped all SLA defaults when either custom SLA key was present, unlike create-time behavior which fills only missing fields.
-  Evidence: PR review comment on `liftcrm/tickets/routes.py` lines adding `_apply_priority_sla_defaults(t)` after priority updates.
-
-## Decision Log
-
-- Decision: Add `EMERGENCY` as a new stored priority value and keep accepting existing `HIGH`, `MEDIUM`, and `LOW` values.
-  Rationale: The model already has a string `Ticket.priority`, so a new table or schema migration is unnecessary. Preserving legacy values avoids breaking existing data, metrics, filters, and tests.
-  Date/Author: 2026-05-23 / codex
-- Decision: Accept lowercase/business aliases (`emergency`, `urgent`, `normal`, `medium`, `low`) at API boundaries, normalize them to stored uppercase values, and keep `normal` mapped to existing `MEDIUM`.
-  Rationale: The requested clear values are useful for API callers, while existing UI/data compatibility depends on `MEDIUM` remaining the default normal priority.
-  Date/Author: 2026-05-23 / codex
-- Decision: Apply shorter default SLA overrides for `EMERGENCY` and `HIGH` only when the dispatcher/admin has not provided custom SLA fields.
-  Rationale: Existing per-ticket SLA columns support this without an escalation engine. Explicit dispatcher values should win.
-  Date/Author: 2026-05-23 / codex
-
-## Outcomes & Retrospective
-
-- Outcome (2026-05-23): Added `EMERGENCY` as a stored priority while preserving `HIGH`, `MEDIUM`, and `LOW`. API create/update/filter paths accept aliases including `emergency`, `urgent`, `high`, `normal`, `medium`, and `low`; invalid values still return 400.
-- Outcome (2026-05-23): Active `/api/tickets` lists and kanban open-ticket payloads are priority-sorted, with `EMERGENCY` before `HIGH`, then normal/low tickets. Ops and technician history list payloads now include `priority`; sync-event result ticket snippets keep priority so mobile caches do not lose it after status sync.
-- Outcome (2026-05-23): Emergency create/update applies default per-ticket SLA overrides of 5/60 minutes when no custom SLA is present; high priority applies 15/90 minutes. Dispatcher-provided custom SLA values remain authoritative.
-- Outcome (2026-05-23): Desktop create form, filters, badges, table rows, ticket modal, and kanban cards now show emergency/high/normal/low labels. `/mobile` ticket list/detail/status now shows priority badges without changing offline queue or sync logic.
-- Outcome (2026-05-23): `docs/RUNBOOK.md` now documents emergency/high priority meanings, dispatcher response steps, verification steps, and current limitations.
-- Outcome (2026-05-23): Priority updates now apply SLA defaults per omitted field. If a dispatcher changes a ticket to emergency and provides only response SLA, the completion SLA receives the emergency default when it is still unset.
-- Validation (2026-05-23): `venv/bin/python -m pytest tests/test_emergency_priority.py -q` passed (`8 passed in 1.42s`).
-- Validation (2026-05-23): `venv/bin/python -m pytest tests/test_emergency_priority.py tests/test_ticket_filters.py tests/test_audit_log.py tests/test_ticket_status_transitions.py tests/test_sync_events.py tests/test_mobile_login_flow.py tests/test_mobile_ticket_coords.py tests/test_metrics_api.py tests/test_pwa_offline_reliability.py -q` passed (`56 passed in 7.66s`).
-- Validation (2026-05-23): `venv/bin/python -m py_compile liftcrm/tickets/routes.py liftcrm/tickets/repository.py liftcrm/tickets/service.py` passed with no output.
-- Validation (2026-05-23): `venv/bin/python -m pytest -q` passed (`127 passed in 17.89s`).
-- Validation (2026-05-23): `git diff --check` passed with no output.
-- Validation (2026-05-23): `git status --short` showed only intended files: `PLANS.md`, `docs/RUNBOOK.md`, `liftcrm/tickets/routes.py`, `static/mobile.js`, `templates/index.html`, and untracked `tests/test_emergency_priority.py`.
-- Validation (2026-05-23): `venv/bin/python -m pytest tests/test_emergency_priority.py -q` passed after review fix (`9 passed in 1.75s`).
-- Validation (2026-05-23): `venv/bin/python -m pytest tests/test_emergency_priority.py tests/test_ticket_filters.py tests/test_audit_log.py tests/test_metrics_api.py -q` passed after review fix (`19 passed in 3.65s`).
-- Validation (2026-05-23): `venv/bin/python -m pytest -q` passed after review fix (`128 passed in 18.44s`).
-- Validation (2026-05-23): `git diff --check` passed after review fix with no output.
-
-## Plan of Work
-
-### Milestone 1 — Backend priority contract
-
-Goal: Ticket APIs consistently validate, normalize, return, sort, filter, and audit emergency/high priorities using the existing `Ticket.priority` column.
-
-Work:
-
-- Add route-local helpers in `liftcrm/tickets/routes.py` for priority normalization, priority ordering, and default SLA targets.
-- Support `EMERGENCY`, `HIGH`, `MEDIUM`, and `LOW` as stored values; accept aliases such as `emergency`, `urgent`, `high`, `normal`, `medium`, and `low`.
-- Sort active ticket lists and kanban open tickets by priority severity before recency, with `EMERGENCY` and `HIGH` above normal tickets.
-- Keep invalid priority rejection on create, update, and filter.
-- Include priority in ops history and technician history list payloads where practical.
-- Keep priority change audit logging via existing `EDIT` audit behavior and add coverage.
-
-Validation:
-
-- Focused tests for admin/dispatcher emergency creation, invalid priority rejection, alias normalization, API payloads, mobile payloads, priority filtering/sorting, and audit logging.
-
-### Milestone 2 — Minimal desktop/mobile UI and docs
-
-Goal: Emergency tickets are obvious without redesigning the dashboard or changing offline sync behavior.
-
-Work:
-
-- Update `templates/index.html` priority options, labels, badges, filters, table rows, kanban cards, and ticket modal to make emergency tickets visually stand out.
-- Update `static/mobile.js` only for priority label/badge display in ticket list/detail/status; do not change offline queue/sync behavior.
-- Update `docs/RUNBOOK.md` with emergency/high-priority meanings, dispatcher usage, suggested response, verification steps, and limitations.
-
-Validation:
-
-- Source/static tests or focused API/UI source checks where no frontend runner exists.
-- Full pytest suite and diff checks.
-
-## End-of-plan change log
-
-- Change: Added Emergency / High-Priority Ticket Workflow PR ExecPlan.
-  Reason: The task spans backend APIs, dispatcher/admin UI, technician mobile display, docs, and tests, so `AGENTS.md` requires an ExecPlan before coding.
-  Date/Author: 2026-05-23 / codex
-
----
-
-# Asset/Lift Import Workflow PR — ExecPlan
-
-## Purpose / Big Picture
-
-Make the SQL-backed lift registry practical for a real elevator company by letting admin and dispatcher users import assets from CSV or Excel `.xlsx` files. Keep this PR focused on the existing assets area: no PWA/offline logic, no CSRF/CORS/session changes, no upload authorization changes, no backup/restore changes, no Postgres/Docker/deployment work, and no unrelated frontend/backend refactors.
-
-The import targets the existing `Asset` model fields only: `address`, `address_norm`, `entrance`, `lift_label`, `serial_no`, `lat`, `lon`, and `status`. `customer_id` exists in the database model but is not exposed in the current assets UI/export and will not be imported in this PR.
-
-## Progress
-
-- [x] (2026-05-23 18:13Z) Read `README.md`, `AGENTS.md`, `PLANS.md`, and `docs/RUNBOOK.md`.
-- [x] (2026-05-23 18:13Z) Inspect current asset implementation: `liftcrm/assets/routes.py`, `liftcrm/db.py`, `templates/index.html`, `templates/lift_detail.html`, `static/lift_detail.js`, `scripts/seed_assets_from_objects_xlsx.py`, and `tests/test_assets_api.py`.
-- [x] (2026-05-23 18:13Z) Verify existing behavior before adding import: assets already have CRUD, search, SQL-backed map usage, CSV/XLSX export, and a one-off `objects.xlsx` seed script; no admin/dispatcher upload import endpoint or UI exists.
-- [x] (2026-05-23 18:13Z) Create this focused import ExecPlan before coding.
-- [x] (2026-05-23 18:19Z) Implement backend parsing, validation, duplicate handling, and import endpoint.
-- [x] (2026-05-23 18:19Z) Add minimal assets-page upload/result UI.
-- [x] (2026-05-23 18:19Z) Update runbook import/export documentation.
-- [x] (2026-05-23 18:19Z) Add focused import tests.
-- [x] (2026-05-23 18:21Z) Run focused tests, full pytest suite, `git diff --check`, and `git status --short`.
-
-## Surprises & Discoveries
-
-- Observation: The working tree started on `codex/local-backup-restore`; `main` was behind `origin/main` by five commits. I fetched and fast-forwarded local `main` to `9558855` before creating `codex/asset-import-pr94`.
-  Evidence: `git fetch origin main`, `git pull --ff-only origin main`, and `git switch -c codex/asset-import-pr94`.
-- Observation: Existing asset export headers are `id`, `address`, `entrance`, `lift_label`, `serial_no`, `lat`, `lon`, `status`, `created_at`, and `updated_at`.
-  Evidence: `export_assets_xlsx()` and `export_assets_csv()` in `liftcrm/assets/routes.py`.
-- Observation: Existing role policy allows admin/dispatcher asset CRUD/export and blocks technicians through `@role_required("admin", "dispatcher")`.
-  Evidence: `create_asset()`, `update_asset()`, `delete_asset()`, and export routes in `liftcrm/assets/routes.py`.
-
-## Decision Log
-
-- Decision: Implement skip-existing duplicate handling, not update-existing.
-  Rationale: The current asset CRUD has minimal validation and the request prioritizes avoiding silent duplicates. Skipping existing rows is safer for a bulk import PR because it will not overwrite a live registry by accident.
-  Date/Author: 2026-05-23 / codex
-- Decision: Use `serial_no` as the strongest identity key, then fall back to normalized `(address, entrance, lift_label)` when all composite parts are available.
-  Rationale: `serial_no` already has a DB unique constraint, and the composite matches the practical fields visible in the UI without adding new schema constraints.
-  Date/Author: 2026-05-23 / codex
-- Decision: Add the import endpoint as `POST /api/assets/import` using multipart upload and in-memory parsing only.
-  Rationale: This keeps file handling small and avoids path traversal/permanent uploaded import files.
-  Date/Author: 2026-05-23 / codex
-
-## Outcomes & Retrospective
-
-- Outcome (2026-05-23): Added `POST /api/assets/import` for admin/dispatcher multipart CSV/XLSX imports. The endpoint parses files in memory, requires an address/object column, skips empty rows, validates coordinates/status, and returns `created`, `updated`, `skipped`, `skipped_duplicates`, `invalid`, and row-level `errors`.
-- Outcome (2026-05-23): Duplicate handling is skip-existing: `serial_no` is the strongest key; otherwise `(address, entrance, lift_label)` is used when all three values are present. Existing assets are not updated by import.
-- Outcome (2026-05-23): Added a small import control to the existing assets registry page and documented file format, aliases, examples, duplicate behavior, verification, and backup recommendation in `docs/RUNBOOK.md`.
-- Validation (2026-05-23): `venv/bin/python -m pytest tests/test_assets_api.py -q` passed (`15 passed in 1.47s`).
-- Validation (2026-05-23): `venv/bin/python -m pytest -q` passed (`119 passed in 16.75s`).
-- Validation (2026-05-23): `git diff --check` passed with no output.
-- Validation (2026-05-23): `git status --short` showed only intended files: `PLANS.md`, `docs/RUNBOOK.md`, `liftcrm/assets/routes.py`, `templates/index.html`, and `tests/test_assets_api.py`.
-
-## Plan of Work
-
-### Milestone 1 — Backend import workflow
-
-Goal: Admin/dispatcher users can submit `.csv` or `.xlsx` files and receive a structured import result without bad files crashing the app.
-
-Work:
-
-- Add import parsing helpers in `liftcrm/assets/routes.py` or a small assets-local helper module if the route file becomes too dense.
-- Accept multipart field `file`, enforce extension allow-list `.csv` and `.xlsx`, and rely on the app-level `MAX_CONTENT_LENGTH` for the existing 16 MB upload cap.
-- Parse CSV with `csv.DictReader` from memory and XLSX with `openpyxl.load_workbook(..., read_only=True, data_only=True)` from memory.
-- Support aliases for `address`, `entrance`, `lift_label`, `serial_no`, `lat`, `lon`, and `status`.
-- Skip fully empty rows.
-- Validate required `address`; validate `lat`/`lon` as numbers when present; accept only `ACTIVE` or `INACTIVE` status, defaulting to `ACTIVE`.
-- Use skip-existing duplicate behavior by `serial_no` first, then normalized `(address, entrance, lift_label)` when all three exist.
-- Return JSON with `created`, `updated`, `skipped`, `invalid`, and row-level `errors`.
-
-Validation:
-
-- Focused tests for valid CSV, valid XLSX, roles, bad file type, invalid coordinates, duplicate skipping, row-level errors, and result counts.
-
-### Milestone 2 — Minimal UI and docs
-
-Goal: The existing assets page exposes the import workflow without redesigning the registry.
-
-Work:
-
-- Add a compact file input and import button in the existing assets section of `templates/index.html`.
-- POST selected files to `/api/assets/import` using `FormData`.
-- Render created/skipped/invalid counts and row-level errors in the assets area.
-- Refresh the asset table and map after a successful import.
-- Update `docs/RUNBOOK.md` with supported format, aliases, examples, duplicate behavior, verification steps, and a recommendation to run a local backup before large imports.
-
-Validation:
-
-- Static/browser-level behavior is covered through route tests plus source inspection; run full pytest and `git diff --check`.
-
-## End-of-plan change log
-
-- Change: Added Asset/Lift Import Workflow PR ExecPlan.
-  Reason: The task spans backend, frontend, docs, and tests, so `AGENTS.md` requires an ExecPlan before coding.
-  Date/Author: 2026-05-23 / codex
-
----
-
-# Local Backup/Restore Tooling PR — ExecPlan
-
-## Purpose / Big Picture
-
-Make the local MVP safer for a controlled pilot by adding small operator scripts that back up and restore the local SQLite database, uploads, and generated archive/export files. This is only local MVP tooling. It is not a production backup architecture and does not migrate the app to Postgres, add Docker/deployment, change PWA/offline behavior, change CSRF/CORS/session security, or touch uploads authorization, XSS rendering, or metrics logic.
-
-## Progress
-
-- [x] (2026-05-23 17:57Z) Read `README.md`, `AGENTS.md`, `PLANS.md`, and `docs/RUNBOOK.md`.
-- [x] (2026-05-23 17:57Z) Inspect current local runtime files: `lift_crm.db`, `uploads/`, and `archive.xlsx`.
-- [x] (2026-05-23 17:57Z) Create this focused local backup/restore ExecPlan before coding.
-- [x] (2026-05-23 18:03Z) Implement local backup script, restore script, `.gitignore` entry, docs, and focused tests.
-- [x] (2026-05-23 18:05Z) Run focused backup/restore tests, full pytest suite, and `git status --short`.
-
-## Surprises & Discoveries
-
-- Observation: The working tree started on `codex/pwa-offline-reliability`, but fetched `origin/main` is `2dad997` and does not contain `codex/pwa-offline-reliability`.
-  Evidence: `git merge-base --is-ancestor codex/pwa-offline-reliability origin/main; printf '%s\n' $?` returned `1`.
-- Observation: Runtime local data exists and is currently untracked: `lift_crm.db`, `uploads/`, and `archive.xlsx`.
-  Evidence: `find . -maxdepth 2 \( -name 'lift_crm.db' -o -name 'uploads' -o -name 'archive*.xlsx' -o -name '*export*.xlsx' -o -name '*export*.csv' \) -print`.
-- Observation: `.gitignore` already ignores `lift_crm.db`, `uploads/`, and `archive*.xlsx`, but does not yet ignore `backups/`.
-  Evidence: `sed -n '1,220p' .gitignore`.
-
-## Decision Log
-
-- Decision: Base this branch on fetched `origin/main` instead of the PWA branch.
-  Rationale: The requested latest-main PWA merge was not visible in the fetched remote, and basing on the PWA branch would mix unrelated PWA/offline changes into this focused backup/restore PR.
-  Date/Author: 2026-05-23 / codex
-- Decision: Treat archive/export files as root-level `archive*.xlsx` plus root-level `*export*.xlsx` and `*export*.csv`.
-  Rationale: The runbook documents `archive.xlsx` and `archive_N.xlsx`; asset export endpoints generate CSV/XLSX downloads, and this keeps the backup scope file-based and local without touching app routes.
-  Date/Author: 2026-05-23 / codex
-
-## Outcomes & Retrospective
-
-- Outcome (2026-05-23): Added standard-library local backup and restore scripts for `lift_crm.db`, `uploads/`, and root-level archive/export files. Backup creates `backups/<timestamp>/manifest.json`; restore refuses to overwrite existing local data unless `--force` is provided.
-- Outcome (2026-05-23): Added `backups/` to `.gitignore`, documented pilot-day backup/restore steps in `docs/RUNBOOK.md`, and added focused pytest coverage in `tests/test_local_backup_restore.py`.
-- Validation (2026-05-23): `venv/bin/python -m pytest tests/test_local_backup_restore.py -q` passed (`5 passed in 0.03s`).
-- Validation (2026-05-23): `venv/bin/python -m pytest -q` passed (`105 passed in 16.43s`).
-- Validation (2026-05-23): `git status --short` showed only intended files: modified `.gitignore`, `PLANS.md`, `docs/RUNBOOK.md`; untracked `scripts/backup_local.py`, `scripts/restore_local.py`, `tests/test_local_backup_restore.py`.
-
-## Plan of Work
-
-### Milestone 1 — Backup and restore scripts
-
-Goal: Operators can create a timestamped local copy of the SQLite DB, uploads, and archive/export files, and can restore a selected backup only after explicitly accepting overwrite risk.
-
-Work:
-
-- Add `scripts/backup_local.py`.
-- Add `scripts/restore_local.py`.
-- Backup behavior: create `backups/YYYYmmdd-HHMMSS/`, copy `lift_crm.db` if present, copy `uploads/` if present, copy archive/export files if present, and write `manifest.json` with timestamp, source root, copied file entries, byte sizes, and warnings for optional missing inputs.
-- Restore behavior: accept a backup folder argument, refuse to overwrite existing `lift_crm.db`, `uploads/`, or archive/export files unless `--force` is provided, then restore present backup contents.
-- Keep scripts standalone and standard-library only.
-
-Validation:
-
-- Add pytest coverage for backup with all inputs, backup with optional files missing, manifest creation, restore refusal without `--force`, and restore with `--force` into a temp root.
-
-### Milestone 2 — Docs, ignore rules, and final validation
-
-Goal: The local pilot runbook explains the operator workflow and generated backups are never committed.
-
-Work:
-
-- Add `backups/` to `.gitignore`.
-- Update `docs/RUNBOOK.md` with backup creation, restore, restore verification, daily pilot backup checklist, and an explicit local-MVP-only warning.
-- Run focused backup/restore tests.
-- Run the full pytest suite.
-- Run `git status --short`.
-
-Validation:
-
-- Record exact commands and results in this plan and final response.
-
-## End-of-plan change log
-
-- Change: Added Local Backup/Restore Tooling PR ExecPlan.
-  Reason: The task spans scripts, docs, ignore rules, and tests, so `AGENTS.md` requires an ExecPlan before coding.
-  Date/Author: 2026-05-23 / codex
-
----
-
-# PWA Offline Reliability PR — ExecPlan
-
-## Purpose / Big Picture
-
-Create a focused reliability PR for the technician PWA only. Make the service worker avoid stale authenticated/API responses, keep static shell/assets cacheable, make deploy updates predictable, improve visibility and retry/discard handling for failed offline outbox events, and add small photo queue safety limits. Do not add product features, do not touch CSRF/CORS/session security, upload authorization, Docker/Postgres/deployment, or broad frontend architecture.
-
-## Progress
-
-- [x] (2026-05-06 17:54Z) Read `README.md`, `AGENTS.md`, `PLANS.md`, and `docs/RUNBOOK.md`.
-- [x] (2026-05-06 17:54Z) Inspect `templates/mobile.html`, `static/mobile.js`, `static/sw.js`, service worker registration, `/api/me/tickets`, `/api/sync/events`, and upload/photo flow.
-- [x] (2026-05-06 17:54Z) Create the focused PWA/offline reliability ExecPlan before coding.
-- [x] (2026-05-06 17:56Z) Patch service worker caching so API/authenticated requests are network-only and static shell/assets remain cache-first.
-- [x] (2026-05-06 17:57Z) Patch mobile outbox/photo handling with visible failed-event rows, retry/discard controls, transient retry behavior, and practical photo queue limits.
-- [x] (2026-05-06 17:57Z) Add focused regression tests for service worker caching, mobile outbox visibility/retryability, sync compatibility, mobile ticket flow, and upload access.
-- [x] (2026-05-06 17:57Z) Update manual offline validation notes.
-- [x] (2026-05-06 18:01Z) Run focused tests, full pytest suite, local app startup, smoke checks, and `git status --short`.
-
-## Surprises & Discoveries
-
-- Observation: `static/sw.js` currently uses cache-first behavior for every fetch request via `caches.match(e.request).then(resp => resp || fetch(e.request))`.
-  Evidence: `sed -n '1,260p' static/sw.js`.
-- Observation: `/mobile` and the desktop shell both register `/static/sw.js`, so any service worker API caching bug affects both technician and admin API calls under the same origin.
-  Evidence: `rg -n "serviceWorker|manifest|sw\\.js|mobile" templates static liftcrm app.py`.
-- Observation: `static/mobile.js` already stores failed sync events as `status: "error"` and shows only aggregate `Ошибка (N)` status; there is no visible per-event retry/discard control.
-  Evidence: `syncEvents()` and `updateSyncIndicators()` in `static/mobile.js`.
-- Observation: Offline photos are stored as raw IndexedDB blobs with `status: "pending"` and retried only for pending records; there is no file size validation, failed upload status, or queue cap.
-  Evidence: `renderDetail()` photo input handler and `syncPhotos()` in `static/mobile.js`.
-- Observation: Backend `/api/sync/events` already returns per-event error codes for conflicts, geofence failures, validation failures, forbidden tickets, immutable tickets, and duplicates.
-  Evidence: `sync_events()` in `liftcrm/tickets/routes.py`.
-
-## Decision Log
-
-- Decision: Treat service worker API/authenticated fetches as network-only instead of network-first with a cached fallback.
-  Rationale: The app already owns offline ticket data in IndexedDB. Falling back from Cache Storage for `/api/*`, uploads, login, or HTML pages can serve stale or cross-user authenticated data.
-  Date/Author: 2026-05-06 / codex
-- Decision: Keep the outbox UX small by adding an inline failed-event panel with retry and discard actions rather than building a separate queue management screen.
-  Rationale: The current mobile page already has sync controls and aggregate status; a compact panel makes failures visible without product expansion or frontend refactoring.
-  Date/Author: 2026-05-06 / codex
-- Decision: Add practical client-side photo limits only: maximum file size and maximum queued photo count.
-  Rationale: This prevents silent unbounded IndexedDB growth while avoiding a larger compression/storage-management feature.
-  Date/Author: 2026-05-06 / codex
-
-## Outcomes & Retrospective
-
-- Outcome (2026-05-06): `static/sw.js` now precaches only static shell/assets, deletes old caches on activation, claims clients after activation, and sends API, uploads, login/logout/admin/mobile HTML, non-GET, and other non-static requests directly to network.
-- Outcome (2026-05-06): `templates/mobile.html` and `static/mobile.js` now show a compact failed outbox panel. Failed sync events and failed photo uploads remain visible with retry and discard actions; transient network failures stay pending for later retry.
-- Outcome (2026-05-06): Photo queue safety now rejects files larger than 8 MB before IndexedDB storage and caps the local queued photo count at 20.
-- Outcome (2026-05-06): `docs/RUNBOOK.md` now has a manual offline/PWA checklist covering online load, offline actions, reconnect, duplicate prevention, visible failures, photo limits, metrics, and protected uploads.
-- Validation (2026-05-06): `venv/bin/python -m pytest tests/test_pwa_offline_reliability.py tests/test_sync_events.py tests/test_mobile_login_flow.py tests/test_mobile_ticket_coords.py tests/test_upload_access.py tests/test_metrics_api.py -q` passed (39 tests).
-- Validation (2026-05-06): `venv/bin/python -m pytest -q` passed (104 tests).
-- Validation (2026-05-06): First local startup attempt `PORT=5056 venv/bin/python app.py` failed under sandbox with `Operation not permitted`; rerun with approved local-server escalation started Flask successfully.
-- Validation (2026-05-06): Local smoke against `http://127.0.0.1:5056` passed admin login, master creation, technician role assignment, ticket creation and assignment, `/mobile` render with outbox panel, `/api/me/tickets`, sync accept, duplicate event idempotency, sync start, photo upload, anonymous upload redirect to login, assigned technician upload readback, and `/api/metrics`.
-- Validation (2026-05-06): Smoke summary: `{"accept_sync": "OK", "admin_login": 200, "anonymous_upload_status": 302, "assigned_ticket_seen": true, "duplicate_sync": "duplicate", "master_id": 182, "metrics_total_tickets_present": true, "mobile_status": 200, "start_sync": "OK", "technician_upload_status": 200, "ticket_id": 155, "upload_status": 200}`.
-
-## Plan of Work
-
-### Milestone 1 — Service worker cache strategy
-
-Goal: Avoid stale API/authenticated responses while preserving offline shell asset caching.
-
-Work:
-
-- Update `static/sw.js` to version caches explicitly, pre-cache only safe static shell/assets, and remove old caches during activation.
-- Return `fetch(request)` for `/api/*`, `/uploads/*`, login/logout/admin/mobile HTML navigations, non-GET requests, and other non-static requests.
-- Keep cache-first behavior only for static assets and manifests.
-
-Validation:
-
-- Add a static regression test that proves the service worker contains API/upload network-only handling and does not use blanket `caches.match(e.request)` for all fetches.
-
-### Milestone 2 — Outbox and photo queue reliability
-
-Goal: Failed offline work remains visible and retryable, while transient failures stay queued.
-
-Work:
-
-- Add a minimal failed outbox panel in `templates/mobile.html`.
-- In `static/mobile.js`, render failed events with ticket/type/error labels, add retry and discard buttons, and keep transient fetch failures as pending.
-- Add photo file size validation, queued-photo count limits, visible photo queue status, and failed-photo retry behavior.
-
-Validation:
-
-- Add static tests over `templates/mobile.html` and `static/mobile.js` for failed outbox panel controls, retry/discard behavior, transient pending preservation, and photo limits.
-
-### Milestone 3 — Backend compatibility, docs, and smoke
-
-Goal: Prove existing technician sync, mobile ticket, upload access, and metrics flows still work.
-
-Work:
-
-- Run focused tests for sync events, mobile login/ticket endpoints, upload access, metrics, and PWA static guards.
-- Run the full pytest suite.
-- Update `docs/RUNBOOK.md` with a short manual offline checklist covering install/open, online load, offline actions, reconnect, duplicate prevention, and visible failures.
-- Start the app locally and run a smoke script covering admin ticket creation, technician `/mobile`, accept/start sync, queued-event compatibility, protected uploads, and metrics.
-- Run `git status --short` and record exact results.
-
-Validation:
-
-- Record exact commands/results in this plan and final response.
-
-## End-of-plan change log
-
-- Change: Added PWA Offline Reliability PR ExecPlan.
-  Reason: The task changes service worker cache strategy, IndexedDB outbox behavior, photo queue safety, docs, and tests, so `AGENTS.md` requires an ExecPlan.
-  Date/Author: 2026-05-06 / codex
-- Change: Completed the focused PWA/offline reliability implementation and validation.
-  Reason: Record the final behavior, tests, smoke evidence, and review scope.
-  Date/Author: 2026-05-06 / codex
-
----
-
-# CSRF/CORS/Session Security Hardening PR — ExecPlan
-
-## Purpose / Big Picture
-
-Harden only the cookie-auth security envelope: CORS, session cookie settings, production `SECRET_KEY` validation, and same-origin protection for unsafe state-changing requests. Preserve the existing same-domain Flask UI, JSON API, technician mobile sync, uploads access rules, archive/admin workflows, and metrics endpoint. This PR must not implement product features or touch PWA/offline, upload authorization, XSS rendering, Docker/Postgres/deployment, or unrelated refactors.
-
-## Progress
-
-- [x] (2026-05-06 17:34Z) Read `README.md`, `AGENTS.md`, `PLANS.md`, `liftcrm/config.py`, `liftcrm/utils/security.py`, app factory/auth routes, route decorators, and frontend fetch/form patterns.
-- [x] (2026-05-06 17:42Z) Add config-driven CORS/session/SECRET_KEY hardening in the app factory and security utilities.
-- [x] (2026-05-06 17:42Z) Add same-origin protection for unsafe cookie-auth state-changing requests.
-- [x] (2026-05-06 17:42Z) Add focused pytest coverage for CORS, cookies, production secret validation, same-origin rejection/acceptance, login, ticket create/update, and mobile sync.
-- [x] (2026-05-06 17:43Z) Run focused security tests, then the full pytest suite.
-- [x] (2026-05-06 17:51Z) Start the app locally and run requested smoke checks.
-- [x] (2026-05-06 17:54Z) Record exact validation results, changed files, and retrospective.
-
-## Surprises & Discoveries
-
-- Observation: `liftcrm/__init__.py` currently enables `CORS(app, supports_credentials=True)` with no origin restrictions.
-  Evidence: `rg "CORS|supports_credentials" liftcrm`.
-- Observation: Current session cookie settings are hardcoded in `create_app()` as `SESSION_COOKIE_SAMESITE = "Lax"` and `SESSION_COOKIE_SECURE = False`; `SECRET_KEY` defaults to `dev-secret` in `liftcrm/config.py`.
-  Evidence: `liftcrm/__init__.py` and `liftcrm/config.py`.
-- Observation: State-changing endpoints are all same-app cookie flows, including `/api/login`, `/login`, `/api/logout`, `/logout`, ticket create/update/assignment/archive/mobile sync/upload actions, asset CRUD, and access-management actions.
-  Evidence: `rg -n "@.*\\.(post|patch|put|delete)|methods=.*(POST|PATCH|PUT|DELETE)" liftcrm`.
-- Observation: Frontend unsafe requests are vanilla `fetch()` calls from `templates/index.html` and `static/mobile.js`, plus same-site form posts in `templates/login.html` and `templates/index.html`; no separate frontend origin was found.
-  Evidence: `rg -n "fetch\\(|method:\\s*['\\\"](POST|PATCH|PUT|DELETE)|<form" templates static liftcrm tests`.
-- Observation: The metrics endpoint is healthy but currently returns top-level metrics keys such as `total_tickets`, not a nested `totals` object.
-  Evidence: The first smoke script reached `GET /api/metrics` with status 200 and stopped only because the script asserted the wrong response shape.
-
-## Decision Log
-
-- Decision: Use strict same-origin validation for unsafe methods instead of adding CSRF tokens in this PR.
-  Rationale: The app is same-origin Flask-rendered UI plus mobile PWA; a token rollout would require broader template and fetch plumbing, while Origin/Referer validation protects browser cookie-auth unsafe requests without rewriting frontend flows.
-  Date/Author: 2026-05-06 / codex
-- Decision: Disable CORS by default and only enable credentialed CORS when `CORS_ALLOWED_ORIGINS` contains explicit non-wildcard origins.
-  Rationale: The inspected frontend does not require cross-origin API calls, and wildcard credentialed CORS is unsafe.
-  Date/Author: 2026-05-06 / codex
-- Decision: Treat `APP_ENV` or `FLASK_ENV` equal to `production` as production mode for secret/cookie defaults.
-  Rationale: The repo currently has no explicit environment abstraction; using these conventional environment variables keeps development working and lets deployment fail fast on weak secrets.
-  Date/Author: 2026-05-06 / codex
-
-## Outcomes & Retrospective
-
-- Outcome (2026-05-06): Removed default broad credentialed CORS, added opt-in explicit `CORS_ALLOWED_ORIGINS`, added environment-driven session cookie settings, added production-only strong `SECRET_KEY` validation, and added unsafe-method same-origin protection using `Origin`/`Referer` while preserving no-header local/test clients.
-- Outcome (2026-05-06): Added focused security regression tests in `tests/test_security_hardening.py` and documented new runtime settings in `.env.example` and `docs/RUNBOOK.md`.
-- Validation (2026-05-06): `venv/bin/python -m pytest tests/test_security_hardening.py -q` passed (8 tests).
-- Validation (2026-05-06): `venv/bin/python -m pytest -q` passed (97 tests).
-- Validation (2026-05-06): `PORT=5055 venv/bin/python app.py` started the Flask app locally after sandbox approval. Corrected smoke script passed admin login, master creation, technician role assignment, ticket create, ticket update, technician assignment, assigned ticket read, metrics endpoint, admin logout, technician login, mobile sync accept, mobile sync start, upload file, and upload readback.
-- Validation (2026-05-06): Smoke-test artifacts in `lift_crm.db` and `uploads/` were cleaned up; `git status --short` showed only intended code/docs/test files modified.
-
-## Plan of Work
-
-### Milestone 1 — Configuration hardening
-
-Goal: Production startup and response cookies are safer while local development still works.
-
-Work:
-
-- Update `liftcrm/config.py` with environment helpers for app env, session cookie flags, allowed CORS origins, and secret validation.
-- Update `liftcrm/__init__.py` to call secret validation during `create_app()`, apply configurable session cookie settings, and remove broad credentialed CORS.
-- If CORS origins are configured, enable `flask_cors.CORS` with `supports_credentials=True` and the explicit origin list only.
-
-Validation:
-
-- Unit tests cover dev fallback, production weak/missing secret rejection, production secure cookie defaults, local development cookie behavior, and no wildcard credentialed CORS.
-
-### Milestone 2 — Same-origin unsafe request guard
-
-Goal: Cookie-auth state-changing browser requests from other origins are rejected before route handlers mutate state.
-
-Work:
-
-- Add helpers in `liftcrm/utils/security.py` to compare `Origin` or `Referer` against the request host URL for `POST`, `PATCH`, `PUT`, and `DELETE`.
-- Register a `before_request` guard in `liftcrm/__init__.py` for unsafe methods.
-- Return JSON 403 for `/api/*` requests and plain 403 for non-API form posts.
-- Preserve requests with no browser provenance header so existing tests, CLI/manual local calls, and non-browser clients continue to work.
-
-Validation:
-
-- Tests prove a cross-origin unsafe request is rejected and a same-origin unsafe request is accepted.
-- Existing login, ticket create/update, mobile sync, upload, archive, admin workflows remain same-origin compatible.
-
-### Milestone 3 — Focused regression tests and smoke
-
-Goal: Prove the security contract and avoid behavior drift outside this PR scope.
-
-Work:
-
-- Add focused pytest module for security config and same-origin behavior.
-- Run the focused test module.
-- Run the full pytest suite.
-- Start the app locally and smoke-test admin login, ticket create/update, assignment, technician mobile sync accept/start, upload access, and metrics endpoint.
-- Run `git status --short`.
-
-Validation:
-
-- Record exact commands and results in this plan and final response.
-
-## End-of-plan change log
-
-- Change: Added CSRF/CORS/session security hardening ExecPlan.
-  Reason: The task changes authentication/session/security behavior across app factory, utilities, and tests, so `AGENTS.md` requires an ExecPlan.
-  Date/Author: 2026-05-06 / codex
-- Change: Completed CSRF/CORS/session security hardening implementation and validation.
-  Reason: Track the exact hardening scope, tests, smoke results, and cleanup outcome for review.
-  Date/Author: 2026-05-06 / codex
-
----
-
-# XSS Rendering Hardening PR — ExecPlan
-
-## Purpose / Big Picture
-
-Fix only the highest-risk frontend XSS rendering paths where user-controlled ticket, object/address, comment, asset, and mobile history fields are interpolated into `innerHTML` template strings. Preserve existing UI appearance and behavior, avoid frontend modularization, and add targeted regression coverage that makes these paths hard to reintroduce.
-
-## Progress
-
-- [x] (2026-04-30 14:40Z) Inspect template/static JS rendering paths for `innerHTML` and user-controlled fields.
-- [x] (2026-04-30 15:00Z) Patch the identified high-risk desktop, lift history, and mobile render sites with text-safe rendering helpers.
-- [x] (2026-04-30 15:03Z) Add targeted pytest regression checks over the affected frontend files.
-- [x] (2026-04-30 15:05Z) Run backend/frontend-related tests and manually verify malicious-looking text renders as text.
-- [x] (2026-04-30 15:08Z) Record outcomes and exact validation results.
-
-## Surprises & Discoveries
-
-- Observation: The repository has no frontend test runner; available tests are pytest backend tests, so practical regression coverage should use pytest assertions over checked-in JS/templates.
-  Evidence: `requirements.txt` and `tests/` exist, but no `package.json` was found.
-- Observation: The highest-risk paths are template-string renderers in `templates/index.html`, `static/mobile.js`, `static/history.js`, `static/lift_history.js`, and `static/lift_detail.js`.
-  Evidence: `rg "innerHTML|\\$\\{.*description|\\$\\{.*address|\\$\\{.*comment"` across `templates static`.
-- Observation: A scoped post-patch scan found no remaining raw interpolations for the requested risky field names in the touched renderers.
-  Evidence: `rg "\\$\\{[^}]*\\b(object_name|description|address|close_comment|assigned_master_name|serial_no|lift_label|entrance|body|text|actor|title)\\b" templates/index.html static/mobile.js static/history.js static/lift_history.js static/lift_detail.js` returned no matches.
-
-## Decision Log
-
-- Decision: Use small local `escapeHtml()` helpers in each affected non-module script and the admin inline script instead of introducing a shared frontend module.
-  Rationale: The user explicitly asked not to modularize `index.html`, and the existing scripts are standalone files loaded directly by templates.
-  Date/Author: 2026-04-30 / codex
-- Decision: Keep trusted static markup and enum-derived labels in template strings, but escape user-controlled API fields before interpolation.
-  Rationale: This preserves layout/classes while neutralizing ticket descriptions, object/address values, comments, asset fields, actors, titles, and history text.
-  Date/Author: 2026-04-30 / codex
-
-## Outcomes & Retrospective
-
-- Outcome (2026-04-30): Added local `escapeHtml()` helpers to the affected standalone scripts and the admin inline script. Escaped high-risk ticket description, object/address, comment, asset/lift, event text, actor, attachment-label, and mobile history render paths while preserving the existing `innerHTML` layout structure where it carries trusted static classes/markup. Added `tests/test_xss_rendering_guards.py`.
-- Validation (2026-04-30): `venv/bin/python -m pytest tests/test_xss_rendering_guards.py -q` passed (3 tests); `venv/bin/python -m pytest -q` passed (89 tests). Manual browser fixture served from localhost rendered `<img src=x onerror="window.executed=true"><script>window.executed=true</script>` as visible text; Playwright eval returned `executed: false`, `imageCount: 0`, and `scriptCount: 0`.
-
-## Plan of Work
-
-### Milestone 1 — Patch high-risk renderers
-
-Goal: User-controlled text from tickets, assets/lifts, comments, addresses, and mobile history appears as text, not executable markup.
-
-Work:
-
-- In `static/mobile.js`, escape mobile ticket list, ticket detail, comments, and history timeline/list text before assigning `innerHTML`.
-- In `static/history.js`, escape ticket history fields including object name, address, close reason, close comment, and assigned master.
-- In `static/lift_history.js` and `static/lift_detail.js`, escape lift header fields, event text/actors, ticket titles, and assigned user labels.
-- In `templates/index.html`, add a small escaping helper and apply it to the highest-risk admin tickets/assets/dashboard/map popup renderers that interpolate API data into `innerHTML` or popup HTML.
-
-Validation:
-
-- Search for remaining scoped risky interpolations and confirm remaining raw uses are either static markup, enum labels, dates/numbers, URLs built from IDs, or outside this PR scope.
-
-### Milestone 2 — Regression tests and verification
-
-Goal: Capture the security contract with lightweight tests and run the available suite.
-
-Work:
-
-- Add pytest coverage that inspects the affected JS/template files for the escaping helper and representative escaped render paths.
-- Run targeted tests.
-- Run the full pytest suite.
-- Manually exercise the escaping behavior with malicious-looking strings using a browser/DOM-capable check or direct helper simulation, depending on available tooling.
-
-Validation:
-
-- Record exact commands and results here and in the final response.
-
-## End-of-plan change log
-
-- Change: Added XSS Rendering Hardening PR ExecPlan.
-  Reason: The task spans multiple frontend renderers and security-sensitive behavior, so AGENTS.md requires an ExecPlan.
-  Date/Author: 2026-04-30 / codex
-- Change: Completed XSS rendering hardening milestones and recorded validation.
-  Reason: Track exact files, test results, and manual browser evidence for the security patch.
-  Date/Author: 2026-04-30 / codex
-
----
-
-# Upload Access Protection PR — ExecPlan
-
-## Purpose / Big Picture
-
-Protect ticket attachment files served from `/uploads/<filename>` so uploads are no longer public static assets. The route must require login, reject unsafe filename/path access, and authorize by the ticket connected to the attachment: admins can access all uploads, dispatchers can access operational uploads, and technicians can only access uploads for tickets assigned to their master profile. This PR intentionally avoids upload UI changes and broader MIME validation.
-
-## Progress
-
-- [x] (2026-04-30 12:30Z) Inspect current upload creation, attachment serialization, `/uploads/<path:filename>` serving, auth helpers, ticket ownership checks, and existing test setup.
-- [x] (2026-04-30 12:31Z) Add protected upload-serving authorization helper and path-safety checks in `liftcrm/tickets/routes.py`.
-- [x] (2026-04-30 12:31Z) Add focused upload access tests covering anonymous, unrelated technician, assigned technician, admin, dispatcher, and unsafe filenames.
-- [x] (2026-04-30 12:32Z) Run targeted upload/security tests and the full backend test suite.
-- [x] (2026-04-30 12:32Z) Record validation results and retrospective.
-
-## Surprises & Discoveries
-
-- Observation: `serve_upload(filename)` was unauthenticated and accepted a path converter before passing the value directly to `send_from_directory`.
-  Evidence: `liftcrm/tickets/routes.py` defined `@bp.get("/uploads/<path:filename>")` with no `@login_required`.
-- Observation: Attachments already have the ticket relationship needed for authorization, and upload creation already restricts technicians to their assigned tickets.
-  Evidence: `liftcrm/db.py` `Attachment.ticket` relationship and `liftcrm/tickets/routes.py` `upload_file()`.
-
-## Decision Log
-
-- Decision: Authorize served uploads by first resolving an exact `Attachment.filename` row, then checking the related ticket.
-  Rationale: Files not recorded in the database should not be reachable through the protected ticket upload surface, and ticket-level authorization can reuse existing role/master fields without changing URLs or UI.
-  Date/Author: 2026-04-30 / codex
-- Decision: Reject any filename containing path separators, `.` or `..`, or a basename mismatch before querying the database.
-  Rationale: The route uses a path converter, so traversal and nested-path attempts should fail before filesystem access.
-  Date/Author: 2026-04-30 / codex
-
-## Outcomes & Retrospective
-
-- Outcome (2026-04-30): `/uploads/<filename>` now requires authentication, rejects unsafe path-like filenames before filesystem access, resolves uploads through `Attachment.filename`, and enforces ticket-level authorization. Admin can access all attachment-backed uploads, dispatcher can access non-archived operational uploads, and technicians can only access uploads for tickets assigned to their master profile. Validation: `venv/bin/python -m pytest tests/test_upload_access.py -q` passed (6 tests); `venv/bin/python -m pytest -q` passed (86 tests).
-
-## Plan of Work
-
-### Milestone 1 — Protected serving route
-
-Goal: `/uploads/<filename>` requires authentication and only serves ticket-connected files to authorized users.
-
-Work:
-
-- Add `@login_required` to `serve_upload()`.
-- Add an internal filename safety check in `liftcrm/tickets/routes.py` that rejects path separators, current/parent directory names, empty names, and basename rewrites.
-- Query `Attachment` by exact stored `filename` and require a related ticket.
-- Allow roles:
-  - `admin`: all uploads.
-  - `dispatcher`: non-archived operational uploads.
-  - `technician`: only uploads where `Attachment.ticket.assigned_master_id == current_user.master_id`.
-
-Validation:
-
-- Anonymous request to an existing upload returns an auth failure.
-- Unsafe path requests do not reach filesystem serving.
-
-### Milestone 2 — Access regression tests
-
-Goal: Capture the ticket-level access contract.
-
-Work:
-
-- Add `tests/test_upload_access.py`.
-- Create a temporary app/database/upload folder per test.
-- Seed two technician users, assigned tickets, attachment rows, and real files.
-- Cover anonymous denied, unrelated technician denied, assigned technician allowed, admin allowed, dispatcher allowed, and unsafe filename denied.
-
-Validation:
-
-- Run the focused upload access test module.
-
-### Milestone 3 — Backend validation
-
-Goal: Ensure no existing backend behavior regresses.
-
-Work:
-
-- Run the focused upload/security tests.
-- Run the full backend test suite.
-
-Validation:
-
-- Record exact commands and results here and in the final report.
-
-## End-of-plan change log
-
-- Change: Added and completed Upload Access Protection PR ExecPlan.
-  Reason: Upload authorization spans routes, database-backed permissions, filesystem serving, and tests, so AGENTS.md requires an ExecPlan and validation record.
-  Date/Author: 2026-04-30 / codex
-
----
-
-# Technician History (Mobile) — ExecPlan
-
-## Purpose / Big Picture
-
-Add a technician-facing history view under `/mobile` so technicians can review completed/cancelled tickets and inspect a timeline of status changes, comments, and photos for dispute prevention. The backend must enforce technician-only access and ensure technicians only see their own tickets.
-
-## Progress
-
-- [x] (2025-03-08 12:30Z) Implement `/api/me/history` and `/api/me/tickets/<id>/timeline` with technician scoping and status/comment/photo timelines.
-- [x] (2025-03-08 12:45Z) Add `/mobile` “История” UI, date filters, timeline panel, and IndexedDB caching for offline use.
-- [x] (2025-03-08 13:10Z) Add pytest coverage for technician history access, filtering, and timeline permissions.
-- [x] (2025-03-08 13:20Z) Run pytest and capture output; document validation steps.
-- [x] (2025-03-08 13:30Z) Update Outcomes & Retrospective with what shipped and any follow-ups.
-
-## Surprises & Discoveries
-
-- None yet.
-
-## Decision Log
-
-- Decision: Filter technician history by `assigned_master_id == current_user.master_id` (MVP), rather than by audit-log authorship.
-  Rationale: Matches existing schema and is the simplest correct ownership check for assigned tickets.
-  Date/Author: 2025-03-08 / codex
-- Decision: Build timeline entries from audit logs (status changes), ticket comments, and attachment uploads, using audit logs for attachment actors when available.
-  Rationale: Reuses existing audit trail and avoids schema changes while providing a complete timeline.
-  Date/Author: 2025-03-08 / codex
-
-## Outcomes & Retrospective
-
-- Outcome (2025-03-08): Added technician history API endpoints, mobile history UI with offline cache, and pytest coverage for access control and filters. Pytest: 79 passed.
-
-## Plan of Work
-
-### Milestone 1 — Backend endpoints
-
-Goal: Provide technician-scoped history list and ticket timeline endpoints.
-
-Work:
-
-- Add `GET /api/me/history` in `liftcrm/tickets/routes.py`:
-  - Role guard: technician only.
-  - Filter tickets by `assigned_master_id`.
-  - Support `date_from`, `date_to`, `status`, `limit`, `offset`.
-  - Sort by closed timestamp (completed_at/cancelled_at fallback to updated_at).
-  - Return `ticket_id`, `object_name`, `address`, `status`, `closed_at`, `updated_at`.
-- Add `GET /api/me/tickets/<ticket_id>/timeline`:
-  - Role guard: technician only.
-  - Verify ticket belongs to current technician.
-  - Return ordered timeline entries for status changes, comments, and photos.
-
-Validation:
-
-- Hit `/api/me/history` for a technician and verify only their closed tickets appear.
-- Hit `/api/me/tickets/<id>/timeline` and confirm status/comment/photo events are ordered ascending.
-
-### Milestone 2 — Mobile UI + offline caching
-
-Goal: Add a “История” UI in `/mobile` with date filters, timeline view, and IndexedDB caching.
-
-Work:
-
-- Update `templates/mobile.html` with a History tab, date inputs, and a timeline panel.
-- Update `static/mobile.js` to:
-  - Fetch `/api/me/history` with date filters.
-  - Fetch `/api/me/tickets/<id>/timeline` for selected items.
-  - Cache the history list and timelines in IndexedDB.
-  - Display “оффлайн данные” when showing cached results.
-
-Validation:
-
-- Online: open `/mobile`, switch to История, and view closed tickets and timelines.
-- Offline: refresh `/mobile` in offline mode and confirm cached history list and timeline render with an offline label.
-
-### Milestone 3 — Tests
-
-Goal: Ensure technician history access control and filtering.
-
-Work:
-
-- Add pytest tests in `tests/`:
-  - Technician can access `/api/me/history` and only sees their tickets.
-  - Other technicians cannot see those tickets.
-  - Technician timeline endpoint returns 403 for чужой ticket.
-  - Date range filtering works.
-  - Optional: timeline includes comments.
-
-Validation:
-
-- Run `pytest` and capture output.
-
-## End-of-plan change log
-
-- Change: Added ExecPlan for technician history API + mobile UI + offline cache.
-  Reason: Multi-file backend + frontend + offline behavior needs an execution plan.
-  Date/Author: 2025-03-08 / codex
-
-# Ticket Cancellation Timestamp Fix — ExecPlan
-
-## Purpose / Big Picture
-
-Ensure cancelled tickets store a stable `cancelled_at` timestamp that does not move when `updated_at` changes, and use it for history filtering and “last 4 cancelled” selection.
-
-## Progress
-
-- [x] (2025-03-06 10:00Z) Review Ticket model, history helper, kanban list logic, and tests that depend on cancelled timestamps.
-- [x] (2025-03-06 10:15Z) Add `cancelled_at` column, migration/backfill in `ensure_migrations()`, and set it on cancellation without overwriting.
-- [x] (2025-03-06 10:30Z) Update history helpers and kanban closed ordering to use `cancelled_at` when available.
-- [x] (2025-03-06 10:45Z) Update tests to validate stable cancellation timestamps and history filtering behavior.
-- [x] (2025-03-06 11:00Z) Run pytest and capture output.
-- [x] (2025-03-06 11:05Z) Document manual validation notes and retrospective.
-
-## Surprises & Discoveries
-
-- None yet.
-
-## Decision Log
-
-- Decision: Use `cancelled_at` with `updated_at` fallback for cancelled tickets to preserve historical ordering while supporting legacy data.
-  Rationale: Maintains stable history filtering without breaking existing rows that lack `cancelled_at`.
-  Date/Author: 2025-03-06 / codex
-
-## Outcomes & Retrospective
-
-- Outcome (2025-03-06): Cancelled tickets now persist a stable `cancelled_at`, history filtering and “last 4 cancelled” rely on it, and tests cover post-cancel edits. Pytest: 75 passed.
-
-## Plan of Work
-
-### Milestone 1 — Model + migration
-
-Goal: add `Ticket.cancelled_at` with backfill.
-
-Work:
-
-- Update `liftcrm/db.py` Ticket model with `cancelled_at` (nullable DateTime).
-- Update `ensure_migrations()` to add missing column and backfill cancelled rows from `updated_at`.
-
-Validation:
-
-- Run migrations on existing DB and confirm cancelled rows have `cancelled_at` populated.
-
-### Milestone 2 — History + kanban behavior
-
-Goal: use the new cancelled timestamp.
-
-Work:
-
-- Update `_ticket_closed_at` and kanban closed ordering to use `cancelled_at`.
-- Ensure cancellation sets `cancelled_at` only once.
-
-Validation:
-
-- Confirm cancelled tickets do not move between date ranges after edits.
-
-### Milestone 3 — Tests + validation
-
-Goal: assert stability and filtering.
-
-Work:
-
-- Add tests for stable `cancelled_at` after post-cancel edits.
-- Update history/kanban tests to use `cancelled_at`.
-
-Validation:
-
-- Run `pytest` and record output below.
-
-## End-of-plan change log
-
-- Change: Added ExecPlan for cancellation timestamp fix (model/migration/history/tests).
-  Reason: Data model + migration + multi-file history changes require an ExecPlan.
-  Date/Author: 2025-03-06 / codex
-
-# Ops Kanban History + Layout Fix — ExecPlan
-
-## Purpose / Big Picture
-
-Fix the “Контроль этапов” Kanban layout so cards stay inside columns, limit completed/cancelled columns to the latest four tickets with a “Вся история” link, and add a history page with date range filtering plus API support for admin/dispatcher roles.
-
-## Progress
-
-- [x] (2026-03-05 10:00Z) Review current Kanban template/CSS and backend ticket API feeding the board; document target files and fields.
-- [x] (2026-03-05 10:15Z) Update Kanban layout styles to constrain columns and cards; verify visually.
-- [x] (2026-03-05 10:45Z) Backend: limit COMPLETED/CANCELLED to last 4 tickets in Kanban API; add “Вся история” links.
-- [x] (2026-03-05 11:20Z) Add history page route + template and history API with date range filters and RBAC.
-- [x] (2026-03-05 12:05Z) Add pytest coverage for ops limits, history filtering, and RBAC.
-- [x] (2026-03-05 12:15Z) Run pytest and capture output.
-- [x] (2025-03-08 09:20Z) Rebuild Kanban markup with flex scroll columns, add history links, and align history status labels with STATUS_RU.
-- [x] (2025-03-08 09:45Z) Run pytest for ops history changes.
-- [x] (2025-03-08 10:00Z) Document manual validation steps and retrospective.
-- [x] (2025-03-08 11:10Z) Enforce kanban closed limits via kanban feed and add empty-column collapsing with counts.
-- [x] (2025-03-08 11:30Z) Update ops history tests for strict closed column limits.
-- [x] (2025-03-08 11:40Z) Run pytest for kanban closed limit + empty column work.
-
-## Surprises & Discoveries
-
-- None during this iteration.
-
-## Decision Log
-
-- Decision: Use `/history` and `/api/tickets/history` for the ops history UI/API to keep URLs short and consistent with existing admin templates.
-  Rationale: Keeps navigation simple and avoids nesting under `/ops` while still gated by RBAC.
-  Date/Author: 2026-03-05 / codex
-- Decision: Reuse STATUS_RU in the history page JS for status labels to keep display consistent with admin UI.
-  Rationale: Avoids drift between hardcoded labels and the canonical mapping injected server-side.
-  Date/Author: 2025-03-08 / codex
-- Decision: Switch the kanban fetch to the kanban-filtered API and drive empty-column UI via counts on the client.
-  Rationale: Ensures server-side closed limits are respected while keeping the existing DOM IDs intact.
-  Date/Author: 2025-03-08 / codex
-
-## Outcomes & Retrospective
-
-- Outcome (2026-03-05): Kanban layout constrained, completed/cancelled columns limited with history links, and history page/API shipped with tests; manual validation remains.
-- Outcome (2025-03-08): Kanban columns now scroll within fixed-width flex columns, history status labels come from STATUS_RU, and ops history tests still pass. Manual validation: open “Контроль этапов” to confirm horizontal scrolling and per-column vertical scroll; open /history with status/date filters.
-- Outcome (2025-03-08): Kanban now requests the kanban-limited feed, shows header counts, and collapses empty columns to reduce whitespace; tests cover strict 4-item limits for closed statuses.
-
-## Plan of Work
-
-### Milestone 1 — Kanban layout constraints
-
-Goal: Ensure cards stay within columns and prevent overflow.
-
-Work:
-
-- Update `templates/index.html` and/or `static` CSS for the Kanban layout.
-- Apply `display:flex` with `gap` and `overflow-x:auto` for the board, fixed column width, and `min-width: 0` where needed.
-- Enforce card width `100%` with `box-sizing: border-box`.
-
-Validation:
-
-- Load the “Контроль этапов” board and confirm cards do not spill into adjacent columns.
-
-### Milestone 2 — Limit completed/cancelled + history links
-
-Goal: Show only the latest four completed/cancelled tickets and add history navigation.
-
-Work:
-
-- Update the backend API feeding the Kanban to limit COMPLETED/CANCELLED to the last four by closure timestamp (fallback updated_at).
-- Add a “Вся история” link under completed/cancelled columns pointing to `/history?status=COMPLETED` or `/history?status=CANCELLED`.
-
-Validation:
-
-- Confirm completed/cancelled columns show max 4 cards and render the history link.
-
-### Milestone 3 — History page + API
-
-Goal: Add /history page with date range filtering and supporting API.
-
-Work:
-
-- Add `GET /history` template + route gated to admin/dispatcher.
-- Add `GET /api/tickets/history` with status/date range filters, limit/offset, inclusive date_to handling, and closure timestamp fallback.
-- Render results list/table with required fields and filters.
-
-Validation:
-
-- Use the history page with date filters and confirm results match the date range and statuses.
-
-### Milestone 4 — Tests + validation
-
-Goal: Add pytest coverage for limits, filtering, and RBAC.
-
-Work:
-
-- Tests for Kanban API limits and history filters.
-- Tests for RBAC (technician blocked from /history and /api/tickets/history).
-
-Validation:
-
-- Run `pytest` and record output in this plan.
-
-## End-of-plan change log
-
-- Change: Added ExecPlan for Kanban history + layout fix.
-  Reason: Multi-file UI + API + tests work requires an execution plan.
-  Date/Author: 2026-03-05 / codex
-
-# Lift History UX Hierarchy — ExecPlan
-
-## Purpose / Big Picture
-
-Rework lift history UX so users navigate from the lifts list → lift detail → history tab → ticket cards → expandable per-ticket logs. The API must return grouped ticket history with computed metrics for consistent rendering.
-
-## Progress
-
-- [x] (2025-03-01 09:10Z) Review current lift history endpoint, templates, and JS flow; inventory required changes for lift detail page + grouped history payload.
-- [x] (2025-03-01 10:05Z) Backend: update `/api/lifts/<id>/history` to return grouped ticket histories with metrics and filtering.
-- [x] (2025-03-01 10:30Z) Frontend: add lift detail page with history tab + ticket cards + expandable logs; update lift list links.
-- [x] (2025-03-01 11:15Z) Tests: update lift history tests for grouped response + permissions + page markup.
-- [x] (2025-03-01 11:20Z) Validation: run pytest and capture output.
-- [x] (2025-03-01 12:10Z) Fix: count waiting downtime when tickets cancel out of WAITING (metrics + tests).
-
-## Surprises & Discoveries
-
-- None yet.
-
-## Decision Log
-
-- Decision: Keep `/lifts/<id>` as the lift detail entrypoint and replace the standalone history page with a tabbed detail template.
-  Rationale: Matches requested navigation while minimizing route churn.
-  Date/Author: 2025-03-01 / codex
-- Decision: Auto-expand the newest ticket card by default in the history tab.
-  Rationale: Highlights the most recent activity without extra clicks while still allowing collapse.
-  Date/Author: 2025-03-01 / codex
-- Decision: Close WAITING downtime on any non-WAITING status (including CANCELLED) and cap open WAITING at the last event timestamp.
-  Rationale: Ensures downtime metrics are stable for cancelled tickets without guessing future timestamps.
-  Date/Author: 2025-03-01 / codex
-
-## Outcomes & Retrospective
-
-- Outcome (2025-03-01): Lift detail page now hosts the history tab with ticket cards + expandable logs, and the lift history API groups tickets with metrics; tests updated and passing.
-- Outcome (2025-03-01): Downtime metrics now include WAITING segments that end in cancellation, with test coverage for cancelled flow.
-
-## Plan of Work
-
-### Milestone 1 — Backend grouped history + metrics
-
-Goal: serve grouped ticket history with computed metrics and ordering.
-
-Work:
-
-- Update `liftcrm/assets/routes.py` `/api/lifts/<id>/history` to return `{lift, tickets:[{ticket, events, summary}]}`.
-- Compute metrics (`response_seconds`, `repair_seconds`, `downtime_seconds`) using ticket timestamps + audit events.
-- Keep filtering by date range (`ticket.created_at`) and search (`ticket title/description`, optional event text).
-- Keep RBAC unchanged (admin/dispatcher only).
-
-Validation:
-
-- Request `/api/lifts/<id>/history` and confirm grouped payload with metrics keys present (nullable).
-- Verify newest activity ticket first.
-
-### Milestone 2 — Lift detail page + history tab
-
-Goal: replace standalone lift history page with lift detail page containing tabs.
-
-Work:
-
-- Create/update `templates/lift_detail.html` with lift header card and tabs (Инфо, История).
-- Load a new JS module (e.g., `static/lift_detail.js`) that renders ticket cards and expandable logs.
-- Update lift list actions to link to `/lifts/<id>#history` (shortcut) or `/lifts/<id>`.
-
-Validation:
-
-- Load `/lifts/<id>` and ensure lift card and history tab render.
-- Expand/collapse details for a ticket and verify only one open at a time.
-
-### Milestone 3 — Tests
-
-Goal: update pytest coverage for new API and page markup.
-
-Work:
-
-- Update `tests/test_lift_history.py` to assert grouped response shape and metrics keys.
-- Ensure permissions and ordering tests align with grouped payload.
-- Ensure lift detail page includes data-lift-id and history tab markup.
-
-Validation:
-
-- Run `pytest` and confirm passing.
-
-## End-of-plan change log
-
-- Change: Added Lift History UX ExecPlan with milestones and validation steps.
-  Reason: Required for multi-file backend + frontend changes.
-  Date/Author: 2025-03-01 / codex
-- Change: Updated progress, decisions, and outcomes for lift history UX implementation.
-  Reason: Track milestone completion and validation status.
-  Date/Author: 2025-03-01 / codex
-- Change: Added downtime-cancellation fix entries to progress and decisions.
-  Reason: Track metrics correction and follow-up validation work.
-  Date/Author: 2025-03-01 / codex
-
-## Purpose / Big Picture
-
-We will add a mobile-first “Technician App” that runs on the same domain as the existing LiftCRM web app and can be installed on a phone as a PWA. It must work offline and sync changes when internet returns.
-
-After this work is complete, a technician can:
-
-- Open `/mobile` and see “My tickets” even without internet (after they have opened it once online).
-- Open a ticket, change status (Accept → In progress → Waiting → Done), add comments, and add photos while offline.
-- See a clear sync indicator: `Synced`, `Pending (N)`, or `Error`.
-- Automatically sync pending actions when online again, without losing work.
-- Get a safe conflict message if the ticket changed on the server while they were offline (no silent overwrites).
-
-Admin/dispatcher UI must continue to work as before.
-
-## Progress
-
-- [x] (2026-01-19 09:10Z) Read repository structure and confirm where routes, models, and templates live; update “Context and Orientation” with exact paths found.
-- [x] (2026-01-19 09:15Z) Confirm current ticket status values and technician-related endpoints; list existing routes and decide what to add.
-- [x] (2026-01-19 11:05Z) Add backend support for technician workflow fields (Accept/Waiting) and ticket versioning.
-- [x] (2026-01-19 11:10Z) Add technician-scoped endpoints: `/api/me/tickets` and mobile-safe `/api/tickets/<id>` details response.
-- [x] (2026-01-19 11:30Z) Add idempotent batch sync endpoint: `POST /api/sync/events` with conflict handling.
-- [x] (2026-01-19 12:05Z) Add `/mobile` UI (template + JS) with offline cache, outbox, and sync engine.
-- [x] (2026-01-19 12:10Z) Add offline photo queue and upload-on-reconnect flow.
-- [x] (2026-01-19 12:45Z) Add automated tests for permissions, idempotency, conflicts, and status transitions.
-- [ ] Manual verification: prove offline works using browser offline mode and a real phone install.
-- [x] (2026-01-19 12:55Z) Update README with clear technician PWA usage and troubleshooting.
-- [x] (2025-02-14 12:20Z) Add `/mobile` login gate + non-technician page, safe post-login redirect, technician auto-redirect from `/`, and tests for the flow.
-- [x] (2025-02-14 13:05Z) Harden safe redirect normalization with a strict allowlist and add open-redirect regression tests.
-- [x] (2025-02-14 13:30Z) Add admin escape hatch and UI preference cookie to avoid technician redirect traps.
-- [x] (2025-02-14 14:05Z) Add technician desktop banner on /admin with a link back to /mobile.
-- [x] (2025-02-14 14:20Z) Expand technician banner with guidance text and logout action.
-- [x] (2025-02-14 14:35Z) Add human logout redirect to /mobile for technician banner UX.
-- [x] (2025-02-15 10:45Z) Unify login UX into a shared `/login` page with role-based redirects and updated tests.
-- [x] (2025-02-15 11:30Z) Route all human-facing logout flows to `/login` and ensure protected pages redirect after logout.
-- [x] (2025-02-16 10:05Z) Harden desktop navigation rendering by role and add coverage for admin/dispatcher/technician menu visibility.
-- [x] (2025-02-16 11:05Z) Guard admin JS initialization and conditionally omit it for technician /admin to avoid map/kanban errors.
-- [x] (2025-02-17 09:45Z) Add 2GIS web link button in `/mobile` ticket details and expose lat/lng in ticket payload with tests.
-- [x] (2025-02-17 10:05Z) Fix 2GIS coord parsing to avoid null/empty values mapping to 0,0.
-- [x] (2025-02-17 10:40Z) Update 2GIS links to route search (lon,lat) and add URL builder test.
-- [x] (2025-02-17 11:05Z) Switch 2GIS routing to dgis deeplink with 2gis.kz web fallback and update tests.
-- [x] (2025-02-17 11:30Z) Ensure /api/me/tickets and details include lat/lng and add mobile coordinate tests.
-- [x] (2025-02-17 12:05Z) Switch 2GIS routing to geo lon/lat URLs and gate debug logging behind a flag.
-- [x] (2025-02-20 10:15Z, superseded 2025-03-05) Initially enforce geofence on sync TICKET_ACCEPT and request geolocation only on mobile accept.
-- [x] (2025-02-20 11:05Z) Harden sync geofence validation for non-finite technician coordinates.
-- [x] (2025-03-05 09:10Z) Move sync geofence enforcement to TICKET_IN_PROGRESS (ACCEPTED → IN_PROGRESS only) and keep accept available without coords.
-- [x] (2025-03-05 09:20Z) Update mobile geolocation prompts to request coords only on "В работу" from ACCEPTED and handle out-of-range messaging.
-- [x] (2025-03-05 09:50Z) Validation: run pytest and capture output for geofence transition changes.
-- [x] (2025-03-05 09:40Z) Localize ticket status labels across admin/dispatcher and mobile technician UI with shared mappings.
-
-## Surprises & Discoveries
-
-Document unexpected behaviors, constraints, or bugs discovered during implementation, with short evidence.
-
-- Observation: No blocking surprises during implementation; backend migrations required a one-time run before ad-hoc DB scripting.
-  Evidence: Local scripting failed until `ensure_migrations()` executed.
-- Observation: Existing login flow only supported JSON `/api/login`, so a dedicated HTML `/login` handler was added for the `/mobile` form.
-  Evidence: `liftcrm/auth/routes.py` only exposed `/api/login` before the change.
-- Observation: Unified login required expanding safe redirect allowlist to include `/admin` while preserving strict path validation.
-  Evidence: Updated `safe_next_target` to validate parsed path and restrict to `/`, `/admin`, and `/mobile`.
-- Observation: Sync event results now return top-level codes for mobile error handling.
-  Evidence: `/api/sync/events` returns `{id, ok, code}` per event and includes geofence error metadata.
-- Observation: `nan`/`inf` technician coords could trigger a server error during distance formatting.
-  Evidence: `int(distance_m)` raised on non-finite values in sync geofence checks.
-
-## Decision Log
-
-Record every decision made while working on this plan.
-
-- Decision: Implement technician UI at `/mobile` as a separate template + JS, rather than modifying the existing admin/dispatcher UI.
-  Rationale: Reduces risk of breaking admin UI and keeps mobile code small and purpose-built.
-  Date/Author: 2026-01-19 / (fill)
-
-- Decision: Use tickets as the “job” entity for MVP (no new jobs table yet).
-  Rationale: Keeps scope small; existing schema already assigns a master to a ticket.
-  Date/Author: 2026-01-19 / (fill)
-
-- Decision: Sync endpoint returns `FORBIDDEN` when a technician attempts to update a ticket that is no longer assigned to their master.
-  Rationale: Makes reassignment explicit and avoids silent conflicts.
-  Date/Author: 2026-01-19 / codex
-
-- Decision: Allow `TICKET_ADD_COMMENT` events on closed tickets, but block status changes once a ticket is `COMPLETED` or `CANCELLED`.
-  Rationale: Technicians can still append notes without altering final state.
-  Date/Author: 2026-01-19 / codex
-
-- Decision: Superseded by the 2025-03-05 sync geofence change. `/api/sync/events` now enforces the 500 m geofence on `TICKET_IN_PROGRESS` only when moving `ACCEPTED → IN_PROGRESS`; `TICKET_ACCEPT` remains available without coordinates.
-  Rationale: Close the mobile bypass at the moment work starts while keeping acceptance and non-arrival outbox actions usable offline.
-  Date/Author: 2025-03-05 / codex
-
-- Decision: When a technician uses the legacy `/arrive` endpoint from `ASSIGNED`, the backend auto-records `accepted_at` and transitions through `ACCEPTED` for backward compatibility.
-  Rationale: Avoid breaking existing technician workflows while introducing the ACCEPTED state.
-  Date/Author: 2026-01-19 / codex
-- Decision: Implemented a small HTML `/login` handler with a strict `next` allowlist (paths starting with `/`) for mobile login redirects.
-  Rationale: Meets `/mobile` UX without opening open-redirect vulnerabilities.
-  Date/Author: 2025-02-14 / codex
-- Decision: Normalize and allowlist post-login redirect targets to only `/` and `/mobile`.
-  Rationale: Prevent encoded/backslash open-redirect bypasses while keeping mobile UX intact.
-  Date/Author: 2025-02-14 / codex
-- Decision: Add `/admin` route with an optional `ui` preference cookie to let technicians reach the desktop UI without disabling the default `/` redirect.
-  Rationale: Preserve default mobile-first routing while providing a reliable escape hatch.
-  Date/Author: 2025-02-14 / codex
-- Decision: Show a technician-only banner on `/admin` to clarify limited desktop access and offer a one-click return to `/mobile`.
-  Rationale: Reduce confusion when technicians open the desktop UI for navigation/testing.
-  Date/Author: 2025-02-14 / codex
-- Decision: Add guidance text and a logout action to the technician banner using existing `/api/logout`.
-  Rationale: Provide clearer next steps without changing permissions.
-  Date/Author: 2025-02-14 / codex
-- Decision: Add a POST `/logout` handler that reuses logout behavior and redirects to `/mobile`.
-  Rationale: Avoid showing raw JSON after logout while keeping API logout intact.
-  Date/Author: 2025-02-14 / codex
-- Decision: Route both desktop and mobile login through a shared `/login` template and apply role-based redirects after form login.
-  Rationale: Ensures consistent UX while preventing technicians from landing in admin UI via `next`.
-  Date/Author: 2025-02-15 / codex
-- Decision: Redirect human-facing logout to `/login` to keep users in the unified entrypoint.
-  Rationale: Avoids dumping users on the mobile shell and matches the new shared login UX.
-  Date/Author: 2025-02-15 / codex
-- Decision: Use `/logout` as the only human-facing logout target and update desktop UI to avoid `/api/logout`.
-  Rationale: Prevents raw JSON responses and ensures the browser navigates back to the unified login page.
-  Date/Author: 2025-02-15 / codex
-- Decision: Render desktop navigation and admin-only sections server-side based on role to keep unauthorized items out of the DOM.
-  Rationale: Ensures UI hardening aligns with security expectations and role-specific navigation tests.
-  Date/Author: 2025-02-16 / codex
-- Decision: Skip loading admin JS for technician /admin and add defensive guards around map init/kanban polling.
-  Rationale: Prevents runtime errors when technician banner-only HTML omits admin DOM nodes.
-  Date/Author: 2025-02-16 / codex
-- Decision: Use a 2GIS web URL with `m=<lng,lat>` plus optional `query` hint, and open it in the same tab from the PWA.
-  Rationale: Keeps navigation consistent in the PWA while allowing the OS to offer “Open in app” on mobile.
-  Date/Author: 2025-02-17 / codex
-- Decision: Superseded by the 2025-03-05 sync geofence change. Do not require coordinates for `TICKET_ACCEPT`; request and validate technician coordinates for `TICKET_IN_PROGRESS` only when the previous status is `ACCEPTED`.
-  Rationale: Acceptance should work without GPS, but starting work must prove the technician is within 500 m of the object.
-  Date/Author: 2025-03-05 / codex
-- Decision: Treat non-finite or out-of-range technician coordinates as `NO_TECH_COORDS`.
-  Rationale: Avoid server errors and keep geofence failures explicit for the mobile client.
-  Date/Author: 2025-02-20 / codex
-- Decision: Centralize Russian status labels in a Jinja context mapping plus per-UI JS maps with fallback to raw codes.
-  Rationale: Keep API/DB enums unchanged while ensuring consistent localized presentation across desktop and mobile.
-  Date/Author: 2025-03-05 / codex
-
-(Keep adding entries as decisions occur.)
-
-## Outcomes & Retrospective
-
-At major milestones or completion, summarize what was achieved, what remains, and lessons learned. Compare outcomes to the “Purpose / Big Picture” section.
-
-- Outcome (2026-01-19): Delivered backend versioning + sync endpoint, mobile PWA UI with offline cache/outbox/photo queue, and added automated sync tests + README docs. Manual offline verification on a real device remains.
-- Outcome (2025-02-14): Added `/mobile` login UX gating, technician auto-redirect from `/`, and safe redirect handling with automated coverage.
-- Outcome (2025-02-15): Unified `/login` UI for desktop and mobile with role-based redirects, updated unauthenticated redirects, and expanded test coverage.
-- Outcome (2025-02-15): Updated logout UX to always return users to `/login` and added coverage for logout redirects.
-- Outcome (2025-02-16): Restricted desktop navigation and admin-only sections by role, with tests validating role-specific HTML output.
-- Outcome (2025-02-16): Prevented admin JS from running on technician banner-only pages and added tests for script omission.
-- Outcome (2025-02-17): Added a 2GIS web button in mobile ticket details and ensured ticket payloads surface lat/lng for link generation.
-- Outcome (2025-02-17): Hardened 2GIS URL coord parsing to require non-empty, in-range coordinates before using `m=` links.
-- Outcome (2025-02-17): Switched 2GIS URLs to routeSearch (lon,lat) destinations and added a URL builder test.
-- Outcome (2025-02-17): Added dgis deeplink routing with a 2gis.kz fallback and aligned URL builder tests.
-- Outcome (2025-02-17): Verified mobile endpoints return lat/lng values and added coverage for ticket list/detail payloads.
-- Outcome (2025-02-17): Updated 2GIS links to /almaty/geo lon,lat URLs and gated debug output.
-- Outcome (2025-02-20, superseded 2025-03-05): Initially added geofence enforcement to sync accept events; current behavior moved that check to `TICKET_IN_PROGRESS` for `ACCEPTED → IN_PROGRESS`.
-- Outcome (2025-02-20): Hardened sync geofence checks against non-finite coordinates with explicit error codes.
-- Outcome (2025-03-05): Moved mobile sync geofence enforcement from accept to `TICKET_IN_PROGRESS` for the `ACCEPTED → IN_PROGRESS` transition; accepting a ticket no longer requires coordinates.
-- Outcome (2025-03-05): Desktop and mobile UIs now display Russian status labels consistently while preserving enum codes in the backend.
-
-## Context and Orientation
-
-This repo is a Flask application with SQLAlchemy models and server-rendered templates. Confirmed locations:
-
-- `app.py` starts the Flask app.
-- `liftcrm/` contains the backend package:
-  - `liftcrm/db.py` defines SQLAlchemy models (Ticket, User, Master, Attachment, Asset) and a sqlite migration helper `ensure_migrations()`.
-  - `liftcrm/auth/routes.py` provides `/api/login`, `/api/logout`, and `/api/me`.
-  - `liftcrm/tickets/routes.py` contains ticket CRUD/status endpoints and attachment upload (`/api/tickets/<id>/upload`), plus `/uploads/<filename>`.
-  - `liftcrm/tickets/service.py` contains status transition validation (`validate_status_transition`) and other ticket logic.
-- `templates/index.html` is the admin/dispatcher UI.
-- `static/` currently holds PWA assets (`manifest.webmanifest`, `sw.js`, icons).
-
-Current ticket status values: `NEW`, `ASSIGNED`, `ACCEPTED`, `IN_PROGRESS`, `WAITING`, `COMPLETED`, `CANCELLED`. Technician-scoped mobile endpoints now include `GET /api/me/tickets`, `GET /api/me/history`, `GET /api/me/tickets/<id>/timeline`, and `POST /api/sync/events`.
-
-Key terms used in this plan (plain language):
-
-- PWA: a website that can be installed to the phone home screen and can run offline.
-- Service worker: a small script that can cache app files and serve them when offline.
-- IndexedDB: a browser local database we use to store cached tickets and the offline queue.
-- Outbox: the local queue of actions the technician performed while offline (status changes, comments, etc.).
-- Sync: sending outbox actions to the server when internet is back.
-- Conflict: when the ticket has changed on the server since the technician last saw it; we must not overwrite newer server state silently.
-
-## Plan of Work
-
-We will implement this in milestones. Each milestone must be independently verifiable.
-
-### Milestone 1 — Backend readiness: technician workflow + versioning
-
-Goal: ensure the backend can safely support offline sync with conflict detection.
-
-Work:
-
-- Confirm current ticket status values in the Ticket model and existing code paths.
-- Add or confirm technician statuses:
-  - `ACCEPTED` (technician confirmed they take it)
-  - `WAITING` (paused with a reason)
-  Keep existing statuses intact. Do not rename existing values unless absolutely necessary.
-- Add ticket versioning:
-  - Add `Ticket.version` integer with default `1`.
-  - Increment version on every change that matters to technician view (status change, waiting reason, completion, cancellation, reassignment, edits).
-- Add minimal technician workflow fields if missing:
-  - `accepted_at` datetime nullable
-  - `waiting_at` datetime nullable
-  - `waiting_reason` text nullable
-  If the repo already has equivalent fields, reuse them and document the mapping here.
-- Add strict transition rules for technician actions:
-  - Only tickets assigned to the technician’s master can be changed by that technician.
-  - Completed/cancelled tickets reject further status changes (comments can be allowed or denied; decide and record).
-  - Waiting requires a reason.
-
-Proof:
-
-- Start server, login as a technician, and fetch their assigned tickets with `version` included.
-- Change a ticket status via existing endpoints and verify `version` increments.
-
-### Milestone 2 — Technician data endpoints
-
-Goal: give the mobile app stable endpoints for list and detail.
-
-Work:
-
-- Add `GET /api/me/tickets`:
-  - Requires login.
-  - Requires role TECHNICIAN.
-  - Finds technician master id from current user (typically `current_user.master_id`).
-  - Returns only tickets assigned to that master and not archived.
-  - Support optional query params:
-    - `include_closed=1` (include completed/cancelled)
-- Ensure `GET /api/tickets/<id>` returns details suitable for mobile:
-  - Must include `version`, status, address/object, description, due/SLA (if present), timestamps, waiting fields, and attachments list if applicable.
-  - Technician must only access tickets assigned to them. Admin/dispatcher can access any.
-
-Proof:
-
-- Request `/api/me/tickets` and confirm it returns only assigned tickets.
-- Request `/api/tickets/<id>` as technician for an assigned ticket and for an unassigned ticket; confirm assigned works and unassigned is forbidden.
-
-### Milestone 3 — Batch sync endpoint with idempotency + conflict handling
-
-Goal: allow the mobile app to send offline actions safely.
-
-Work:
-
-- Add a new table to prevent double-applying the same event when the phone retries:
-  - `applied_events` with at least:
-    - `event_id` (unique string)
-    - `user_id`
-    - `ticket_id`
-    - `applied_at`
-- Add `POST /api/sync/events`:
-  - Requires login and TECHNICIAN role.
-  - Accepts a list of events. Each event has:
-    - `id` (uuid string; used for idempotency)
-    - `type` (one of a defined set)
-    - `ticket_id`
-    - `expected_version` (integer)
-    - `created_at` (timestamp from device)
-    - `payload` (type-specific data)
-  - For each event, server returns a per-event result: ok or error.
-- Event types (MVP):
-  - `TICKET_ACCEPT`
-  - `TICKET_IN_PROGRESS`
-  - `TICKET_WAITING`
-  - `TICKET_DONE`
-  - `TICKET_ADD_COMMENT`
-- Conflict rule:
-  - If `expected_version` does not match current `ticket.version`, return a conflict for that event with current server state (at least `ticket_id`, `server_version`, `server_status`).
-  - Do not apply the event when conflict occurs.
-- Ownership rule:
-  - Technician can only sync events for tickets assigned to their master id.
-  - If ticket is reassigned away while offline, return `FORBIDDEN` (or `CONFLICT` with server state; choose one and record decision).
-- Idempotency rule:
-  - If `event_id` already exists in `applied_events`, do not apply again; return ok with current server version/status.
-
-Keep server-side status transition logic in one place. If there is a `liftcrm/tickets/service.py`, implement functions there and call them from both existing endpoints and the sync handler.
-
-Proof:
-
-- Send one accept event and see status updated.
-- Send the same event again and confirm it is not applied twice.
-- Modify ticket on server (e.g., by dispatcher), then send event with old expected_version and confirm conflict response.
-
-### Milestone 4 — Mobile UI at `/mobile` with offline cache + outbox
-
-Goal: deliver a technician UI that works offline and queues actions.
-
-Work:
-
-- Add new route `/mobile` that serves `templates/mobile.html`.
-  - If not logged in: redirect to login page (or `/`).
-  - If logged in but not TECHNICIAN: show a clear “Not a technician account” page or redirect to admin UI.
-- Add `static/mobile.js` and load it only on `mobile.html`.
-- Implement UI:
-  - My Tickets list.
-  - Ticket details view.
-  - Action buttons: Accept, In progress, Waiting (reason), Done (final comment and close reason).
-  - Comments display (optional MVP) and “Add comment”.
-  - Sync status banner showing: Online/Offline, Pending count, last sync time, “Sync now”.
-- Implement local storage using IndexedDB (use a minimal helper library only if needed):
-  - `tickets_list_cache` store: cached list for offline view.
-  - `tickets_cache` store: cached ticket details.
-  - `outbox_events` store: queued events.
-- Offline behavior:
-  - On first online load, cache list and ticket details.
-  - If offline, render from cache.
-  - When user performs an action while offline:
-    - Immediately update UI (optimistic).
-    - Insert an outbox event with `expected_version` from cached ticket.
-    - Increase “Pending count”.
-  - Sync behavior:
-    - Trigger sync on app start, when `navigator.onLine` becomes true, on “Sync now”, and periodically while online if pending exists.
-    - Batch send pending events to `/api/sync/events`.
-    - For `TICKET_IN_PROGRESS` from `ACCEPTED`, include technician coordinates and expect the server to enforce the 500 m geofence after version validation.
-    - On ok: mark event sent, update local ticket status/version from server response, reduce pending count.
-  - On conflict: mark event failed, show a message on that ticket “Needs refresh”, fetch latest ticket details, and require user to re-apply action if still needed.
-  - On forbidden: mark failed and show “Ticket reassigned / access removed”.
-
-Proof:
-
-- Online: open `/mobile`, see tickets, open ticket.
-- Offline: toggle browser offline mode, refresh `/mobile`, still see cached list.
-- Offline: change status; see pending indicator.
-- Online: restore connection; pending actions sync and clear.
-
-### Milestone 5 — Offline photo queue + upload on reconnect
-
-Goal: allow technician to capture photos offline and upload later reliably.
-
-Work:
-
-- Add photo capture UI in ticket details:
-  - Use file input with `capture` attribute for mobile.
-- Store selected photos as blobs in IndexedDB store `outbox_photos` with `ticket_id`.
-- Upload strategy:
-  - After events sync (or in parallel), upload photos using existing attachment endpoint.
-  - If no suitable endpoint exists, add:
-    - `POST /api/tickets/<id>/attachments` multipart form upload
-  - After successful upload, update local cache by refetching ticket details or appending the returned attachment metadata.
-- Error strategy:
-  - On upload failure, keep photo queued with retry count and show error state in UI.
-  - Allow manual retry via “Sync now”.
-
-Proof:
-
-- Offline: add a photo; it appears as queued/pending.
-- Online: photo uploads and appears in server attachments for that ticket.
-
-### Milestone 6 — Tests, docs, and operator playbook
-
-Goal: prove correctness and make it maintainable.
-
-Work:
-
-- Add backend tests (use the repo’s existing test framework; if none exists, add pytest):
-  - Technician cannot sync events for a ticket not assigned to them.
-  - Idempotency: same event id applied twice results in one real state change.
-  - Conflict: mismatched expected_version returns conflict and does not apply event.
-  - Happy path: accept → in_progress → waiting → done applies in order.
-- Add documentation:
-  - README section “Technician PWA (/mobile)”.
-  - How to install on Android/iOS.
-  - Offline limitations (especially iOS: background sync may require the app to be open).
-  - Troubleshooting: “pending stuck”, “conflict”, “reset offline cache”.
-
-Proof:
-
-- Run tests and confirm all pass.
-- Follow README steps to install and verify offline.
-
-## Concrete Steps
-
-Update this section as implementation proceeds, but start with a working baseline.
-
-1) Set up and run server.
-
-  In repo root:
-
-    python -m venv .venv
-    source .venv/bin/activate
-    pip install -r requirements.txt
-    python app.py
-
-  Expected:
-  - Flask server starts and prints the local URL.
-
-2) Locate key files.
-
-  - Open `liftcrm/db.py` and identify the Ticket model.
-  - Open `liftcrm/auth/routes.py` and find current user endpoint (often `/api/me`).
-  - Open `liftcrm/tickets/routes.py` and find existing ticket status endpoints.
-
-3) Implement Milestone 1 changes.
-
-  - Add ticket columns and safe migrations (do not break existing DBs).
-  - Ensure version increments on relevant changes.
-
-4) Implement Milestone 2 endpoints.
-
-  - Add `/api/me/tickets`.
-  - Ensure `/api/tickets/<id>` is technician-safe.
-
-5) Implement Milestone 3 sync endpoint.
-
-  - Add `applied_events` table + model.
-  - Add `/api/sync/events`.
-
-6) Implement Milestone 4 `/mobile` UI.
-
-  - Create `templates/mobile.html`.
-  - Create `static/mobile.js`.
-  - Add `/mobile` route and role gating.
-
-7) Implement Milestone 5 photos.
-
-  - Add offline photo queue and upload-on-reconnect.
-
-8) Tests and docs.
-
-  - Add tests and update README.
-
-## Validation and Acceptance
-
-This feature is accepted only if a human can verify all of the following behavior:
-
-1) Technician list offline:
-
-- Login as technician, open `/mobile` online, confirm tickets appear.
-- Switch browser to offline mode and refresh `/mobile`.
-- Tickets still appear (from cache).
-
-2) Offline actions queue:
-
-- While offline, change a ticket status to Waiting and set a reason.
-- UI updates immediately and shows pending count > 0.
-- Go online; pending count returns to 0 and server ticket status becomes WAITING.
-
-3) Offline completion:
-
-- While offline, set Done with a required comment.
-- Go online; server shows COMPLETED and comment persisted.
-
-4) Photo offline:
-
-- While offline, add a photo to the ticket.
-- Go online; photo uploads and appears in ticket attachments.
-
-5) Conflict safety:
-
-- While technician is offline, dispatcher changes the ticket on server (reassign or cancel).
-- Technician goes online and syncs.
-- App shows conflict/forbidden clearly and does not overwrite server state silently.
-
-6) Permission safety:
-
-- Technician cannot read or update tickets not assigned to them via any of:
-  - `/api/me/tickets`
-  - `/api/tickets/<id>`
-  - `/api/sync/events`
-
-## Idempotence and Recovery
-
-- Database migrations must be safe to run multiple times (no crashes if columns already exist).
-- Sync events must be idempotent via `event_id`. Retrying must not duplicate state changes.
-- Provide a “Reset offline data” action in `/mobile` (simple button) that:
-  - clears IndexedDB stores (`tickets_cache`, `tickets_list_cache`, `outbox_events`, `outbox_photos`)
-  - reloads the page.
-- If something breaks in mobile UI, admin/dispatcher UI must remain unaffected.
-
-## Artifacts and Notes
-
-Add short evidence snippets here during implementation. Keep them concise.
-
-Examples to record during work (indent them as plain text):
-
-  - A sample `/api/sync/events` request and response proving idempotency.
-  - A log line indicating an event was already applied.
-  - A screenshot description: “offline refresh shows cached tickets”.
-
-  - Tests: `pytest` (37 passed).
-
-## Interfaces and Dependencies
-
-Be prescriptive:
-
-- Keep the mobile UI minimal: one new template (`templates/mobile.html`) and one new JS file (`static/mobile.js`).
-- Use existing session login. Do not introduce token auth for MVP unless the repo already uses it.
-- Use IndexedDB for offline storage. If a helper library is needed, choose one tiny dependency or a small local helper module, and document it in README.
-- Centralize ticket status logic in one backend place (service functions) so sync and direct endpoints behave identically.
-
-## Notes for Future (not in MVP scope)
-
-Record ideas but do not implement them unless explicitly requested:
-
-- Push notifications.
-- Background sync that runs while the PWA is closed (not reliable on iOS).
-- A separate “jobs” entity distinct from tickets.
-- Multi-tenant SaaS changes.
-
-## End-of-plan change log
-
-When you edit this plan during implementation, append a short note here:
-
-- Change: ...
-  Reason: ...
-  Date/Author: ...
-- Change: Updated progress, decisions, outcomes, and notes for technician PWA backend + mobile implementation.
-  Reason: Track completed milestones and decisions made during implementation.
-  Date/Author: 2026-01-19 / codex
-- Change: Added progress/decision/outcome notes for `/mobile` login UX + safe redirects and tests.
-  Reason: Track the focused routing/login UX improvements.
-  Date/Author: 2025-02-14 / codex
-- Change: Documented unified login UX and role-based redirect updates.
-  Reason: Track shared `/login` routing changes and redirect policy updates.
-  Date/Author: 2025-02-15 / codex
-- Change: Recorded logout UX redirect fix to `/login`.
-  Reason: Track the human-facing logout navigation and redirect verification updates.
-  Date/Author: 2025-02-15 / codex
-- Change: Logged role-based desktop navigation rendering and tests.
-  Reason: Track UI hardening to keep unauthorized nav items out of the DOM.
-  Date/Author: 2025-02-16 / codex
-- Change: Recorded technician banner JS guards and conditional admin script inclusion.
-  Reason: Track regression fix for admin JS running without required DOM.
-  Date/Author: 2025-02-16 / codex
-- Change: Documented 2GIS button addition, payload tweaks, and tests.
-  Reason: Track mobile ticket detail navigation enhancement.
-  Date/Author: 2025-02-17 / codex
-- Change: Logged fix for 2GIS coord parsing to avoid null/empty values mapping to 0,0.
-  Reason: Ensure address fallback when coords are missing or invalid.
-  Date/Author: 2025-02-17 / codex
-- Change: Noted 2GIS routeSearch URL switch and added URL builder test coverage.
-  Reason: Ensure navigation links set a destination and enforce lon,lat ordering.
-  Date/Author: 2025-02-17 / codex
-- Change: Recorded dgis deeplink routing + kz fallback update and test adjustments.
-  Reason: Ensure app deeplink opens navigation and web fallback works in Kazakhstan.
-  Date/Author: 2025-02-17 / codex
-- Change: Recorded mobile endpoint lat/lng payload check and added tests.
-  Reason: Ensure /mobile has coordinates for 2GIS routing.
-  Date/Author: 2025-02-17 / codex
-- Change: Logged switch to 2GIS geo URLs and debug flag for URL logging.
-  Reason: Ensure destination pins render reliably with lon,lat ordering.
-  Date/Author: 2025-02-17 / codex
-- Change: Updated sync geofence enforcement notes. The February accept-time check was superseded by the March behavior: `TICKET_ACCEPT` has no coordinate requirement, and `TICKET_IN_PROGRESS` enforces geofence only from `ACCEPTED`.
-  Reason: Track the security fix across backend and mobile UI without preserving stale accept-time wording.
-  Date/Author: 2025-02-20 / codex
-- Change: Logged non-finite coordinate validation for sync geofence.
-  Reason: Track the added validation and error behavior for invalid coordinates.
-  Date/Author: 2025-02-20 / codex
-- Change: Documented localized status labels for admin/dispatcher and mobile technician views.
-  Reason: Track UI localization work and shared status mapping decisions.
-  Date/Author: 2025-03-05 / codex
+- Outcome (2026-06-17): создан этот ExecPlan по CRM-ядру на основе аудита и текущего кода.
+- Outcome (2026-06-17): код приложения не изменялся.
+- Retrospective: заполнять после каждого спринта результатами, командами проверки и оставшимися рисками.
+
+## Общие критерии приемки
+
+Roadmap CRM-ядра считается завершенной только когда:
+
+- диспетчер может быстро создать заявку через поиск лифта/объекта без технических полей на первом экране;
+- dispatcher/admin могут контролировать активные заявки через базовые фильтры и компактный список;
+- каждый лифт может быть связан с отдельным объектом;
+- заявка может быть связана и с лифтом, и с объектом;
+- старые данные по лифтам и заявкам мигрируются в объектную модель идемпотентно;
+- карточка объекта показывает лифты, активные заявки, последние заявки, клиента/договор и заметки;
+- карточка лифта показывает активные заявки, последние заявки, историю и признак проблемности;
+- мастер в mobile UI видит полезную историю лифта по текущей заявке;
+- отчеты показывают мастеров, типы поломок, проблемные лифты, проблемные объекты, SLA и зависшие заявки;
+- видимые пользователю labels приведены к русскому языку;
+- тесты покрывают миграции, API, права доступа, сериализацию, фильтры, отчеты и основные XSS-риски UI;
+- не появились склад, финансы, запчасти, зарплаты, закупки, SaaS или сложный RBAC.
+
+## Этапы
+
+### Sprint 1 - быстрые улучшения
+
+Цель: исправить известные операционные проблемы и ускорить работу диспетчера без изменения объектной модели.
+
+#### Задачи
+
+1. Исправить отчетность по мастерам.
+   - В `templates/index.html` обновить `loadMetrics()` так, чтобы UI использовал текущие поля `/api/metrics`: `name`, `total`, `avg_close_sec`, `median_close_sec`.
+   - Backend response не менять без необходимости.
+   - Сделать пустые состояния понятными.
+
+2. Добавить desktop-комментарии в заявку.
+   - Добавить endpoint для admin/dispatcher, например `POST /api/tickets/<id>/comments`.
+   - Использовать существующую модель `TicketComment`.
+   - Показывать комментарии в карточке заявки или через `GET /api/tickets/<id>`.
+   - Добавить поле комментария в desktop-карточку заявки в `templates/index.html`.
+   - Логировать создание комментария через `log_audit()`.
+
+3. Упростить создание заявки.
+   - Сделать поиск лифта основным сценарием.
+   - При выборе лифта автоматически заполнять объект/адрес/координаты.
+   - Координаты, ручной адрес и вспомогательные поля оставить только в "Дополнительно".
+   - Сохранить совместимость текущего `POST /api/tickets`.
+   - Показывать понятную ошибку, если лифт не выбран и координат нет.
+
+4. Скрыть advanced-поля.
+   - Перенести кастомные SLA, raw coordinates, optional email и технические helper-кнопки в свернутый advanced-блок.
+   - Перевести видимые English labels и helper-тексты на русский.
+   - Не удалять поля из API и не ломать существующие тесты.
+
+5. Добавить базовые фильтры заявок.
+   - Расширить `/api/tickets` фильтрами `status`, `q`, `date_from`, `date_to`, `asset_id`.
+   - Сохранить текущие фильтры `master_id`, `priority`, `overdue`, `unassigned`.
+   - В desktop UI добавить статус, период, поиск, мастер, приоритет, SLA overdue и "без мастера".
+   - Не нарушить scoped-доступ мастера: technician видит только свои заявки.
+
+6. Добавить `problem_type` в заявку.
+   - Добавить nullable `Ticket.problem_type` и идемпотентную миграцию.
+   - Ввести MVP-значения: `DOORS`, `NOISE`, `STOPPED`, `POWER`, `BUTTONS`, `CABIN`, `OTHER`.
+   - Принимать `problem_type` в create/update API и сериализовать его.
+   - Добавить select в форму создания и карточку заявки.
+   - Оставить свободный `description` для деталей.
+
+#### Критерии приемки
+
+- Таблица "Топ мастеров" показывает реальные имена мастеров, количество заявок, среднее и медианное время закрытия.
+- Диспетчер может добавить комментарий из desktop-карточки заявки и увидеть его после повторного открытия.
+- Заявка по выбранному лифту создается без ручного ввода координат.
+- Advanced-поля скрыты по умолчанию, но доступны при раскрытии.
+- Фильтры заявок работают совместно и не ломают доступ мастера.
+- `problem_type` сохраняется, сериализуется и отображается в UI.
+- Mobile sync комментариев продолжает работать.
+
+#### Какие файлы примерно будут затронуты
+
+- [liftcrm/db.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/db.py)
+- [liftcrm/tickets/routes.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/tickets/routes.py)
+- [liftcrm/tickets/repository.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/tickets/repository.py)
+- [liftcrm/tickets/service.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/tickets/service.py)
+- [templates/index.html](/Users/dmitriy/Projects/ERP_lift_company/templates/index.html)
+- [static/mobile.js](/Users/dmitriy/Projects/ERP_lift_company/static/mobile.js), только если новая сериализация требует mobile/cache-адаптации
+- [tests/test_metrics_api.py](/Users/dmitriy/Projects/ERP_lift_company/tests/test_metrics_api.py)
+- [tests/test_ticket_filters.py](/Users/dmitriy/Projects/ERP_lift_company/tests/test_ticket_filters.py)
+- [tests/test_audit_log.py](/Users/dmitriy/Projects/ERP_lift_company/tests/test_audit_log.py)
+
+#### Какие тесты добавить или обновить
+
+- Тест/guard на соответствие schema `/api/metrics` и UI-ожиданий по мастерам.
+- API-тесты desktop-комментариев: admin, dispatcher, technician, anonymous, archived ticket, empty body, audit log.
+- Тесты создания заявки по выбранному лифту с автозаполнением адреса/координат.
+- Тесты фильтров заявок: status, q, date range, asset, priority, master, SLA overdue, unassigned, technician scope.
+- Миграция и create/update/serialize тесты для `problem_type`.
+- XSS rendering guard для новых мест вывода комментариев и problem labels.
+
+### Sprint 2 - объектная модель
+
+Цель: добавить реальный слой объекта/здания и связать его с лифтами и заявками без поломки текущей истории.
+
+#### Задачи
+
+1. Добавить `Building/Object`.
+   - Добавить модель `Building` в `liftcrm/db.py`.
+   - Базовые поля: `id`, `name`, `address`, `address_norm`, `lat`, `lon`, `customer_id`, `contract_id`, `contact_person`, `phone`, `email`, `notes`, `is_active`, `created_at`, `updated_at`.
+   - Добавить индексы на `address_norm`, `customer_id`, `contract_id` и поисковые поля.
+   - Сделать миграцию идемпотентной.
+
+2. Связать объект с лифтами.
+   - Добавить nullable `assets.building_id`.
+   - Сериализовать `building_id`, `building_name`, object address/context в asset payload.
+   - Обновить create/update/import лифтов, чтобы лифт можно было привязать к объекту.
+   - Оставить текущие адресные поля `Asset` как denormalized/historical display fields.
+
+3. Связать заявки с объектом.
+   - Добавить nullable `tickets.building_id`.
+   - При создании заявки с выбранным лифтом брать `building_id` из лифта.
+   - При создании заявки без лифта разрешить выбор или создание объекта по адресу.
+   - Оставить `Ticket.object_name` и `Ticket.address` как snapshot на момент заявки.
+
+4. Сделать миграцию старых данных.
+   - Создать объекты из существующих active assets, группируя по нормализованному адресу и customer/contract, если они есть.
+   - Заполнить `assets.building_id`.
+   - Заполнить `tickets.building_id` через `tickets.asset_id -> assets.building_id`.
+   - Для заявок без лифта можно группировать по нормализованному адресу, не перезаписывая snapshot-поля.
+   - Повторный запуск миграции не должен создавать дубликаты объектов.
+
+5. Создать карточку объекта.
+   - Добавить endpoints вроде `GET /api/buildings`, `POST /api/buildings`, `PATCH /api/buildings/<id>`, `GET /api/buildings/<id>/summary`.
+   - Добавить страницу `/objects/<id>` или `/buildings/<id>`.
+   - Карточка объекта должна показывать адрес, клиента/договор, контакты, список лифтов, активные заявки, последние заявки, заметки и карту.
+   - Решить, оставить ли deprecated `/api/objects` как временный compatibility alias.
+
+#### Критерии приемки
+
+- Существующие лифты получают `building_id` после миграции.
+- Существующие заявки с `asset_id` получают соответствующий `building_id`.
+- Повторный запуск миграции не создает дубликаты объектов.
+- Admin/dispatcher могут создать и обновить объект.
+- Admin/dispatcher могут открыть карточку объекта и увидеть лифты, активные заявки, последние заявки, клиента/договор.
+- `/api/assets`, `/api/tickets`, `/lifts/<id>` и mobile ticket flow продолжают работать.
+
+#### Какие файлы примерно будут затронуты
+
+- [liftcrm/db.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/db.py)
+- [liftcrm/assets/routes.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/assets/routes.py)
+- [liftcrm/objects/routes.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/objects/routes.py)
+- [liftcrm/__init__.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/__init__.py)
+- [liftcrm/tickets/routes.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/tickets/routes.py)
+- [liftcrm/tickets/repository.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/tickets/repository.py)
+- [templates/index.html](/Users/dmitriy/Projects/ERP_lift_company/templates/index.html)
+- новый `templates/object_detail.html` или аналог
+- новый `static/object_detail.js` или аналог
+- [tests/test_assets_api.py](/Users/dmitriy/Projects/ERP_lift_company/tests/test_assets_api.py)
+- [tests/test_ticket_filters.py](/Users/dmitriy/Projects/ERP_lift_company/tests/test_ticket_filters.py)
+- новые тесты object/building API и миграции
+
+#### Какие тесты добавить или обновить
+
+- Тесты миграции таблицы `buildings` и идемпотентности.
+- Тесты create/update/import лифта с `building_id`.
+- Тесты обратной совместимости asset serialization.
+- Тесты создания заявки с наследованием `building_id` из лифта.
+- Тесты миграции старых assets/tickets.
+- Тесты object summary API: active tickets, latest tickets, lift list.
+- RBAC-тесты для admin/dispatcher/technician/anonymous.
+
+### Sprint 3 - карточки и история
+
+Цель: сделать карточки заявки, лифта и историю в mobile полезными для ежедневной работы.
+
+#### Задачи
+
+1. Улучшить карточку заявки.
+   - Перевести desktop modal в более понятную карточку/drawer.
+   - Показывать статус, приоритет, `problem_type`, объект, лифт, клиента, договор, контакт заявителя при наличии, описание, мастера, SLA, комментарии, вложения и audit timeline.
+   - Показывать связанные активные заявки по тому же лифту/объекту для предупреждения дублей.
+   - Оставить действия role-safe: назначить, изменить problem/priority/description, добавить комментарий, отменить, архивировать.
+
+2. Улучшить карточку лифта.
+   - Заполнить почти пустую info-вкладку `/lifts/<id>`.
+   - Показывать объект, клиента, договор, адрес, подъезд, метку, серийный номер, статус, заметки и текущий контекст ТО, если он уже есть.
+   - Добавить активные заявки и последние заявки перед полной историей.
+
+3. Добавить активные заявки и последние заявки в карточку лифта.
+   - Активные статусы: `NEW`, `ASSIGNED`, `ACCEPTED`, `IN_PROGRESS`, `WAITING`.
+   - Последние заявки: завершенные/отмененные с `problem_type` и close reason.
+   - Показывать SLA badges и мастера.
+
+4. Добавить историю лифта в мобильный интерфейс мастера.
+   - В detail текущей заявки показать последние события/заявки по этому лифту.
+   - Добавить technician-safe endpoint: мастер видит историю лифта только если у него есть назначенная заявка по этому лифту.
+   - Если возможно без расширения offline outbox, кешировать историю для чтения offline.
+
+5. Добавить признак "проблемный лифт".
+   - Определить MVP-правило: например, 3+ неотмененные заявки за 30 дней или 2+ high/emergency заявки за 30 дней.
+   - Показывать признак в карточке лифта и карточке заявки.
+   - Не добавлять запчасти, склад или финансы.
+
+#### Критерии приемки
+
+- Диспетчер в карточке заявки видит полный контекст и может добавить комментарий.
+- Карточка лифта сразу показывает активные заявки и последние заявки, а не пустую info-вкладку.
+- Мастер в mobile видит историю лифта по текущей заявке.
+- Признак проблемного лифта вычисляется детерминированно и покрыт тестами.
+- Существующие тесты истории лифта продолжают проходить.
+
+#### Какие файлы примерно будут затронуты
+
+- [liftcrm/assets/routes.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/assets/routes.py)
+- [liftcrm/tickets/routes.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/tickets/routes.py)
+- [liftcrm/tickets/repository.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/tickets/repository.py)
+- [templates/index.html](/Users/dmitriy/Projects/ERP_lift_company/templates/index.html)
+- [templates/lift_detail.html](/Users/dmitriy/Projects/ERP_lift_company/templates/lift_detail.html)
+- [templates/mobile.html](/Users/dmitriy/Projects/ERP_lift_company/templates/mobile.html)
+- [static/lift_detail.js](/Users/dmitriy/Projects/ERP_lift_company/static/lift_detail.js)
+- [static/mobile.js](/Users/dmitriy/Projects/ERP_lift_company/static/mobile.js)
+- [tests/test_lift_history.py](/Users/dmitriy/Projects/ERP_lift_company/tests/test_lift_history.py)
+- [tests/test_technician_history.py](/Users/dmitriy/Projects/ERP_lift_company/tests/test_technician_history.py)
+- [tests/test_xss_rendering_guards.py](/Users/dmitriy/Projects/ERP_lift_company/tests/test_xss_rendering_guards.py)
+
+#### Какие тесты добавить или обновить
+
+- Тесты ticket card payload: comments, related tickets, object/lift context, problem type.
+- Тесты lift summary: active tickets, latest tickets, problem signal, RBAC.
+- Тесты technician lift history scope: свой лифт разрешен, чужой запрещен.
+- Mobile rendering/XSS guard для истории и комментариев.
+
+### Sprint 4 - отчеты
+
+Цель: добавить практичные CRM-отчеты для операционного контроля, не затрагивая финансы.
+
+#### Задачи
+
+1. Отчет по мастерам.
+   - Добавить или усилить endpoint вроде `/api/reports/masters`.
+   - Поля: всего назначено, активный backlog, выполнено, отменено, среднее время реакции, среднее время завершения, SLA breaches, mix `problem_type`.
+   - Поддержать фильтр периода.
+
+2. Отчет по типам поломок.
+   - Использовать `Ticket.problem_type`.
+   - Показать counts by type, priority, status, SLA breach, average completion time.
+   - Не парсить свободный текст `description` как источник аналитики.
+
+3. Отчет по проблемным лифтам.
+   - Ранжировать лифты по повторным неотмененным заявкам за окно, по умолчанию 30 дней.
+   - Показывать активные заявки, дату последней заявки, top problem types, SLA breaches, объект и клиента.
+
+4. Отчет по проблемным объектам.
+   - Агрегировать проблемы по `building_id`.
+   - Показывать количество лифтов, количество заявок, активные заявки, повторные problem types, SLA breaches и последнюю активность.
+
+5. Отчет по SLA и зависшим заявкам.
+   - Показать заявки с просроченным response/completion SLA.
+   - Показать stale tickets: NEW без мастера, ASSIGNED долго не принята, WAITING слишком долго, IN_PROGRESS слишком долго.
+   - Включить мастера, объект, лифт, приоритет, `problem_type`, created/updated timestamps.
+
+6. UI отчетов.
+   - Держать отчеты в понятном разделе `Отчеты`.
+   - Добавить фильтр периода и, где полезно, фильтры объект/лифт/мастер.
+   - Не делать PDF/Excel report builder в этом спринте.
+
+#### Критерии приемки
+
+- Admin/dispatcher открывают отчеты и фильтруют их по периоду.
+- Отчет по мастерам совпадает с тестовыми fixture-данными.
+- Отчет по типам поломок использует `problem_type`.
+- Проблемные лифты и объекты ранжируются по детерминированному правилу.
+- SLA/stuck отчет показывает просроченные и зависшие заявки с прямым переходом к заявке/лифту/объекту.
+- Technician не имеет доступа к отчетам admin/dispatcher.
+
+#### Какие файлы примерно будут затронуты
+
+- новый `liftcrm/reports/routes.py` или additions в [liftcrm/tickets/routes.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/tickets/routes.py)
+- [liftcrm/__init__.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/__init__.py)
+- [liftcrm/tickets/repository.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/tickets/repository.py)
+- [liftcrm/assets/routes.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/assets/routes.py)
+- [templates/index.html](/Users/dmitriy/Projects/ERP_lift_company/templates/index.html)
+- новый report helper module, если query-логика станет большой
+- [tests/test_metrics_api.py](/Users/dmitriy/Projects/ERP_lift_company/tests/test_metrics_api.py)
+- новые тесты отчетов
+
+#### Какие тесты добавить или обновить
+
+- RBAC-тесты отчетов.
+- Fixture-тесты отчета по мастерам с известными counts/durations.
+- Тесты агрегации `problem_type`.
+- Тесты ranking проблемных лифтов и объектов.
+- Тесты SLA/stale отчета.
+- Тесты date range и фильтров.
+
+### Sprint 5 - UX-полировка
+
+Цель: сделать CRM удобной для ежедневной работы после стабилизации данных и отчетов.
+
+#### Задачи
+
+1. Упростить меню.
+   - Целевые разделы: `Заявки`, `Объекты`, `Лифты`, `Мастера`, `Клиенты`, `ТО`, `Отчеты`, `Пользователи`.
+   - Переименовать или объединить неочевидные `Панель`, `Контроль этапов`, `Админ`.
+   - Не добавлять пункты `Склад`, `Финансы`, `Запчасти`.
+
+2. Перевести смешанные English labels на русский.
+   - Заменить видимые пользователю `active`, `paused`, `monthly`, `overdue only`, `Response`, `Completion`, `SLA breach`, `Asset`.
+   - Backend enum values не менять без отдельной причины.
+
+3. Сделать compact view для заявок.
+   - По умолчанию показать плотный список для диспетчера.
+   - Колонки/поля: id, статус, приоритет, тип поломки, объект/лифт, мастер, SLA state, последнее событие.
+   - Детали оставить в карточке/drawer.
+
+4. Добавить глобальный поиск.
+   - Искать по заявкам, объектам, лифтам, адресам, серийным номерам, клиентам, договорам и мастерам.
+   - Добавить endpoint вроде `/api/search?q=...`.
+   - Возвращать typed results с прямыми ссылками.
+   - Учитывать role scope.
+
+5. Убрать лишние элементы из главного экрана.
+   - Низкочастотные действия вынести из первого экрана.
+   - Оставить быстрый create flow, активные заявки и ключевые фильтры.
+   - Не скрывать важные operational alerts.
+
+#### Критерии приемки
+
+- Первый экран диспетчера фокусируется на создании заявки и контроле активных заявок.
+- Меню и labels понятны и на русском.
+- Compact view уменьшает горизонтальную перегрузку списка заявок.
+- Глобальный поиск находит заявки, объекты, лифты и клиентов из одного поля.
+- Mobile UI мастера не перегружен admin-only элементами.
+- В UI не появились склад, финансы, запчасти, зарплаты, закупки, SaaS или сложный RBAC.
+
+#### Какие файлы примерно будут затронуты
+
+- [templates/index.html](/Users/dmitriy/Projects/ERP_lift_company/templates/index.html)
+- [templates/mobile.html](/Users/dmitriy/Projects/ERP_lift_company/templates/mobile.html), только для небольшой текстовой/history-полировки
+- [static/mobile.js](/Users/dmitriy/Projects/ERP_lift_company/static/mobile.js), только для небольшой текстовой/history-полировки
+- [liftcrm/tickets/routes.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/tickets/routes.py)
+- [liftcrm/assets/routes.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/assets/routes.py)
+- новый search route/module при необходимости
+- [tests/test_desktop_nav_rbac.py](/Users/dmitriy/Projects/ERP_lift_company/tests/test_desktop_nav_rbac.py)
+- [tests/test_xss_rendering_guards.py](/Users/dmitriy/Projects/ERP_lift_company/tests/test_xss_rendering_guards.py)
+
+#### Какие тесты добавить или обновить
+
+- Desktop navigation/RBAC тесты для видимых разделов.
+- Search API тесты для каждого типа результата и role scope.
+- Compact-view rendering/XSS guard.
+- Regression test, что forbidden menu items вроде склада/финансов не добавлены.
+
+## Риски
+
+- SQLite-миграции ручные. Каждая новая таблица, колонка и индекс должны быть идемпотентными.
+- Миграция объектов может создать дубликаты зданий при слабой нормализации адресов.
+- `Asset` сейчас хранит и лифт, и объектный контекст; изменения сериализации могут сломать desktop, mobile, карту, import/export и историю.
+- Desktop UI сконцентрирован в одном большом `templates/index.html`; крупные правки могут случайно задеть соседние вкладки.
+- Mobile PWA имеет offline cache/outbox. Новые поля в ticket serialization не должны ломать кеш и sync events.
+- Отчеты могут стать медленными без индексов на `tickets.asset_id`, `tickets.building_id`, `tickets.assigned_master_id`, `tickets.status`, `tickets.created_at`, `tickets.problem_type`, comments, attachments и связанные таблицы.
+- Признак проблемности может восприниматься как оценка работы людей. В UI формулировать его как фактический сигнал по повторным заявкам, а не как обвинение.
+- Старые `objects/objects.xlsx/json` и deprecated `/api/objects` могут путать новую объектную модель. В Sprint 2 нужно явно решить судьбу compatibility alias.
+
+## Порядок реализации
+
+1. Не писать код, пока пользователь отдельно не разрешит Sprint 1.
+2. Перед каждым спринтом обновлять этот план:
+   - отметить разрешение в `Progress`;
+   - добавить новые факты в `Surprises & Discoveries`;
+   - записать решения в `Decision Log`.
+3. Работать milestone-by-milestone внутри текущего спринта.
+4. После каждого milestone запускать focused tests и записывать проверку в `Outcomes & Retrospective`.
+5. Коммиты делать небольшими и рабочими:
+   - schema/migration;
+   - backend/API;
+   - UI;
+   - tests/docs.
+6. Не начинать следующий спринт без выполненных критериев приемки текущего спринта и отдельного разрешения пользователя.
+
+## Общий список файлов, которые могут быть затронуты
+
+Ожидаемые CRM-core файлы:
+
+- [PLANS.md](/Users/dmitriy/Projects/ERP_lift_company/PLANS.md)
+- [liftcrm/db.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/db.py)
+- [liftcrm/__init__.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/__init__.py)
+- [liftcrm/tickets/routes.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/tickets/routes.py)
+- [liftcrm/tickets/repository.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/tickets/repository.py)
+- [liftcrm/tickets/service.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/tickets/service.py)
+- [liftcrm/assets/routes.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/assets/routes.py)
+- [liftcrm/assets/service.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/assets/service.py)
+- [liftcrm/objects/routes.py](/Users/dmitriy/Projects/ERP_lift_company/liftcrm/objects/routes.py)
+- возможный новый `liftcrm/reports/routes.py`
+- возможный новый object/building service module
+- [templates/index.html](/Users/dmitriy/Projects/ERP_lift_company/templates/index.html)
+- [templates/lift_detail.html](/Users/dmitriy/Projects/ERP_lift_company/templates/lift_detail.html)
+- [templates/mobile.html](/Users/dmitriy/Projects/ERP_lift_company/templates/mobile.html)
+- возможный новый `templates/object_detail.html`
+- [static/lift_detail.js](/Users/dmitriy/Projects/ERP_lift_company/static/lift_detail.js)
+- [static/mobile.js](/Users/dmitriy/Projects/ERP_lift_company/static/mobile.js)
+- возможный новый `static/object_detail.js`
+- [docs/RUNBOOK.md](/Users/dmitriy/Projects/ERP_lift_company/docs/RUNBOOK.md), только после operator-facing изменений
+- [docs/ARCHITECTURE.md](/Users/dmitriy/Projects/ERP_lift_company/docs/ARCHITECTURE.md), только после реализации object model/reporting
+
+Файлы/области, которые не трогать без отдельного запроса:
+
+- `vendor/`;
+- складские модули, если они появятся;
+- модули запчастей, если они появятся;
+- finance/invoice/payment/purchase/payroll модули, если они появятся;
+- SaaS/multi-company инфраструктура.
+
+## Тестовый план
+
+Минимальная focused validation по спринтам:
+
+- Sprint 1:
+  - `venv/bin/python -m pytest tests/test_metrics_api.py tests/test_ticket_filters.py tests/test_audit_log.py -q`
+  - добавить focused tests для комментариев, `problem_type` и create-flow.
+- Sprint 2:
+  - tests миграции object/building;
+  - `venv/bin/python -m pytest tests/test_assets_api.py tests/test_ticket_filters.py -q`;
+  - добавить object API/card summary tests.
+- Sprint 3:
+  - `venv/bin/python -m pytest tests/test_lift_history.py tests/test_technician_history.py tests/test_xss_rendering_guards.py -q`;
+  - добавить lift summary и mobile lift-history scope tests.
+- Sprint 4:
+  - `venv/bin/python -m pytest tests/test_metrics_api.py -q`;
+  - добавить report endpoint tests для мастеров, problem types, problematic lifts, problematic objects и SLA/stuck tickets.
+- Sprint 5:
+  - `venv/bin/python -m pytest tests/test_desktop_nav_rbac.py tests/test_xss_rendering_guards.py -q`;
+  - добавить global search API tests и compact-view guard tests.
+
+Финальная проверка после каждого спринта:
+
+- relevant focused tests;
+- `venv/bin/python -m pytest -q`, если спринт затрагивает модели, сериализацию, auth, mobile sync или общий UI;
+- `git diff --check`;
+- ручной smoke test в браузере для измененных dispatcher/admin/mobile flows.
+
+## Manual Smoke Checklist
+
+Использовать после implementation-спринтов, не в рамках этой planning-only задачи:
+
+- Login as dispatcher.
+- Создать заявку по выбранному лифту.
+- Создать заявку без выбранного лифта только через advanced/manual path.
+- Добавить desktop-комментарий в заявку.
+- Отфильтровать активные заявки по статусу, мастеру, приоритету, SLA overdue и поиску.
+- Открыть карточку лифта и проверить active/latest/history секции.
+- Login as technician и проверить, что видны только назначенные заявки.
+- В mobile ticket detail проверить историю лифта только для разрешенных заявок.
+- Login as admin и проверить отчеты по мастерам, типам поломок, проблемным лифтам/объектам и SLA/stuck.
+- Убедиться, что не появились склад, финансы, запчасти, зарплаты, закупки, SaaS или сложный RBAC.
+
+## End-of-plan Change Log
+
+- Change: старый многораздельный `PLANS.md` заменен focused CRM-core roadmap.
+  Reason: пользователь попросил подготовить практичный план по CRM-аудиту и отдельно запретил реализацию Sprint 1 на этом шаге.
+  Date/Author: 2026-06-17 / codex
