@@ -66,6 +66,7 @@ def serialize_ticket(t: Ticket):
         "lon": lon,
         "lng": lon,
         "description": t.description,
+        "problem_type": t.problem_type,
         "priority": t.priority or "MEDIUM",
         "email": t.email,
         "status": t.status,

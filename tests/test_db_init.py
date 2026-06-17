@@ -1,5 +1,6 @@
 import importlib
 import os
+import sqlite3
 import tempfile
 import unittest
 
@@ -84,3 +85,51 @@ class DatabaseInitTest(unittest.TestCase):
                 selected = service_module.auto_assign_master(db)
                 self.assertIsNotNone(selected)
                 self.assertEqual(selected.id, master.id)
+
+    def test_migration_adds_ticket_problem_type_column(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "legacy-problem-type.db")
+            config.DB_PATH = db_path
+            config.ARCHIVE_PATH = os.path.join(tmpdir, "archive.xlsx")
+            config.UPLOAD_FOLDER = os.path.join(tmpdir, "uploads")
+
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            cur.execute("CREATE TABLE masters (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)")
+            cur.execute(
+                "CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL, master_id INTEGER)"
+            )
+            cur.execute(
+                """
+                CREATE TABLE tickets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    object_name TEXT NOT NULL,
+                    address TEXT,
+                    lat REAL NOT NULL,
+                    lon REAL NOT NULL,
+                    description TEXT,
+                    status TEXT,
+                    assigned_master_id INTEGER,
+                    created_at DATETIME,
+                    updated_at DATETIME
+                )
+                """
+            )
+            conn.commit()
+            conn.close()
+
+            import liftcrm.db as db_module
+
+            importlib.reload(db_module)
+            db_module.ensure_migrations()
+
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            cur.execute("PRAGMA table_info(tickets)")
+            columns = {row[1] for row in cur.fetchall()}
+            cur.execute("PRAGMA index_list(tickets)")
+            indexes = {row[1] for row in cur.fetchall()}
+            conn.close()
+
+            self.assertIn("problem_type", columns)
+            self.assertIn("idx_tickets_problem_type", indexes)

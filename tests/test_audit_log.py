@@ -6,6 +6,7 @@ from werkzeug.security import generate_password_hash
 
 from liftcrm import create_app, config
 from liftcrm.db import SessionLocal, Ticket, Master, AuditLog, User
+from liftcrm.utils.rate_limit import clear_rate_limits
 from liftcrm.utils.roles import ROLE_TECHNICIAN
 
 
@@ -17,6 +18,7 @@ class AuditLogTest(unittest.TestCase):
         cls.app = app
 
     def setUp(self):
+        clear_rate_limits()
         self.client = self.app.test_client()
         self.master_password = "test-tech-pass"
         self.tech_users = []

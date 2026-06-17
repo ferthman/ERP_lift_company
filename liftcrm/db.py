@@ -70,6 +70,7 @@ class Ticket(Base):
     completion_lon = Column(Float, nullable=True)
     close_reason = Column(String, nullable=True)
     close_comment = Column(String, nullable=True)
+    problem_type = Column(String, nullable=True)
     custom_sla_response_minutes = Column(Integer, nullable=True)
     custom_sla_completion_minutes = Column(Integer, nullable=True)
     assigned_master = relationship("Master", back_populates="tickets")
@@ -360,6 +361,9 @@ def ensure_migrations():
             if "close_comment" not in tcols:
                 cur.execute("ALTER TABLE tickets ADD COLUMN close_comment TEXT")
                 conn.commit()
+            if "problem_type" not in tcols:
+                cur.execute("ALTER TABLE tickets ADD COLUMN problem_type TEXT")
+                conn.commit()
             if "cancelled_at" not in tcols:
                 cur.execute("ALTER TABLE tickets ADD COLUMN cancelled_at DATETIME")
                 conn.commit()
@@ -397,6 +401,15 @@ def ensure_migrations():
             if "version" in tcols:
                 cur.execute("UPDATE tickets SET version = 1 WHERE version IS NULL")
                 conn.commit()
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_tickets_status_created ON tickets (status, created_at)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_tickets_asset_created ON tickets (asset_id, created_at)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_tickets_master_status_archived "
+                "ON tickets (assigned_master_id, status, archived_at)"
+            )
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_tickets_priority_status ON tickets (priority, status)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_tickets_problem_type ON tickets (problem_type)")
+            conn.commit()
         if not _table_exists(cur, "customers"):
             cur.execute(
                 """

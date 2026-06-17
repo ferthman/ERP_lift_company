@@ -78,8 +78,11 @@
 - [x] (2026-06-17 17:00 +0500) Прочитан `CRM_AUDIT_REPORT.md`.
 - [x] (2026-06-17 17:00 +0500) Изучены структура проекта, модели, API заявок, API лифтов, metrics API, desktop UI, mobile UI и существующие тесты.
 - [x] (2026-06-17 17:00 +0500) Старый исторический `PLANS.md` заменен актуальным ExecPlan для CRM-ядра.
-- [ ] Sprint 1 разрешен пользователем.
-- [ ] Sprint 1 реализован и проверен.
+- [x] (2026-06-17 17:08 +0500) Sprint 1 разрешен пользователем: реализовать только быстрые улучшения без Sprint 2-5.
+- [x] (2026-06-17 17:20 +0500) Sprint 1 backend реализован: `problem_type`, фильтры `/api/tickets`, desktop comments endpoint, миграция и индексы.
+- [x] (2026-06-17 17:20 +0500) Sprint 1 desktop UI реализован: быстрый create flow, advanced-блок, фильтры, комментарии в карточке, исправление metrics masters.
+- [x] (2026-06-17 17:20 +0500) Sprint 1 focused tests добавлены/обновлены и пройдены.
+- [x] (2026-06-17 17:21 +0500) Sprint 1 реализован и проверен полным test suite.
 - [ ] Sprint 2 разрешен пользователем.
 - [ ] Sprint 2 реализован и проверен.
 - [ ] Sprint 3 разрешен пользователем.
@@ -123,7 +126,9 @@
 ## Outcomes & Retrospective
 
 - Outcome (2026-06-17): создан этот ExecPlan по CRM-ядру на основе аудита и текущего кода.
-- Outcome (2026-06-17): код приложения не изменялся.
+- Outcome (2026-06-17): на planning-only шаге код приложения не изменялся; после разрешения пользователя реализован только Sprint 1.
+- Outcome (2026-06-17): Sprint 1 focused validation passed: `venv/bin/python -m py_compile liftcrm/db.py liftcrm/tickets/routes.py liftcrm/tickets/repository.py`; `venv/bin/python -m pytest tests/test_ticket_filters.py tests/test_ticket_comments.py tests/test_db_init.py tests/test_metrics_api.py tests/test_audit_log.py -q` (`18 passed`); `venv/bin/python -m pytest tests/test_xss_rendering_guards.py tests/test_desktop_nav_rbac.py -q` (`7 passed`).
+- Outcome (2026-06-17): Sprint 1 full validation passed: `venv/bin/python -m pytest -q` (`156 passed, 6 subtests passed`); `git diff --check` passed.
 - Retrospective: заполнять после каждого спринта результатами, командами проверки и оставшимися рисками.
 
 ## Общие критерии приемки

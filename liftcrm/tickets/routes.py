@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, abort, current_app, jsonify, request, send_from_directory
 from flask_login import login_required, current_user
+from sqlalchemy import or_
 from werkzeug.security import generate_password_hash
 
 from .service import (
@@ -56,6 +57,8 @@ PRIORITY_SLA_DEFAULTS = {
     "HIGH": {"response": 15, "completion": 90},
 }
 HISTORY_STATUSES = {"COMPLETED", "CANCELLED"}
+TICKET_STATUSES = {"NEW", "ASSIGNED", "ACCEPTED", "IN_PROGRESS", "WAITING", "COMPLETED", "CANCELLED"}
+PROBLEM_TYPE_VALUES = {"DOORS", "NOISE", "STOPPED", "POWER", "BUTTONS", "CABIN", "OTHER"}
 
 
 def _transition_error(code, message, status=400):
@@ -79,6 +82,14 @@ def _priority_sorted(tickets):
         return (_priority_sort_rank(ticket), -created_ts, -(ticket.id or 0))
 
     return sorted(tickets, key=sort_key)
+
+
+def _normalize_problem_type(value, default=None):
+    raw = default if value in (None, "") else value
+    if raw in (None, ""):
+        return None
+    key = str(raw).strip().upper()
+    return key if key in PROBLEM_TYPE_VALUES else None
 
 
 def _apply_priority_sla_defaults(ticket, include_response=True, include_completion=True):
@@ -259,16 +270,38 @@ def list_tickets():
     overdue_only = request.args.get("overdue") in {"1", "true", "True"}
     kanban_view = request.args.get("kanban") in {"1", "true", "True"}
     master_id = request.args.get("master_id")
+    asset_id = request.args.get("asset_id")
     priority = request.args.get("priority")
+    status_filter = request.args.get("status")
+    q = (request.args.get("q") or "").strip()
+    date_from_raw = request.args.get("date_from")
+    date_to_raw = request.args.get("date_to")
     if priority:
         priority = _normalize_priority(priority, default=None)
         if not priority:
             return jsonify({"error": "Invalid priority"}), 400
+    statuses = []
+    if status_filter:
+        statuses = [item.strip().upper() for item in status_filter.split(",") if item.strip()]
+        if not statuses or any(status not in TICKET_STATUSES for status in statuses):
+            return jsonify({"error": "Invalid status"}), 400
     if master_id:
         try:
             master_id = int(master_id)
         except ValueError:
             return jsonify({"error": "Invalid master_id"}), 400
+    if asset_id:
+        try:
+            asset_id = int(asset_id)
+        except ValueError:
+            return jsonify({"error": "Invalid asset_id"}), 400
+    try:
+        date_from = datetime.strptime(date_from_raw, "%Y-%m-%d").date() if date_from_raw else None
+        date_to = datetime.strptime(date_to_raw, "%Y-%m-%d").date() if date_to_raw else None
+    except ValueError:
+        return jsonify({"error": "Invalid date range"}), 400
+    start_dt = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc) if date_from else None
+    end_dt = datetime.combine(date_to, datetime.max.time(), tzinfo=timezone.utc) if date_to else None
     with SessionLocal() as db:
         query = db.query(Ticket)
         if not include_archived:
@@ -281,8 +314,30 @@ def list_tickets():
             query = query.filter(Ticket.assigned_master_id == current_user.master_id)
         elif master_id:
             query = query.filter(Ticket.assigned_master_id == master_id)
+        if statuses:
+            query = query.filter(Ticket.status.in_(statuses))
         if priority:
             query = query.filter(Ticket.priority == priority)
+        if asset_id:
+            query = query.filter(Ticket.asset_id == asset_id)
+        if start_dt:
+            query = query.filter(Ticket.created_at >= start_dt)
+        if end_dt:
+            query = query.filter(Ticket.created_at <= end_dt)
+        if q:
+            pattern = f"%{q}%"
+            query = query.outerjoin(Asset).filter(
+                or_(
+                    Ticket.object_name.ilike(pattern),
+                    Ticket.address.ilike(pattern),
+                    Ticket.description.ilike(pattern),
+                    Ticket.email.ilike(pattern),
+                    Asset.address.ilike(pattern),
+                    Asset.serial_no.ilike(pattern),
+                    Asset.lift_label.ilike(pattern),
+                    Asset.entrance.ilike(pattern),
+                )
+            )
         if kanban_view:
             open_statuses = ["NEW", "ASSIGNED", "ACCEPTED", "IN_PROGRESS", "WAITING"]
             closed_statuses = ["COMPLETED", "CANCELLED"]
@@ -657,6 +712,9 @@ def create_ticket():
     priority = _normalize_priority(data.get("priority"))
     if not priority:
         return jsonify({"error": "Invalid priority"}), 400
+    problem_type = _normalize_problem_type(data.get("problem_type"))
+    if data.get("problem_type") not in (None, "") and not problem_type:
+        return jsonify({"error": "Invalid problem_type"}), 400
 
     def _parse_custom(val):
         if val in (None, ""):
@@ -702,6 +760,7 @@ def create_ticket():
             lat=lat,
             lon=lon,
             description=data.get("description"),
+            problem_type=problem_type,
             priority=priority,
             email=data.get("email"),
             status="NEW",
@@ -726,6 +785,7 @@ def create_ticket():
             "lat",
             "lon",
             "priority",
+            "problem_type",
             "custom_sla_response_minutes",
             "custom_sla_completion_minutes",
             "description",
@@ -750,6 +810,7 @@ def create_ticket():
                 "id": t.id,
                 "assigned_master_id": t.assigned_master_id,
                 "status": t.status,
+                "problem_type": t.problem_type,
                 "priority": t.priority or "MEDIUM",
                 "custom_sla_response_minutes": t.custom_sla_response_minutes,
                 "custom_sla_completion_minutes": t.custom_sla_completion_minutes,
@@ -781,6 +842,12 @@ def update_ticket(ticket_id):
         priority = _normalize_priority(priority, default=None)
         if not priority:
             return jsonify({"error": "Invalid priority"}), 400
+    problem_type_provided = "problem_type" in data
+    problem_type = None
+    if problem_type_provided:
+        problem_type = _normalize_problem_type(data.get("problem_type"))
+        if data.get("problem_type") not in (None, "") and not problem_type:
+            return jsonify({"error": "Invalid problem_type"}), 400
 
     custom_resp = _parse_custom(data.get("custom_sla_response_minutes"))
     custom_comp = _parse_custom(data.get("custom_sla_completion_minutes"))
@@ -788,7 +855,13 @@ def update_ticket(ticket_id):
         return jsonify({"error": "custom SLA minutes must be positive integers"}), 400
 
     description = data.get("description") if "description" in data else None
-    if priority is None and custom_resp is None and custom_comp is None and description is None:
+    if (
+        priority is None
+        and custom_resp is None
+        and custom_comp is None
+        and description is None
+        and not problem_type_provided
+    ):
         return jsonify({"error": "No fields to update"}), 400
     with SessionLocal() as db:
         t = db.get(Ticket, ticket_id)
@@ -801,9 +874,12 @@ def update_ticket(ticket_id):
             "custom_sla_response_minutes": t.custom_sla_response_minutes,
             "custom_sla_completion_minutes": t.custom_sla_completion_minutes,
             "description": t.description,
+            "problem_type": t.problem_type,
         }
         if priority is not None:
             t.priority = priority
+        if problem_type_provided:
+            t.problem_type = problem_type
         if custom_resp is not None:
             t.custom_sla_response_minutes = custom_resp
         if custom_comp is not None:
@@ -824,6 +900,7 @@ def update_ticket(ticket_id):
                 "custom_sla_response_minutes",
                 "custom_sla_completion_minutes",
                 "description",
+                "problem_type",
             ],
         )
         if old or new:
@@ -959,16 +1036,65 @@ def get_ticket(ticket_id):
             if t.assigned_master_id != current_user.master_id:
                 return jsonify({"error": "Forbidden"}), 403
         payload = repository.serialize_ticket(t)
+        user_ids = [c.user_id for c in (t.comments or []) if c.user_id]
+        users = db.query(User).filter(User.id.in_(user_ids)).all() if user_ids else []
+        users_by_id = {u.id: u for u in users}
         payload["comments"] = [
             {
                 "id": c.id,
                 "user_id": c.user_id,
+                "username": users_by_id.get(c.user_id).username if users_by_id.get(c.user_id) else None,
                 "body": c.body,
                 "created_at": (to_utc(c.created_at).isoformat() if c.created_at else None),
             }
             for c in (t.comments or [])
         ]
         return jsonify(payload)
+
+
+@bp.post("/api/tickets/<int:ticket_id>/comments")
+@login_required
+@role_required("admin", "dispatcher")
+def create_ticket_comment(ticket_id):
+    data = request.get_json() or {}
+    body = (data.get("body") or "").strip()
+    if not body:
+        return jsonify({"error": "Comment body is required"}), 400
+    with SessionLocal() as db:
+        t = db.get(Ticket, ticket_id)
+        if not t:
+            return jsonify({"error": "Ticket not found"}), 404
+        if t.archived_at:
+            return jsonify({"error": "Ticket archived"}), 400
+        comment = TicketComment(ticket_id=t.id, user_id=current_user.id, body=body)
+        db.add(comment)
+        db.flush()
+        bump_ticket_version(t)
+        log_audit(
+            db,
+            entity_type="ticket",
+            entity_id=t.id,
+            action="COMMENT",
+            actor_user_id=current_user.id,
+            old={},
+            new={"comment_id": comment.id, "body": body},
+        )
+        db.commit()
+        db.refresh(comment)
+        return (
+            jsonify(
+                {
+                    "id": comment.id,
+                    "ticket_id": t.id,
+                    "user_id": comment.user_id,
+                    "username": current_user.username,
+                    "body": comment.body,
+                    "created_at": to_utc(comment.created_at).isoformat() if comment.created_at else None,
+                    "version": t.version,
+                }
+            ),
+            201,
+        )
 
 
 @bp.post("/api/sync/events")
