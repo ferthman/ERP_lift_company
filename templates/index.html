@@ -57,14 +57,25 @@
       overflow-y:auto;
     }
     .objects-suggestion-item:hover{background-color:#f8fafc}
+    [data-app-nav] > button{flex:0 0 auto;white-space:nowrap}
+    .map-unavailable{
+      display:flex;
+      min-height:100%;
+      align-items:center;
+      justify-content:center;
+      padding:16px;
+      text-align:center;
+      color:#475569;
+      background:#f8fafc;
+    }
   </style>
 </head>
 <body class="bg-slate-50 text-slate-900">
   <header class="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
-    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-      <h1 class="text-2xl font-bold">🚀 PremierLift CRM</h1>
+    <div class="max-w-6xl mx-auto px-4 py-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <h1 class="text-xl sm:text-2xl font-bold">🚀 PremierLift CRM</h1>
       {% if user_role != 'technician' %}
-        <nav class="flex items-center gap-2">
+        <nav data-app-nav class="w-full flex items-center gap-2 overflow-x-auto pb-1 lg:w-auto lg:overflow-visible lg:pb-0">
           {% if user_role == 'admin' %}
             <button id="tab-admin" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white">Панель</button>
             <button id="tab-ops" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Контроль этапов</button>
@@ -81,7 +92,7 @@
             <button id="tab-objects" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Объекты</button>
           {% endif %}
         </nav>
-        <div class="flex items-center gap-2">
+        <div class="flex w-full items-center justify-between gap-2 lg:w-auto lg:justify-end">
           <span id="login-state" class="text-sm text-slate-600">Не вошли</span>
           <button id="btn-login" class="px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Войти</button>
           <button id="btn-logout" class="hidden px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Выйти</button>
@@ -621,7 +632,7 @@
 
   <!-- Map Modal -->
   <div id="modal" class="modal">
-    <div class="bg-white rounded-2xl p-3 w-[90vw] max-w-2xl">
+    <div class="bg-white rounded-2xl p-3 w-[90vw] max-w-2xl max-h-[92vh] overflow-y-auto">
       <div class="flex items-center justify-between">
         <h3 class="font-semibold">Карта объекта</h3>
         <button id="modal-close" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-sm">Закрыть</button>
@@ -632,7 +643,7 @@
 
   <!-- Cancel Modal -->
   <div id="cancel-modal" class="modal">
-    <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-2xl">
+    <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-2xl max-h-[92vh] overflow-y-auto">
       <div class="flex items-center justify-between">
         <h3 class="font-semibold">Отменить заявку</h3>
         <button id="cancel-modal-close" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-sm">Закрыть</button>
@@ -669,7 +680,7 @@
   </div>
 
   <div id="asset-modal" class="modal">
-    <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-xl">
+    <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-xl max-h-[92vh] overflow-y-auto">
       <div class="flex items-center justify-between">
         <h3 id="asset-modal-title" class="font-semibold">Лифт</h3>
         <button id="asset-modal-close" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-sm">Закрыть</button>
@@ -732,7 +743,7 @@
   </div>
 
   <div id="temp-password-modal" class="modal">
-    <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-md">
+    <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-md max-h-[92vh] overflow-y-auto">
       <div class="flex items-center justify-between">
         <h3 id="temp-password-title" class="font-semibold">Временный пароль</h3>
         <button id="temp-password-close" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-sm">Закрыть</button>
@@ -756,7 +767,7 @@
   </div>
 
   <div id="change-password-modal" class="modal">
-    <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-md">
+    <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-md max-h-[92vh] overflow-y-auto">
       <div class="flex items-center justify-between">
         <h3 class="font-semibold">Сменить пароль</h3>
         <button id="change-password-close" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-sm">Закрыть</button>
@@ -782,7 +793,7 @@
   </div>
 
   <div id="assign-role-modal" class="modal">
-    <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-md">
+    <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-md max-h-[92vh] overflow-y-auto">
       <div class="flex items-center justify-between">
         <h3 class="font-semibold">Назначить роль</h3>
         <button id="assign-role-close" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-sm">Закрыть</button>
@@ -809,7 +820,7 @@
   </div>
 
   <div id="change-role-modal" class="modal">
-    <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-md">
+    <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-md max-h-[92vh] overflow-y-auto">
       <div class="flex items-center justify-between">
         <h3 class="font-semibold">Изменить роль пользователя</h3>
         <button id="change-role-close" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-sm">Закрыть</button>
@@ -837,7 +848,7 @@
   </div>
 
   <div id="replace-tech-modal" class="modal">
-    <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-lg">
+    <div class="bg-white rounded-2xl p-5 w-[90vw] max-w-lg max-h-[92vh] overflow-y-auto">
       <div class="flex items-center justify-between">
         <h3 class="font-semibold">Замена сотрудника</h3>
         <button id="replace-tech-close" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-sm">Закрыть</button>
@@ -1243,11 +1254,22 @@
 
     // Map
     let mapCreate, markerCreate, circleCreate;
+    function isLeafletAvailable(){
+      return typeof window.L !== 'undefined';
+    }
+    function renderMapUnavailable(container, message){
+      if(!container) return;
+      container.innerHTML = `<div class="map-unavailable">${escapeHtml(message)}</div>`;
+    }
     function scheduleMapInvalidate(mapInstance, delay = 0){
       if(!mapInstance) return;
       setTimeout(() => { mapInstance.invalidateSize(true); }, delay);
     }
     function initCreateMap(){
+      if(!isLeafletAvailable()){
+        renderMapUnavailable(document.getElementById('map-create'), 'Карта временно недоступна. Введите координаты вручную.');
+        return;
+      }
       mapCreate = L.map('map-create').setView([43.238949,76.889709], 12);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ attribution:'&copy; OpenStreetMap' }).addTo(mapCreate);
       markerCreate = L.marker([43.238949,76.889709],{draggable:true}).addTo(mapCreate);
@@ -1266,7 +1288,12 @@
     const modalClose = document.getElementById('modal-close');
     if (modalClose && modal) modalClose.onclick=()=>{ modal.classList.remove('open'); };
     let modalMap=null;
-    function openMap(lat,lon){ modal.classList.add('open'); setTimeout(()=>{ if(modalMap){modalMap.remove(); modalMap=null;} modalMap=L.map('modal-map').setView([lat,lon],16);
+    function openMap(lat,lon){
+      if(!isLeafletAvailable()){
+        alert('Карта временно недоступна. Проверьте подключение к Leaflet/OpenStreetMap.');
+        return;
+      }
+      modal.classList.add('open'); setTimeout(()=>{ if(modalMap){modalMap.remove(); modalMap=null;} modalMap=L.map('modal-map').setView([lat,lon],16);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ attribution:'&copy; OpenStreetMap' }).addTo(modalMap);
       L.marker([lat,lon]).addTo(modalMap); L.circle([lat,lon],{radius:500}).addTo(modalMap);
       requestAnimationFrame(() => scheduleMapInvalidate(modalMap, 0));
@@ -2701,10 +2728,10 @@
         const activeBadge = u.is_active ? '<span class="text-xs px-2 py-0.5 rounded bg-emerald-50 ring-1 ring-emerald-200 text-emerald-700">Да</span>'
           : '<span class="text-xs px-2 py-0.5 rounded bg-slate-100 ring-1 ring-slate-200 text-slate-600">Нет</span>';
         html += `<tr class="border-b">
-          <td class="py-2 px-2 font-mono">${u.username}</td>
-          <td class="py-2 px-2">${renderRoleLabel(u.role)}</td>
+          <td class="py-2 px-2 font-mono">${escapeHtml(u.username || '—')}</td>
+          <td class="py-2 px-2">${escapeHtml(renderRoleLabel(u.role))}</td>
           <td class="py-2 px-2">${activeBadge}</td>
-          <td class="py-2 px-2">${masterLabel}</td>
+          <td class="py-2 px-2">${escapeHtml(masterLabel)}</td>
           <td class="py-2 px-2">
             <div class="flex flex-wrap gap-2">
               <button class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white" data-user-password="${u.id}">Сменить пароль</button>
@@ -2762,11 +2789,11 @@
           : '<span class="text-xs px-2 py-0.5 rounded bg-slate-100 ring-1 ring-slate-200 text-slate-600">Нет</span>';
         const accessLabel = m.user_id ? 'Назначен' : 'Нет';
         html += `<tr class="border-b">
-          <td class="py-2 px-2">${m.name}</td>
-          <td class="py-2 px-2">${m.phone || '—'}</td>
+          <td class="py-2 px-2">${escapeHtml(m.name || '—')}</td>
+          <td class="py-2 px-2">${escapeHtml(m.phone || '—')}</td>
           <td class="py-2 px-2">${activeBadge}</td>
           <td class="py-2 px-2">${accessLabel}</td>
-          <td class="py-2 px-2 font-mono">${m.username || '—'}</td>
+          <td class="py-2 px-2 font-mono">${escapeHtml(m.username || '—')}</td>
           <td class="py-2 px-2">
             <div class="flex flex-wrap gap-2">
               ${m.user_id ? '' :
@@ -2961,6 +2988,7 @@
     let objectsTicketsLayer = null;
     let objectsTicketMarkers = [];
     const objectsTicketsIndex = new Map();
+    let objectsMapStateEl = null;
 
     const STREET_TOKEN_MAP = {
       'ул': 'улица',
@@ -3082,16 +3110,21 @@
         </div>`;
     }
     async function loadOpenTicketsLayer(){
-      if(!objectsMap) return;
+      if(!objectsMap || !isLeafletAvailable()) return;
       if(!objectsTicketsLayer){
         objectsTicketsLayer = L.layerGroup();
       }
       objectsTicketsLayer.clearLayers();
       objectsTicketMarkers = [];
       objectsTicketsIndex.clear();
-      const res = await fetch('/api/tickets?include_archived=0', { cache: 'no-store' });
-      if(!res.ok) return;
-      const data = await res.json();
+      let data = [];
+      try{
+        const res = await fetch('/api/tickets?include_archived=0', { cache: 'no-store' });
+        if(!res.ok) return;
+        data = await res.json();
+      }catch(err){
+        return;
+      }
       const openStatuses = new Set(['NEW','ASSIGNED','ACCEPTED','IN_PROGRESS','WAITING']);
       data.filter(t => openStatuses.has(t.status) && Number.isFinite(t.lat) && Number.isFinite(t.lon))
         .forEach(t => {
@@ -3184,6 +3217,20 @@
       updateObjectsVisibility(tokens);
       renderObjectsSuggestions(tokens);
     }
+    function setObjectsMapState(message){
+      if(!objectsMapShell) return;
+      if(!objectsMapStateEl){
+        objectsMapStateEl = document.createElement('div');
+        objectsMapStateEl.id = 'objects-map-state';
+        objectsMapStateEl.className = 'absolute left-3 right-3 bottom-3 z-[1000] rounded-xl bg-white/95 px-3 py-2 text-sm text-slate-600 shadow ring-1 ring-slate-200 md:right-auto md:max-w-md';
+        objectsMapShell.appendChild(objectsMapStateEl);
+      }
+      objectsMapStateEl.textContent = message || '';
+      objectsMapStateEl.classList.toggle('hidden', !message);
+    }
+    function clearObjectsMapState(){
+      setObjectsMapState('');
+    }
 
     function scheduleObjectsMapResize(delay = 150){
       scheduleMapInvalidate(objectsMap, delay);
@@ -3256,6 +3303,11 @@
     updateObjectsSearchUI();
 
     async function loadObjects(){
+      if(!isLeafletAvailable()){
+        renderMapUnavailable(document.getElementById('objects-map'), 'Карта временно недоступна. Не загрузилась библиотека Leaflet.');
+        setObjectsMapState('Карта временно недоступна. Таблицы и заявки продолжают работать.');
+        return;
+      }
       // Ensure map is initialized
       if(!objectsMap){
         objectsMap = L.map('objects-map').setView([43.238949,76.889709], 12);
@@ -3264,8 +3316,17 @@
       // Remove existing markers
       objectsMarkers.forEach(m => objectsMap.removeLayer(m.marker));
       objectsMarkers = [];
-      const res = await fetch('/api/assets',{cache:'no-store'});
-      const data = await res.json();
+      let data = [];
+      try{
+        const res = await fetch('/api/assets',{cache:'no-store'});
+        if(!res.ok) throw new Error('assets request failed');
+        data = await res.json();
+      }catch(err){
+        setObjectsMapState('Не удалось загрузить объекты карты. Попробуйте обновить вкладку.');
+        scheduleObjectsMapResize(150);
+        return;
+      }
+      clearObjectsMapState();
       objectsData = Array.isArray(data) ? data : [];
       objectsData.forEach(obj => {
         if(!Number.isFinite(obj.lat) || !Number.isFinite(obj.lon)) return;
@@ -3288,6 +3349,8 @@
       if(objectsMarkers.length>0 && tokenizeSearchQuery(objectsSearchInput?.value || '').length === 0){
         const group = new L.featureGroup(objectsMarkers.map(m => m.marker));
         objectsMap.fitBounds(group.getBounds().pad(0.2));
+      } else if(objectsMarkers.length === 0){
+        setObjectsMapState('В реестре нет лифтов с координатами для отображения на карте.');
       }
       applyObjectsSearch();
       if(objectsTicketsToggle?.checked){

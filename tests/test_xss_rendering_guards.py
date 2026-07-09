@@ -21,6 +21,11 @@ def test_admin_ticket_and_asset_renderers_escape_user_fields():
     assert "const customerLine = obj.customer_name ? `<div>Клиент: ${escapeHtml(obj.customer_name)}</div>` : '';" in source
     assert "const contractLine = obj.contract_title ? `<div>Договор: ${escapeHtml(obj.contract_title)}</div>` : '';" in source
     assert "circle.bindPopup(`<b>${escapeHtml(liftLabel)}</b><br>${escapeHtml(obj.address ?? '')}${entranceLine}${customerLine}${contractLine}`)" in source
+    assert "${escapeHtml(u.username || '—')}" in source
+    assert "${escapeHtml(masterLabel)}" in source
+    assert "${escapeHtml(m.name || '—')}" in source
+    assert "${escapeHtml(m.phone || '—')}" in source
+    assert "${escapeHtml(m.username || '—')}" in source
 
 
 def test_mobile_ticket_and_history_renderers_escape_user_fields():
