@@ -34,3 +34,11 @@ def test_admin_map_handles_missing_leaflet_and_failed_assets_fetch():
     assert "Не удалось загрузить объекты карты" in source
     assert "В реестре нет лифтов с координатами" in source
     assert "if(!objectsMap || !isLeafletAvailable()) return;" in source
+
+
+def test_closed_tickets_do_not_show_remaining_sla_minutes():
+    source = read_repo_file("templates/index.html")
+
+    assert "const isClosed = ['COMPLETED','CANCELLED'].includes(t.status);" in source
+    assert "SLA был просрочен" in source
+    assert "return showPlaceholder ? '—' : '';" in source
