@@ -32,9 +32,11 @@ def test_mobile_failed_outbox_is_visible_retryable_and_discardable():
     template = read_repo_file("templates/mobile.html")
     source = read_repo_file("static/mobile.js")
 
+    assert ".mobile-action-grid button:disabled" in template
     assert "id=\"outbox-panel\"" in template
     assert "id=\"outbox-failed-list\"" in template
     assert "id=\"outbox-retry-all\"" in template
+    assert "mobile-action-grid grid grid-cols-2 gap-2" in source
     assert "async function retryOutboxEvent" in source
     assert "async function discardOutboxEvent" in source
     assert "async function retryAllFailedOutbox" in source
@@ -48,6 +50,7 @@ def test_mobile_failed_outbox_is_visible_retryable_and_discardable():
 def test_mobile_transient_failures_stay_pending_and_photo_queue_is_bounded():
     source = read_repo_file("static/mobile.js")
 
+    assert "globalThis.crypto?.randomUUID" in source
     assert "const MAX_PHOTO_SIZE_BYTES = 8 * 1024 * 1024" in source
     assert "const MAX_QUEUED_PHOTOS = 20" in source
     assert "file.size > MAX_PHOTO_SIZE_BYTES" in source
@@ -56,3 +59,12 @@ def test_mobile_transient_failures_stay_pending_and_photo_queue_is_bounded():
     assert "Transient network failures stay pending" in source
     assert "retryOutboxPhoto" in source
     assert "discardOutboxPhoto" in source
+
+
+def test_mobile_reset_requires_confirmation_before_clearing_outbox():
+    source = read_repo_file("static/mobile.js")
+
+    assert "const queuedCount = events.length + photos.length" in source
+    assert "window.confirm(message)" in source
+    assert "if (!window.confirm(message)) return;" in source
+    assert "несинхронизированных действий/фото" in source

@@ -133,7 +133,7 @@ function escapeHtml(value) {
 }
 
 function uid() {
-  if (crypto?.randomUUID) return crypto.randomUUID();
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
   return `evt_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
@@ -585,7 +585,7 @@ function renderDetail(ticket) {
       <div class="text-xs text-slate-500">Назначено: ${ticket.assigned_at ? formatDate(ticket.assigned_at) : "—"}</div>
     </div>
     <div class="mt-4 space-y-3">
-      <div class="grid grid-cols-2 gap-2">
+      <div class="mobile-action-grid grid grid-cols-2 gap-2">
         <button id="btn-accept" class="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm">Принять</button>
         <button id="btn-progress" class="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm">В работу</button>
         <button id="btn-waiting" class="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm">Ожидание</button>
@@ -1040,6 +1040,13 @@ async function syncAll() {
 }
 
 async function resetOffline() {
+  const events = await listOutboxEvents();
+  const photos = await listOutboxPhotos();
+  const queuedCount = events.length + photos.length;
+  const message = queuedCount
+    ? `Сбросить офлайн-данные и удалить ${queuedCount} несинхронизированных действий/фото?`
+    : "Сбросить локальный кэш приложения мастера?";
+  if (!window.confirm(message)) return;
   await withStore("tickets_list_cache", "readwrite", (store) => store.clear());
   await withStore("tickets_cache", "readwrite", (store) => store.clear());
   await withStore("history_list_cache", "readwrite", (store) => store.clear());
