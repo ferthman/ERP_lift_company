@@ -472,6 +472,7 @@ function renderList() {
 }
 
 function setActiveTab(tab) {
+  state.selectedId=null;
   const isHistory=tab==='history';
   elements.tabTickets?.classList.toggle('active',!isHistory);
   elements.tabHistory?.classList.toggle('active',isHistory);
@@ -673,6 +674,8 @@ function renderDetail(ticket) {
   btnAccept.disabled = ticket.status !== "ASSIGNED";
   btnComment.disabled = ["COMPLETED","CANCELLED"].includes(ticket.status);
   photoInput.disabled = ["COMPLETED","CANCELLED"].includes(ticket.status);
+  commentBody.parentElement.classList.toggle('hidden',btnComment.disabled);
+  photoInput.parentElement.classList.toggle('hidden',photoInput.disabled);
   btnProgress.disabled = !["ACCEPTED", "WAITING"].includes(ticket.status);
   btnWaiting.disabled = ticket.status !== "IN_PROGRESS";
   btnDone.disabled = ticket.status !== "IN_PROGRESS";
@@ -847,8 +850,8 @@ async function refreshTickets() {
         const queuedIds=new Set((await listOutboxEvents()).map(e=>e.ticket_id));
         state.tickets=[];
         for(const t of data||[]) {
-          const cached=queuedIds.has(t.id)?await loadTicketCache(t.id):null;
-          const item=cached||t;
+          const cached=await loadTicketCache(t.id);
+          const item=queuedIds.has(t.id)?cached||t:{...(cached||{}),...t};
           state.tickets.push(item);await saveTicketCache(item);
         }
         await saveListCache(state.tickets);
@@ -1101,7 +1104,7 @@ async function syncAll() {
     if(!state.online){await updateSyncIndicators();return;}
     try{
       await syncEvents();await syncPhotos();await refreshTickets();
-      if(state.selectedId){await renderPhotoQueue(state.selectedId);}
+      if(state.selectedId){await openTicket(state.selectedId);}
       if(state.online)state.lastSync=new Date().toISOString();
       await updateSyncIndicators();
     }catch(err){await updateSyncIndicators();}

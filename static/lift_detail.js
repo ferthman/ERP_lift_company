@@ -113,7 +113,7 @@
       <div class="text-slate-500">Серийный номер: <span class="text-slate-700">${escapeHtml(lift.serial_no || "—")}</span></div>
       <div class="text-slate-500">Адрес: <span class="text-slate-700">${escapeHtml(lift.address || "—")}</span></div>
       <div class="text-slate-500">Подъезд: <span class="text-slate-700">${escapeHtml(lift.entrance || "—")}</span></div>
-      <div class="text-slate-500">Статус: <span class="text-slate-700">${escapeHtml(lift.status || "—")}</span></div>
+      <div class="text-slate-500">Статус: <span class="text-slate-700">${escapeHtml(({ACTIVE:"На обслуживании",INACTIVE:"Не обслуживается"})[lift.status] || lift.status || "—")}</span></div>
     `;
   }
 

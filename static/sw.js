@@ -1,4 +1,4 @@
-const CACHE_NAME = "liftcrm-shell-v6";
+const CACHE_NAME = "liftcrm-shell-v7";
 const STATIC_SHELL_URLS = [
   "/mobile-shell", "/static/manifest.webmanifest", "/static/manifest.mobile.webmanifest",
   "/static/mobile-2gis.js", "/static/mobile.js", "/static/mobile.css", "/static/crm.css",
