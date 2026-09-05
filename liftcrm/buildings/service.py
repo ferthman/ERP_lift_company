@@ -60,22 +60,23 @@ def migrate_buildings(path):
             conn.execute('CREATE INDEX IF NOT EXISTS idx_attachments_ticket ON attachments(ticket_id)')
 
 
-def ensure_building(db, address, lat=None, lon=None, customer_id=None, contract_id=None, name=None):
+def ensure_building(db, address, lat=None, lon=None, customer_id=None, contract_id=None, name=None, model=Building):
     norm = normalize_text(address)
     if not norm:
         raise ValueError('Укажите адрес объекта')
-    building = db.query(Building).filter_by(address_norm=norm, customer_id=customer_id, contract_id=contract_id).order_by(Building.id).first()
+    building = db.query(model).filter_by(address_norm=norm, customer_id=customer_id, contract_id=contract_id).order_by(model.id).first()
     if not building:
-        building = Building(name=name or address, address=address, address_norm=norm, lat=lat, lon=lon, customer_id=customer_id, contract_id=contract_id)
+        building = model(name=name or address, address=address, address_norm=norm, lat=lat, lon=lon, customer_id=customer_id, contract_id=contract_id)
         db.add(building)
         db.flush()
     return building
 
 
 def link_asset(db, asset, building_id=None, regroup=False):
+    model = type(asset).building.property.mapper.class_
     if building_id not in (None, ''):
         try:
-            building = db.get(Building, int(building_id))
+            building = db.get(model, int(building_id))
         except (ValueError, TypeError):
             raise ValueError('Некорректный объект')
         if not building or not building.is_active:
@@ -87,7 +88,7 @@ def link_asset(db, asset, building_id=None, regroup=False):
     elif asset.building_id and not regroup:
         return asset.building
     else:
-        building = ensure_building(db, asset.address, asset.lat, asset.lon, asset.customer_id, asset.contract_id)
+        building = ensure_building(db, asset.address, asset.lat, asset.lon, asset.customer_id, asset.contract_id, model=model)
     asset.building_id = building.id
     asset.building = building
     return building

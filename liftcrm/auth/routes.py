@@ -209,6 +209,7 @@ def api_me():
     return jsonify(
         {
             "authenticated": True,
+            "id": current_user.id,
             "username": current_user.username,
             "role": current_user.role,
             "master_id": current_user.master_id,

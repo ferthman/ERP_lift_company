@@ -22,7 +22,7 @@ def test_service_worker_does_not_cache_api_or_authenticated_responses():
 def test_service_worker_makes_deploy_updates_predictable():
     source = read_repo_file("static/sw.js")
 
-    assert "const CACHE_NAME = \"liftcrm-shell-v3\"" in source
+    assert "const CACHE_NAME = \"liftcrm-shell-v6\"" in source
     assert "self.skipWaiting()" in source
     assert "self.clients.claim()" in source
     assert "caches.delete(name)" in source
@@ -42,7 +42,7 @@ def test_mobile_failed_outbox_is_visible_retryable_and_discardable():
     assert "async function retryAllFailedOutbox" in source
     assert "renderFailedOutbox(events, photos)" in source
     assert "event.status = \"pending\"" in source
-    assert "await deleteOutboxEvent(id)" in source
+    assert "await deleteOutboxEvent(item.id)" in source
     assert "CONFLICT: \"Заявка изменилась на сервере\"" in source
     assert "OUT_OF_RANGE: \"Вы вне геозоны объекта\"" in source
 
@@ -68,3 +68,14 @@ def test_mobile_reset_requires_confirmation_before_clearing_outbox():
     assert "window.confirm(message)" in source
     assert "if (!window.confirm(message)) return;" in source
     assert "несинхронизированных действий/фото" in source
+
+
+def test_mobile_shell_has_root_scope_and_separate_identity():
+    source=read_repo_file("static/mobile.js")
+    worker=read_repo_file("static/sw.js")
+    assert "register(\"/sw.js\",{scope:'/'})" in source
+    assert 'liftcrm-mobile-${mobileIdentity?.id' in source
+    assert "headers.set('X-Mobile-User'" in source
+    assert 'verifyIdentity()' in source
+    assert "cache.match('/mobile-shell')" in worker
+    assert "cache.put(request" not in worker

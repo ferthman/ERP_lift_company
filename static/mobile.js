@@ -1,4 +1,36 @@
-const DB_NAME = "liftcrm-mobile";
+let savedIdentity = null;
+try { savedIdentity = JSON.parse(localStorage.getItem('liftcrm-mobile-identity') || 'null'); } catch (_) {}
+const mobileIdentity = window.MOBILE_BOOTSTRAP?.userId
+  ? { id: window.MOBILE_BOOTSTRAP.userId, username: window.MOBILE_BOOTSTRAP.username }
+  : window.MOBILE_BOOTSTRAP?.offlineShell ? savedIdentity : null;
+const DB_NAME = `liftcrm-mobile-${mobileIdentity?.id || 'locked'}`;
+let syncPromise = null, queueBusy = false;
+function lockMobile() {
+  state.authBlocked = true;
+  document.getElementById('mobile-auth')?.classList.remove('hidden');
+  document.getElementById('mobile-workspace')?.classList.add('hidden');
+}
+async function mobileFetch(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  headers.set('X-Mobile-User', String(mobileIdentity?.id || 'locked'));
+  let res;
+  try {res=await fetch(url, { ...options, headers, cache: 'no-store' });}
+  catch(err){state.online=false;throw err;}
+  if (res.status === 401 || (res.status === 409 && (await res.clone().json())?.error?.code === 'IDENTITY_CHANGED')) {
+    lockMobile();
+    throw new Error('Войдите под своей учётной записью');
+  }
+  return res;
+}
+async function verifyIdentity() {
+  if (!mobileIdentity?.id) { lockMobile(); return false; }
+  try {
+    const res = await mobileFetch('/api/me');
+    const me = await res.json();
+    if (!me.authenticated || me.id !== mobileIdentity.id || me.role !== 'technician') { lockMobile(); return false; }
+    return true;
+  } catch (_) { if(state.authBlocked)return false;state.online=false;return true; }
+}
 const DB_VERSION = 2;
 const MAX_PHOTO_SIZE_BYTES = 8 * 1024 * 1024;
 const MAX_QUEUED_PHOTOS = 20;
@@ -134,7 +166,7 @@ function escapeHtml(value) {
 
 function uid() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
-  return `evt_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  return '10000000-1000-4000-8000-100000000000'.replace(/[018]/g,c=>(Number(c)^crypto.getRandomValues(new Uint8Array(1))[0]&15>>Number(c)/4).toString(16));
 }
 
 function openDb() {
@@ -185,8 +217,8 @@ async function withStore(storeName, mode, callback) {
       };
       request.onerror = () => reject(request.error);
     }
-    tx.oncomplete = () => resolve(requestResult);
-    tx.onerror = () => reject(tx.error);
+    tx.oncomplete = () => { db.close(); resolve(requestResult); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
   });
 }
 
@@ -290,6 +322,7 @@ async function updateSyncIndicators() {
     text = "Синхронизировано";
   }
   elements.syncStatus.textContent = text;
+  document.querySelectorAll('.mobile-detail-sync').forEach(el=>el.textContent=text);
   elements.lastSync.textContent = state.lastSync ? `Последняя синхронизация: ${formatDate(state.lastSync)}` : "—";
   await renderFailedOutbox(events, photos);
 }
@@ -307,7 +340,23 @@ async function retryOutboxEvent(id) {
 }
 
 async function discardOutboxEvent(id) {
-  await deleteOutboxEvent(id);
+  if(!state.online){alert('Подключитесь к сети, чтобы восстановить актуальное состояние заявки.');return;}
+  const events=await listOutboxEvents();
+  const event=events.find(item=>item.id===id);
+  if(!event)return;
+  const dependent=events.filter(item=>item.ticket_id===event.ticket_id && item.expected_version>=event.expected_version);
+  if(!confirm(`Удалить действие и следующие за ним изменения этой заявки (${dependent.length})? Они не будут отправлены. Будет загружено состояние с сервера. Фото сохранятся в очереди.`))return;
+  let current;
+  try {
+    const response=await mobileFetch(`/api/tickets/${event.ticket_id}`);
+    if(response.ok)current=await response.json();
+    else if(![403,404].includes(response.status))throw new Error();
+  } catch(_){alert('Не удалось проверить заявку. Очередь сохранена, попробуйте после восстановления связи.');return;}
+  for(const item of dependent)await deleteOutboxEvent(item.id);
+  if(current)await saveTicketCache(current);
+  else await withStore('tickets_cache','readwrite',store=>store.delete(event.ticket_id));
+  await refreshTickets();
+  if(state.selectedId===event.ticket_id){if(current)renderDetail(current);else elements.ticketDetailCard?.classList.add('hidden');}
   await updateSyncIndicators();
 }
 
@@ -324,6 +373,7 @@ async function retryOutboxPhoto(id) {
 }
 
 async function discardOutboxPhoto(id) {
+  if(!confirm("Удалить неотправленное фото из очереди?"))return;
   await deleteOutboxPhoto(id);
   await updateSyncIndicators();
   if (state.selectedId) {
@@ -373,7 +423,7 @@ async function renderFailedOutbox(events, photos) {
       <div class="mt-1">${escapeHtml(detail)}</div>
       <div class="mt-2 flex gap-2">
         <button class="retry px-2 py-1 rounded bg-amber-900 text-white">Повторить</button>
-        <button class="discard px-2 py-1 rounded bg-white ring-1 ring-amber-300">Скрыть</button>
+        <button class="discard px-2 py-1 rounded bg-white ring-1 ring-amber-300">Удалить из очереди</button>
       </div>
     `;
     row.querySelector(".retry")?.addEventListener("click", () => {
@@ -400,65 +450,36 @@ function updateTicketStatusBadge(ticket) {
     elements.ticketStatus.textContent = "—";
     return;
   }
-  elements.ticketStatus.textContent = `Статус: ${getStatusLabel(ticket.status)} · ${getPriorityLabel(
-    ticket.priority
-  )} · v${ticket.version || 1}`;
+  elements.ticketStatus.textContent = `№ ${ticket.id} · ${getStatusLabel(ticket.status)} · ${getPriorityLabel(ticket.priority)}`;
 }
 
 function renderList() {
   if (!elements.list) return;
-  if (!state.tickets.length) {
-    elements.list.innerHTML = `<div class="text-sm text-slate-500">Заявки не найдены.</div>`;
-    return;
-  }
-  elements.list.innerHTML = "";
-  state.tickets.forEach((ticket) => {
-    const wrapper = document.createElement("button");
-    wrapper.type = "button";
-    wrapper.className =
-      "w-full text-left border border-slate-200 rounded-xl p-3 hover:border-slate-400 transition bg-slate-50";
-    wrapper.innerHTML = `
-      <div class="flex items-start justify-between gap-2">
-        <div>
-          <div class="font-semibold">${escapeHtml(ticket.object_name || "Заявка")}</div>
-          <div class="text-xs text-slate-500">${escapeHtml(ticket.address || "Адрес не указан")}</div>
-        </div>
-        <span class="flex flex-col items-end gap-1">
-          <span class="text-xs font-semibold bg-slate-200 text-slate-700 px-2 py-1 rounded-full">${getStatusLabel(ticket.status)}</span>
-          ${renderPriorityBadge(ticket.priority)}
-        </span>
-      </div>
-      <div class="mt-2 text-xs text-slate-500">Обновлено: ${formatDate(ticket.updated_at)}</div>
-    `;
-    wrapper.addEventListener("click", () => openTicket(ticket.id));
-    elements.list.appendChild(wrapper);
+  const active = state.tickets.filter(t=>!['COMPLETED','CANCELLED'].includes(t.status));
+  const counters = document.getElementById('mobile-counters');
+  if(counters) counters.innerHTML = `<div class="mobile-counter"><strong>${active.length}</strong><small>Активных</small></div><div class="mobile-counter"><strong>${active.filter(t=>t.status==='IN_PROGRESS').length}</strong><small>В работе</small></div><div class="mobile-counter urgent"><strong>${active.filter(t=>['HIGH','EMERGENCY'].includes(t.priority)).length}</strong><small>Срочных</small></div>`;
+  const search=(document.getElementById('mobile-search')?.value||'').trim().toLowerCase();
+  const filter=document.getElementById('mobile-filter')?.value||'all';
+  const visible=active.filter(t=>(!search||`${t.id} ${t.object_name} ${t.address} ${t.description}`.toLowerCase().includes(search))&&(filter==='all'||filter==='new'&&t.status==='ASSIGNED'||filter==='progress'&&['ACCEPTED','IN_PROGRESS','WAITING'].includes(t.status)||filter==='urgent'&&['HIGH','EMERGENCY'].includes(t.priority)));
+  if(!visible.length){elements.list.innerHTML='<div class="mobile-empty"><strong>Всё спокойно</strong>Здесь появятся назначенные вам заявки.<br>Если включён фильтр, попробуйте изменить его.</div>';return;}
+  elements.list.innerHTML='';
+  visible.forEach(ticket=>{
+    const wrapper=document.createElement('button');wrapper.type='button';
+    wrapper.className=`mobile-ticket ${ticket.priority==='EMERGENCY'?'urgent':''}`;
+    wrapper.innerHTML=`<div class="mobile-ticket-meta"><span>ЗАЯВКА № ${ticket.id}</span>${renderPriorityBadge(ticket.priority)}</div><h3>${escapeHtml(ticket.object_name || "Заявка")}</h3><div class="mobile-ticket-address">${escapeHtml(ticket.address || "Адрес не указан")}</div><p class="mobile-ticket-description">${escapeHtml(ticket.description || "—")}</p><footer class="mobile-ticket-footer"><span class="pill ${ticket.status==='WAITING'?'warn':''}">${escapeHtml(getStatusLabel(ticket.status))}</span><span>Открыть заявку <span class="mobile-ticket-arrow">↗</span></span></footer>`;
+    wrapper.addEventListener('click',()=>openTicket(ticket.id));elements.list.appendChild(wrapper);
   });
 }
 
 function setActiveTab(tab) {
-  const isHistory = tab === "history";
-  if (elements.tabTickets) {
-    elements.tabTickets.className = `px-3 py-1 rounded-full text-xs font-semibold ${
-      isHistory ? "bg-slate-200 text-slate-700" : "bg-slate-900 text-white"
-    }`;
-  }
-  if (elements.tabHistory) {
-    elements.tabHistory.className = `px-3 py-1 rounded-full text-xs font-semibold ${
-      isHistory ? "bg-slate-900 text-white" : "bg-slate-200 text-slate-700"
-    }`;
-  }
-  if (elements.ticketsPanel) {
-    elements.ticketsPanel.classList.toggle("hidden", isHistory);
-  }
-  if (elements.historyPanel) {
-    elements.historyPanel.classList.toggle("hidden", !isHistory);
-  }
-  if (elements.ticketDetailCard) {
-    elements.ticketDetailCard.classList.toggle("hidden", isHistory);
-  }
-  if (elements.historyDetailCard) {
-    elements.historyDetailCard.classList.toggle("hidden", !isHistory);
-  }
+  const isHistory=tab==='history';
+  elements.tabTickets?.classList.toggle('active',!isHistory);
+  elements.tabHistory?.classList.toggle('active',isHistory);
+  elements.ticketsPanel?.classList.toggle('hidden',isHistory);
+  elements.historyPanel?.classList.toggle('hidden',!isHistory);
+  elements.ticketDetailCard?.classList.add('hidden');
+  elements.historyDetailCard?.classList.toggle('hidden',!isHistory);
+  document.querySelector('.mobile-filterbar')?.classList.toggle('hidden',isHistory);
 }
 
 function updateHistoryIndicators() {
@@ -549,7 +570,7 @@ function buildSelect(id, options, selected) {
   const opts = options
     .map(
       (opt) =>
-        `<option value="${opt}" ${opt === selected ? "selected" : ""}>${opt}</option>`
+        `<option value="${opt}" ${opt === selected ? "selected" : ""}>${({EQUIPMENT_FAILURE:"Неисправность оборудования",PASSENGER_TRAPPED:"Освобождение пассажира",FALSE_CALL:"Ложный вызов",POWER_ISSUE:"Проблема питания",EXTERNAL_REASON:"Внешняя причина",OTHER:"Другое"})[opt] || escapeHtml(opt)}</option>`
     )
     .join("");
   return `<select id="${id}" class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1 text-sm">${opts}</select>`;
@@ -559,9 +580,17 @@ function renderDetail(ticket) {
   if (!elements.detail) return;
   if (!ticket) {
     elements.detail.innerHTML = "Выберите заявку в списке.";
+    delete elements.detail.dataset.ticketId;
     updateTicketStatusBadge(null);
     return;
   }
+  const drafts={};
+  if(elements.detail.dataset.ticketId===String(ticket.id)) {
+    for(const id of ['comment-body','waiting-reason','done-reason','done-comment']) {
+      const input=document.getElementById(id);if(input)drafts[id]=input.value;
+    }
+  }
+  elements.detail.dataset.ticketId=String(ticket.id);
   updateTicketStatusBadge(ticket);
   const mapUrl = build2gisWebUrl(ticket);
   const mapButton = mapUrl
@@ -576,15 +605,19 @@ function renderDetail(ticket) {
     )
     .join("");
   elements.detail.innerHTML = `
+    <div class="mobile-detail-sync mobile-connection text-xs mb-4" role="status">${escapeHtml(elements.syncStatus.textContent)}</div>
     <div class="space-y-2">
       <div><span class="font-semibold">Объект:</span> ${escapeHtml(ticket.object_name || "—")}</div>
       <div><span class="font-semibold">Адрес:</span> ${escapeHtml(ticket.address || "—")}</div>
       <div><span class="font-semibold">Приоритет:</span> ${renderPriorityBadge(ticket.priority)}</div>
       ${mapButton}
       <div><span class="font-semibold">Описание:</span> ${escapeHtml(ticket.description || "—")}</div>
+      ${ticket.waiting_reason?`<div><strong>Ожидание:</strong> ${escapeHtml(ticket.waiting_reason)}</div>`:''}
+      ${ticket.close_comment?`<div><strong>Итог работы:</strong> ${escapeHtml(ticket.close_comment)}</div>`:''}
       <div class="text-xs text-slate-500">Назначено: ${ticket.assigned_at ? formatDate(ticket.assigned_at) : "—"}</div>
     </div>
     <div class="mt-4 space-y-3">
+      <p class="text-xs muted">${({ASSIGNED:'Примите заявку, чтобы начать выезд.',ACCEPTED:'На объекте нажмите «В работу». Понадобится доступ к геолокации.',IN_PROGRESS:'После устранения неисправности укажите причину и завершите заявку.',WAITING:'Когда сможете продолжить, нажмите «В работу».',COMPLETED:'Работа завершена. Спасибо!',CANCELLED:'Заявка отменена.'})[ticket.status] || ''}</p>
       <div class="mobile-action-grid grid grid-cols-2 gap-2">
         <button id="btn-accept" class="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm">Принять</button>
         <button id="btn-progress" class="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm">В работу</button>
@@ -607,8 +640,9 @@ function renderDetail(ticket) {
       </div>
       <div>
         <label class="text-xs text-slate-500">Фото</label>
-        <input id="photo-input" type="file" accept="image/*" capture="environment" class="mt-1 block w-full text-sm" />
+        <label class="block secondary mt-2 cursor-pointer text-center" for="photo-input">Добавить фото<input id="photo-input" type="file" accept="image/*" capture="environment" class="sr-only" /></label>
         <div id="photo-queue" class="text-xs text-slate-500 mt-1">—</div>
+        <div class="mt-2 space-y-2">${(ticket.attachments||[]).map(a=>`<a class="block text-link" target="_blank" rel="noopener" href="${escapeHtml(a.url)}">↗ ${escapeHtml(a.name||'Фото')}</a>`).join('')}</div>
       </div>
       <div>
         <div class="text-xs text-slate-500">Комментарии</div>
@@ -617,6 +651,13 @@ function renderDetail(ticket) {
     </div>
   `;
 
+  for(const [id,value] of Object.entries(drafts)){const input=document.getElementById(id);if(input)input.value=value;}
+
+  for(const [id,visible] of [['waiting-reason',ticket.status==='IN_PROGRESS'],['done-reason',ticket.status==='IN_PROGRESS']]) {
+    document.getElementById(id)?.parentElement.classList.toggle('hidden',!visible);
+  }
+  const liftHistory=document.createElement('details');liftHistory.className='mobile-lift-history';
+  if(ticket.asset_id){liftHistory.innerHTML='<summary class="cursor-pointer font-semibold">История этого лифта</summary><div class="mt-3 text-xs muted" id="mobile-lift-history">Загружаем историю…</div>';elements.detail.appendChild(liftHistory);loadMobileLiftHistory(ticket);}
   const btnAccept = document.getElementById("btn-accept");
   const btnProgress = document.getElementById("btn-progress");
   const btnWaiting = document.getElementById("btn-waiting");
@@ -630,9 +671,12 @@ function renderDetail(ticket) {
   const doneComment = document.getElementById("done-comment");
 
   btnAccept.disabled = ticket.status !== "ASSIGNED";
+  btnComment.disabled = ["COMPLETED","CANCELLED"].includes(ticket.status);
+  photoInput.disabled = ["COMPLETED","CANCELLED"].includes(ticket.status);
   btnProgress.disabled = !["ACCEPTED", "WAITING"].includes(ticket.status);
   btnWaiting.disabled = ticket.status !== "IN_PROGRESS";
   btnDone.disabled = ticket.status !== "IN_PROGRESS";
+  if(queueBusy)for(const button of [btnAccept,btnProgress,btnWaiting,btnDone,btnComment])button.disabled=true;
 
   btnAccept.addEventListener("click", () => {
     queueEvent(ticket, "TICKET_ACCEPT", {});
@@ -737,10 +781,13 @@ async function renderPhotoQueue(ticketId) {
 
 async function openTicket(id) {
   state.selectedId = id;
+  elements.ticketDetailCard?.classList.remove('hidden');
   let ticket = null;
-  if (state.online) {
+  const queued=(await listOutboxEvents()).some(e=>e.ticket_id===id);
+  if (state.online && !queued) {
     try {
-      const res = await fetch(`/api/tickets/${id}`);
+      const res = await mobileFetch(`/api/tickets/${id}`);
+      if([403,404].includes(res.status)){elements.ticketDetailCard?.classList.add('hidden');await withStore('tickets_cache','readwrite',store=>store.delete(id));return;}
       if (res.ok) {
         ticket = await res.json();
         await saveTicketCache(ticket);
@@ -767,7 +814,7 @@ async function openHistoryTicket(ticketId) {
   let usedCache = false;
   if (state.online) {
     try {
-      const res = await fetch(`/api/me/tickets/${ticketId}/timeline`);
+      const res = await mobileFetch(`/api/me/tickets/${ticketId}/timeline`);
       if (res.ok) {
         timeline = await res.json();
         await saveHistoryTimelineCache(ticketId, timeline || []);
@@ -794,14 +841,17 @@ async function refreshTickets() {
   if (!elements.list) return;
   if (state.online) {
     try {
-      const res = await fetch("/api/me/tickets");
+      const res = await mobileFetch("/api/me/tickets");
       if (res.ok) {
         const data = await res.json();
-        state.tickets = data || [];
-        await saveListCache(state.tickets);
-        for (const t of state.tickets) {
-          await saveTicketCache(t);
+        const queuedIds=new Set((await listOutboxEvents()).map(e=>e.ticket_id));
+        state.tickets=[];
+        for(const t of data||[]) {
+          const cached=queuedIds.has(t.id)?await loadTicketCache(t.id):null;
+          const item=cached||t;
+          state.tickets.push(item);await saveTicketCache(item);
         }
+        await saveListCache(state.tickets);
       }
     } catch (err) {
       state.tickets = await loadListCache();
@@ -825,7 +875,7 @@ async function refreshHistoryList() {
       const params = new URLSearchParams();
       if (filters.date_from) params.set("date_from", filters.date_from);
       if (filters.date_to) params.set("date_to", filters.date_to);
-      const res = await fetch(`/api/me/history?${params.toString()}`);
+      const res = await mobileFetch(`/api/me/history?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         items = data.items || [];
@@ -867,6 +917,20 @@ async function refreshHistoryList() {
 }
 
 async function queueEvent(ticket, type, payload) {
+  if(queueBusy)return;
+  queueBusy=true;
+  try {
+    const latest=await loadTicketCache(ticket.id)||ticket;
+    const valid={TICKET_ACCEPT:['ASSIGNED'],TICKET_IN_PROGRESS:['ACCEPTED','WAITING'],TICKET_WAITING:['IN_PROGRESS'],TICKET_DONE:['IN_PROGRESS']};
+    if(valid[type]&&!valid[type].includes(latest.status))return;
+    await performQueueEvent(latest,type,payload);
+  } finally {
+    queueBusy=false;
+    if(state.selectedId===ticket.id)renderDetail(await loadTicketCache(ticket.id)||ticket);
+  }
+}
+
+async function performQueueEvent(ticket, type, payload) {
   if (!ticket) return;
   const expectedVersion = ticket.version || 1;
   const event = {
@@ -891,6 +955,7 @@ async function queueEvent(ticket, type, payload) {
     return;
   }
   await putOutboxEvent(event);
+  if(type==='TICKET_ADD_COMMENT'&&document.getElementById('comment-body'))document.getElementById('comment-body').value='';
   const updated = { ...ticket };
   if (type === "TICKET_ACCEPT") {
     updated.status = "ACCEPTED";
@@ -937,7 +1002,7 @@ async function syncEvents() {
   const payload = { events: pending.map(({ status, error, ...evt }) => evt) };
   let res;
   try {
-    res = await fetch("/api/sync/events", {
+    res = await mobileFetch("/api/sync/events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -995,8 +1060,9 @@ async function syncPhotos() {
   for (const photo of photos.filter((p) => p.status === "pending")) {
     const formData = new FormData();
     formData.append("file", photo.blob, photo.name);
+    formData.append("upload_id", photo.id);
     try {
-      const res = await fetch(`/api/tickets/${photo.ticket_id}/upload`, {
+      const res = await mobileFetch(`/api/tickets/${photo.ticket_id}/upload`, {
         method: "POST",
         body: formData,
       });
@@ -1027,16 +1093,29 @@ async function syncPhotos() {
 }
 
 async function syncAll() {
-  if (!state.online) {
-    await updateSyncIndicators();
-    return;
-  }
-  await syncEvents();
-  await syncPhotos();
-  if (state.selectedId) {
-    await renderPhotoQueue(state.selectedId);
-  }
-  await updateSyncIndicators();
+  if(syncPromise)return syncPromise;
+  syncPromise=(async()=>{
+    if(!state.online&&navigator.onLine)state.online=true;
+    if(!state.online){await updateSyncIndicators();return;}
+    if(!await verifyIdentity())return;
+    if(!state.online){await updateSyncIndicators();return;}
+    try{
+      await syncEvents();await syncPhotos();await refreshTickets();
+      if(state.selectedId){await renderPhotoQueue(state.selectedId);}
+      if(state.online)state.lastSync=new Date().toISOString();
+      await updateSyncIndicators();
+    }catch(err){await updateSyncIndicators();}
+  })();
+  try{return await syncPromise;}finally{syncPromise=null;}
+}
+
+async function loadMobileLiftHistory(ticket) {
+  let entry=await withStore('history_timeline_cache','readonly',store=>store.get(`lift-${ticket.asset_id}`));
+  if(state.online){try{const res=await mobileFetch(`/api/me/lifts/${ticket.asset_id}/history`);if(res.ok){const data=await res.json();entry={id:`lift-${ticket.asset_id}`,items:data.items,updated_at:new Date().toISOString()};await withStore('history_timeline_cache','readwrite',store=>store.put(entry));}else if(res.status===403){entry=null;await withStore('history_timeline_cache','readwrite',store=>store.delete(`lift-${ticket.asset_id}`));}}catch(_){}}
+  if(state.selectedId!==ticket.id)return;
+  const el=document.getElementById('mobile-lift-history');if(!el)return;
+  const items=(entry?.items||[]).filter(t=>t.id!==ticket.id);
+  el.innerHTML=items.length?`<p class="mb-2">${state.online?'Обновлено':'Сохранено'} ${formatDate(entry.updated_at)}</p>`+items.map(t=>`<div class="border-t py-3"><div class="font-semibold">№ ${t.id} · ${escapeHtml(getStatusLabel(t.status))}</div><p class="mt-1">${escapeHtml(t.description||'Без описания')}</p>${t.close_comment?`<p class="mt-1">Итог: ${escapeHtml(t.close_comment)}</p>`:''}</div>`).join(''):'История пока не сохранена или предыдущих заявок нет.';
 }
 
 async function resetOffline() {
@@ -1058,21 +1137,24 @@ async function resetOffline() {
 
 async function init() {
   if (window.MOBILE_BOOTSTRAP?.notTechnician) return;
+  if(!mobileIdentity?.id){lockMobile();return;}
+  if(!window.MOBILE_BOOTSTRAP?.offlineShell) localStorage.setItem('liftcrm-mobile-identity',JSON.stringify(mobileIdentity));
+  document.getElementById('mobile-user-label').textContent=mobileIdentity.username;
+  if(state.online&&!await verifyIdentity())return;
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/static/sw.js").catch(() => {});
+    navigator.serviceWorker.getRegistrations().then(regs=>regs.filter(r=>new URL(r.scope).pathname==='/static/').forEach(r=>r.unregister()));
+    navigator.serviceWorker.register("/sw.js",{scope:'/'}).catch(() => {});
   }
   setActiveTab("tickets");
   await refreshTickets();
   await updateSyncIndicators();
-  if (state.tickets.length) {
-    await openTicket(state.tickets[0].id);
-  }
+  const deepTicket=Number(new URLSearchParams(location.search).get('ticket'));
+  if(deepTicket&&state.tickets.some(t=>t.id===deepTicket))await openTicket(deepTicket);
   await syncAll();
   window.addEventListener("online", async () => {
     state.online = true;
-    await refreshTickets();
-    await refreshHistoryList();
     await syncAll();
+    await refreshHistoryList();
   });
   window.addEventListener("offline", async () => {
     state.online = false;
@@ -1080,15 +1162,35 @@ async function init() {
     state.historyOffline = true;
     updateHistoryIndicators();
   });
+  // Online events can be missed after an offline reload or a temporary server outage.
+  setInterval(()=>{if(document.visibilityState==='visible'&&navigator.onLine&&!state.authBlocked)syncAll();},30000);
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&navigator.onLine&&!state.authBlocked)syncAll();});
   elements.tabTickets?.addEventListener("click", () => setActiveTab("tickets"));
   elements.tabHistory?.addEventListener("click", async () => {
     setActiveTab("history");
     await refreshHistoryList();
   });
   elements.historyApply?.addEventListener("click", refreshHistoryList);
-  elements.btnSync?.addEventListener("click", syncAll);
+  elements.btnSync?.addEventListener("click", () => {state.online=navigator.onLine;return syncAll();});
   elements.btnReset?.addEventListener("click", resetOffline);
+  document.getElementById('mobile-search')?.addEventListener('input',renderList);
+  document.getElementById('mobile-filter')?.addEventListener('change',renderList);
+  document.getElementById('mobile-back')?.addEventListener('click',()=>{state.selectedId=null;elements.ticketDetailCard?.classList.add('hidden');});
+  for(const id of ['open-settings','tab-settings'])document.getElementById(id)?.addEventListener('click',()=>document.getElementById('mobile-settings').showModal());
+  document.getElementById('close-settings')?.addEventListener('click',()=>document.getElementById('mobile-settings').close());
+  document.getElementById('mobile-logout')?.addEventListener('click',async()=>{
+    const count=(await listOutboxEvents()).length+(await listOutboxPhotos()).length;
+    if(count&&!confirm(`В очереди ${count} действий. Они сохранятся для следующего входа в этот аккаунт. Выйти?`))return;
+    if(!state.online){alert('Для выхода подключитесь к интернету.');return;}
+    await mobileFetch('/api/logout',{method:'POST'});localStorage.removeItem('liftcrm-mobile-identity');location.href='/login';
+  });
+  let installPrompt=null;
+  window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e;document.getElementById('btn-install').classList.remove('hidden');});
+  document.getElementById('btn-install')?.addEventListener('click',async()=>{if(installPrompt){await installPrompt.prompt();installPrompt=null;document.getElementById('btn-install').classList.add('hidden');}});
   elements.outboxRetryAll?.addEventListener("click", retryAllFailedOutbox);
 }
 
-init();
+init().catch(err=>{
+  if(elements.list)elements.list.innerHTML='<div class="mobile-empty"><strong>Не удалось открыть приложение</strong>Проверьте доступ к хранилищу браузера и перезагрузите страницу.</div>';
+  console.error('Mobile initialization failed',err);
+});

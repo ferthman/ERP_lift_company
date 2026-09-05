@@ -103,3 +103,50 @@ def test_reports_counts_period_search_and_access(crm):
     assert all(i['url'].startswith('/mobile?ticket=') for i in found)
     with crm.session_transaction() as s:s.clear()
     assert crm.get('/api/dashboard').status_code==401
+
+def test_public_offline_shell_and_cross_identity_guard(crm):
+    with crm.session_transaction() as session: owner=session['_user_id']
+    shell=crm.get('/mobile-shell')
+    assert shell.status_code==200
+    assert 'userId: null' in shell.text
+    assert 'offlineShell: true' in shell.text
+    assert 'username: ""' in shell.text
+    worker=crm.get('/sw.js')
+    assert worker.status_code==200
+    assert worker.headers['Service-Worker-Allowed']=='/'
+    assert worker.headers['Cache-Control']=='no-cache'
+    assert crm.get('/api/dashboard',headers={'X-Mobile-User':owner}).status_code==200
+    assert crm.get('/api/dashboard',headers={'X-Mobile-User':'999999'}).status_code==409
+    assert crm.post('/api/tickets',headers={'X-Mobile-User':'999999'},json={'object_name':'Denied','lat':43.2,'lon':76.9}).status_code==409
+    with crm.session_transaction() as session: session.clear()
+    assert crm.get('/mobile-shell').status_code==200
+    assert crm.get('/api/me',headers={'X-Mobile-User':owner}).status_code==401
+
+def test_upload_names_do_not_collide_and_retry_is_idempotent(crm):
+    import io,uuid
+    tid=crm.post('/api/tickets',json={'object_name':'Фото проверка','lat':43.2,'lon':76.9}).json['id']
+    key=str(uuid.uuid4())
+    def upload(body, upload_id=None):
+        data={'file':(io.BytesIO(body),'photo.png')}
+        if upload_id: data['upload_id']=upload_id
+        return crm.post(f'/api/tickets/{tid}/upload',data=data,content_type='multipart/form-data')
+    first=upload(b'photo-one',key)
+    assert first.status_code==200
+    retry=upload(b'photo-one',key)
+    assert retry.json['url']==first.json['url']
+    second=upload(b'photo-two')
+    assert second.json['url']!=first.json['url']
+    assert crm.get(first.json['url']).data==b'photo-one'
+    assert crm.get(second.json['url']).data==b'photo-two'
+    assert len(crm.get(f'/api/tickets/{tid}').json['attachments'])==2
+
+
+def test_ticket_search_handles_cyrillic_id_and_literal_wildcards(crm):
+    import uuid
+    name='Проверка Кириллицы '+uuid.uuid4().hex[:8]
+    tid=crm.post('/api/tickets',json={'object_name':name,'description':'код 70%_Х','lat':43.2,'lon':76.9}).json['id']
+    assert tid in [row['id'] for row in crm.get('/api/tickets',query_string={'q':name.swapcase()}).json]
+    assert [row['id'] for row in crm.get('/api/tickets',query_string={'q':f'#{tid}'}).json]==[tid]
+    assert tid in [row['id'] for row in crm.get('/api/tickets',query_string={'q':'70%_х'}).json]
+    assert tid not in [row['id'] for row in crm.get('/api/tickets',query_string={'q':'70%_другое'}).json]
+    assert crm.get('/api/tickets?date_from=2026-12-31&date_to=2026-01-01').status_code==400

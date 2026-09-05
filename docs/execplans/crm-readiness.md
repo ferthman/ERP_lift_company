@@ -10,7 +10,7 @@
 - [x] (2026-09-05 15:18 +0500) M1: объектная модель, безопасная миграция, API объектов и связи заявок/лифтов.
 - [x] (2026-09-05 15:23 +0500) M2: сводки лифтов, история для мастера, отчёты и общий поиск с проверкой доступа.
 - [x] (2026-09-05 16:05 +0500) M3: единый локальный стиль, вход, dashboard, компактные заявки, объекты и карточки.
-- [ ] M4: мобильный интерфейс, изоляция кеша пользователей, перезапуск offline, очередь и восстановление связи.
+- [x] (2026-09-05 21:03 +0500) M4: мобильный интерфейс, изоляция кеша пользователей, перезапуск offline, очередь и восстановление связи.
 - [ ] M5: полные тесты, браузерные сценарии desktop/mobile/offline, проверка существующей БД, документация и локальный запуск.
 
 ## Surprises & Discoveries
@@ -19,6 +19,7 @@
 - Нет Building; Info в карточке лифта является заглушкой. Sprint 2–5 из PLANS.md ещё не реализованы.
 - Tailwind загружается из CDN. Service worker зарегистрирован под /static/ и не управляет /mobile; HTML мобильной оболочки не доступен при offline reload.
 - IndexedDB использует общий DB_NAME для всех пользователей, поэтому надо изолировать данные, не переносить чужую очередь в новый аккаунт.
+- В браузерной проверке остановка тестового сервера оставила форму лифта на «Сохраняю…»; добавлена обработка сетевой ошибки с сохранением полей и блокировка повторного клика. Удаление ошибочного offline-действия должно восстанавливать серверное состояние, иначе локальный статус остаётся ложным.
 
 ## Decision Log
 
@@ -26,6 +27,7 @@
 - 2026-09-05: Building группируется по нормализованному адресу и customer/contract. Snapshot адресов заявок сохраняется. /api/objects остаётся совместимым alias для карты.
 - 2026-09-05: единый визуальный язык: светлая рабочая область, тёмная боковая навигация, зелёный акцент, крупные operational counters; никаких выдуманных KPI. Все показатели из API.
 - 2026-09-05: offline reload обслуживается публичной оболочкой без пользовательских данных; авторизованный HTML/API не кешируется service worker. Локальные данные изолированы по user id, повторная проверка личности перед синхронизацией обязательна.
+- 2026-09-05: удаление ошибочного события доступно online после чтения сервера; с подтверждением удаляется его цепочка зависимых версий, фото остаются. `app.py` запускать по умолчанию на loopback без debugger; HOST/PORT/DEBUG задаются явно для нужного окружения.
 
 ## Milestones / Implementation
 
@@ -60,3 +62,8 @@ M3/M4 progress (2026-09-05): новый desktop/login осмотрен при 14
 Additional M4 decision (2026-09-05): upload_file used second-resolution filenames, so photos with the same name could overwrite each other. Add random filenames plus optional Attachment.upload_key with a unique index, send the mobile photo UUID, return the existing attachment on retries. Validate collision avoidance and retry idempotence. This is an additive migration; legacy uploads keep their existing URLs.
 
 M3 outcome: dispatcher browser login, dashboard, lift autocomplete -> ticket #25 creation, ticket comment persisted, building #5 created via form; screenshots login-desktop.png, dashboard-desktop.png, ticket-card.png. Desktop focused UI/RBAC/login checks: 23 passed. Additional core search/upload/migration checks: 25 passed.
+
+
+M4 outcome: Chrome 390x844, `/sw.js` scope `/`, кеш v6. Offline принятие, reload, комментарий и фото сохранены; сервер: 1 комментарий, 1 фото, 6 уникальных событий после полного цикла. Повторный online reload не изменил version/counts. Для проверки потерянного online-события добавлен повтор подключения каждые 30 секунд в открытом приложении; offline WAITING -> reload -> online отправился автоматически, version 6, обе очереди пусты. Геолокация 43.24/76.92 смоделирована в браузере. Второй мастер получил только [2,12,7], чужая заявка ответила 403, чужой X-Mobile-User — 409. Проверка выявила сброс формы при sync; черновики полей теперь сохраняются при обновлении той же карточки, отправленный комментарий очищается. 14 focused tests passed; до последней UI-правки full suite: 170 passed, 6 subtests passed.
+
+M5 progress: реальная БД скопирована в `backups/20260905-155528` через backup script и SQLite backup API. Двойная миграция: 7 пользователей, 5 мастеров, 2 заявки, остальные рабочие реестры пусты. Все прежние поля всех исходных записей сравнены и совпадают, integrity_check=ok. Старые заявки не имеют адреса для группировки, поэтому объекты не выдумывались. Результат проверки — `output/main-db-validation.json`. README/RUNBOOK/ARCHITECTURE переписаны по фактическому поведению.

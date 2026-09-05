@@ -83,7 +83,7 @@ def create_app():
 
         _db_initialized["done"] = True
 
-    from flask import request, make_response
+    from flask import request, make_response, send_from_directory
     from .utils.security import unsafe_request_is_same_origin
 
     def _get_ui_preference():
@@ -97,6 +97,28 @@ def create_app():
         if ui in {"admin", "mobile"}:
             response.set_cookie("ui_preference", ui, samesite="Lax")
         return response
+
+    @app.before_request
+    def verify_mobile_identity():
+        from flask_login import current_user
+        owner = request.headers.get("X-Mobile-User")
+        if owner and request.path.startswith('/api/'):
+            if not current_user.is_authenticated:
+                return {"error": {"code": "AUTH_REQUIRED", "message": "Войдите снова"}}, 401
+            if str(current_user.id) != owner:
+                return {"error": {"code": "IDENTITY_CHANGED", "message": "На устройстве открыта другая учётная запись"}}, 409
+
+    @app.get('/sw.js')
+    def service_worker():
+        response = send_from_directory(app.static_folder, 'sw.js', mimetype='application/javascript')
+        response.headers['Cache-Control'] = 'no-cache'
+        response.headers['Service-Worker-Allowed'] = '/'
+        return response
+
+    @app.get('/mobile-shell')
+    def mobile_offline_shell():
+        # Public shell deliberately contains no authenticated identity or business data.
+        return render_template('mobile.html', username='', user_id=None, offline_shell=True)
 
     @app.before_request
     def enforce_same_origin_unsafe_requests():
@@ -170,7 +192,7 @@ def create_app():
         if not is_technician(current_user.role):
             response = make_response(render_template("mobile_not_technician.html"))
             return _maybe_set_ui_preference(response)
-        response = make_response(render_template("mobile.html", username=current_user.username))
+        response = make_response(render_template("mobile.html", username=current_user.username, user_id=current_user.id, offline_shell=False))
         return _maybe_set_ui_preference(response)
 
     @app.get("/lifts/<int:asset_id>")

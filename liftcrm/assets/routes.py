@@ -1085,7 +1085,11 @@ def complete_maintenance_plan(plan_id):
 def list_assets():
     search = request.args.get("search")
     with SessionLocal() as db:
-        assets = db.query(Asset).order_by(Asset.id.desc()).all()
+        query = db.query(Asset)
+        if current_user.role == 'technician':
+            if not current_user.master_id: return jsonify([])
+            query = query.filter(Asset.id.in_(db.query(Ticket.asset_id).filter(Ticket.assigned_master_id==current_user.master_id, Ticket.archived_at.is_(None))))
+        assets = query.order_by(Asset.id.desc()).all()
         if search:
             term = normalize_text(search)
             if term:

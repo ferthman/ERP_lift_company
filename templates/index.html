@@ -712,8 +712,8 @@
           <div>
             <label class="block text-xs text-slate-500">Статус</label>
             <select name="status" class="w-full px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50">
-              <option value="ACTIVE">ACTIVE</option>
-              <option value="INACTIVE">INACTIVE</option>
+              <option value="ACTIVE">На обслуживании</option>
+              <option value="INACTIVE">Не обслуживается</option>
             </select>
           </div>
         </div>
@@ -2532,6 +2532,10 @@
     if(assetForm){
       assetForm.addEventListener('submit', async (ev) => {
         ev.preventDefault();
+        const submitButton=assetForm.querySelector('button[type="submit"]');
+        if(submitButton.disabled)return;
+        submitButton.disabled=true;
+        try {
         const fd = new FormData(assetForm);
         const body = Object.fromEntries(fd.entries());
         if(body.lat === '') delete body.lat;
@@ -2551,6 +2555,9 @@
         closeAssetModal();
         loadAssets();
         if(!viewObjects.classList.contains('hidden')) loadObjects();
+        } catch (_) {
+          assetFormMsg.textContent='Связь прервалась. Данные формы сохранены. Проверьте реестр перед повторным сохранением.';
+        } finally {submitButton.disabled=false;}
       });
     }
     // The old reassign function is no longer used. Instead, admins/dispatchers

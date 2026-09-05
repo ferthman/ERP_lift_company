@@ -4,11 +4,13 @@ import logging
 import math
 import os
 import json
+import uuid
+from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone
 
 from flask import Blueprint, abort, current_app, jsonify, request, send_from_directory
 from flask_login import login_required, current_user
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from werkzeug.security import generate_password_hash
 
 from .service import (
@@ -302,6 +304,8 @@ def list_tickets():
         date_to = datetime.strptime(date_to_raw, "%Y-%m-%d").date() if date_to_raw else None
     except ValueError:
         return jsonify({"error": "Invalid date range"}), 400
+    if date_from and date_to and date_from > date_to:
+        return jsonify(error="Начало периода позже окончания"),400
     start_dt = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc) if date_from else None
     end_dt = datetime.combine(date_to, datetime.max.time(), tzinfo=timezone.utc) if date_to else None
     with SessionLocal() as db:
@@ -327,19 +331,12 @@ def list_tickets():
         if end_dt:
             query = query.filter(Ticket.created_at <= end_dt)
         if q:
-            pattern = f"%{q}%"
-            query = query.outerjoin(Asset).filter(
-                or_(
-                    Ticket.object_name.ilike(pattern),
-                    Ticket.address.ilike(pattern),
-                    Ticket.description.ilike(pattern),
-                    Ticket.email.ilike(pattern),
-                    Asset.address.ilike(pattern),
-                    Asset.serial_no.ilike(pattern),
-                    Asset.lift_label.ilike(pattern),
-                    Asset.entrance.ilike(pattern),
-                )
-            )
+            term = q.casefold()
+            match_fields = (Ticket.object_name, Ticket.address, Ticket.description, Ticket.email, Asset.address, Asset.serial_no, Asset.lift_label, Asset.entrance)
+            conditions = [func.crm_casefold(field).contains(term, autoescape=True) for field in match_fields]
+            if q.lstrip('#').isdigit():
+                conditions.append(Ticket.id == int(q.lstrip('#')))
+            query = query.outerjoin(Asset).filter(or_(*conditions))
         if kanban_view:
             open_statuses = ["NEW", "ASSIGNED", "ACCEPTED", "IN_PROGRESS", "WAITING"]
             closed_statuses = ["COMPLETED", "CANCELLED"]
@@ -1777,13 +1774,33 @@ def upload_file(ticket_id):
         return jsonify({"error": "Empty filename"}), 400
     if not ("." in f.filename and f.filename.rsplit(".", 1)[-1].lower() in ALLOWED_EXTS):
         return jsonify({"error": "Only png/jpg/jpeg/webp allowed"}), 400
-    fname = secure_filename(f.filename)
-    unique = f"{int(datetime.now(timezone.utc).timestamp())}_{fname}"
-    f.save(os.path.join(current_app.config["UPLOAD_FOLDER"], unique))
+    fname = secure_filename(f.filename) or 'photo.jpg'
+    upload_key = None
+    if request.form.get('upload_id'):
+        try:
+            upload_id = str(uuid.UUID(request.form['upload_id']))
+        except (ValueError, AttributeError):
+            return jsonify(error="Некорректный идентификатор фото"),400
+        upload_key = f"{current_user.id}:{ticket_id}:{upload_id}"
+    unique = f"{uuid.uuid4().hex}_{fname}"
+    path = os.path.join(current_app.config["UPLOAD_FOLDER"], unique)
     with SessionLocal() as db:
-        a = Attachment(ticket_id=ticket_id, filename=unique, orig_name=fname)
+        if upload_key:
+            existing = db.query(Attachment).filter_by(upload_key=upload_key).first()
+            if existing:
+                return jsonify(ok=True,url=f"/uploads/{existing.filename}",name=existing.orig_name)
+        f.save(path)
+        a = Attachment(ticket_id=ticket_id, filename=unique, orig_name=fname, upload_key=upload_key)
         db.add(a)
-        db.flush()
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            os.remove(path)
+            existing = db.query(Attachment).filter_by(upload_key=upload_key).first() if upload_key else None
+            if existing:
+                return jsonify(ok=True,url=f"/uploads/{existing.filename}",name=existing.orig_name)
+            raise
         ticket = db.get(Ticket, ticket_id)
         if ticket:
             bump_ticket_version(ticket)

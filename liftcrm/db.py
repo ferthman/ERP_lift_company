@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, func, Text, Index, text, Date
+from sqlalchemy import event, create_engine, Column, Integer, String, Float, DateTime, ForeignKey, func, Text, Index, text, Date
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship, scoped_session
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash
@@ -8,6 +8,11 @@ from . import config
 from .utils.roles import ROLE_TECHNICIAN
 
 engine = create_engine(f"sqlite:///{config.DB_PATH}", echo=False, future=True)
+@event.listens_for(engine, "connect")
+def sqlite_search_functions(connection, _record):
+    connection.create_function("crm_casefold", 1, lambda value: str(value or "").casefold(), deterministic=True)
+
+
 SessionLocal = scoped_session(
     sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 )
@@ -205,6 +210,7 @@ class Attachment(Base):
     ticket_id = Column(Integer, ForeignKey("tickets.id"), nullable=False)
     filename = Column(String, nullable=False)
     orig_name = Column(String, nullable=False)
+    upload_key = Column(String, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     ticket = relationship("Ticket", back_populates="attachments")
 
@@ -239,6 +245,7 @@ class AuditLog(Base):
     diff_json = Column(Text, nullable=False)
 
 
+Index("ux_attachments_upload_key", Attachment.upload_key, unique=True, sqlite_where=Attachment.upload_key.isnot(None))
 Index("idx_audit_log_entity_created", AuditLog.entity_type, AuditLog.entity_id, AuditLog.created_at)
 Index("idx_assets_serial_no", Asset.serial_no)
 Index("idx_assets_address", Asset.address)
@@ -586,6 +593,11 @@ def ensure_migrations():
                 """
             )
             conn.commit()
+        if _table_exists(cur, "attachments"):
+            columns = {row[1] for row in cur.execute("PRAGMA table_info(attachments)")}
+            if "upload_key" not in columns:
+                cur.execute("ALTER TABLE attachments ADD COLUMN upload_key TEXT")
+            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_attachments_upload_key ON attachments(upload_key) WHERE upload_key IS NOT NULL")
         conn.commit()
         conn.close()
         from .buildings.service import migrate_buildings
