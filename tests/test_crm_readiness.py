@@ -62,3 +62,44 @@ def test_closed_sla_does_not_keep_running():
     now = datetime.now(timezone.utc)
     t = Ticket(created_at=now-timedelta(days=30),cancelled_at=now-timedelta(days=30)+timedelta(minutes=2),status='CANCELLED')
     assert compute_sla_fields(t)['sla_completion_breached'] is False
+
+def test_reports_counts_period_search_and_access(crm):
+    import uuid
+    marker='Сводка '+uuid.uuid4().hex[:8]
+    with SessionLocal() as db:
+        b=Building(name=marker,address=marker,address_norm=marker.lower())
+        db.add(b);db.flush()
+        a=Asset(address=marker,building_id=b.id,lift_label=marker)
+        m=Master(name=marker,is_active=1)
+        db.add_all([a,m]);db.flush()
+        u=User(username='tech_'+uuid.uuid4().hex,password_hash='unused',role='technician',master_id=m.id,is_active=1)
+        db.add(u);db.flush()
+        now=datetime.now(timezone.utc)
+        for status in ['ASSIGNED','COMPLETED','CANCELLED']:
+            db.add(Ticket(object_name=marker,address=marker,lat=43.2,lon=76.9,asset_id=a.id,building_id=b.id,assigned_master_id=m.id,status=status,problem_type='DOORS',priority='HIGH',created_at=now-timedelta(hours=2),updated_at=now-timedelta(hours=2),completed_at=now-timedelta(hours=1) if status=='COMPLETED' else None))
+        db.commit();bid,aid,mid,uid=b.id,a.id,m.id,u.id
+    report=crm.get(f'/api/reports/overview?building_id={bid}').json
+    assert report['overall']['total']==3
+    assert report['overall']['active']==1
+    assert report['overall']['completed']==1
+    assert report['overall']['cancelled']==1
+    assert report['lifts'][0]['total']==2
+    assert next(m for m in report['masters'] if m['id']==mid)['avg_completion_sec']==3600
+    assert report['problem_types'][0]['type']=='DOORS'
+    assert report['sla'][0]['attention_reasons']
+    assert crm.get('/api/reports/overview?date_from=bad').status_code==400
+    assert crm.get('/api/reports/overview?date_from=2026-12-31&date_to=2026-01-01').status_code==400
+    assert crm.get(f'/api/lifts/{aid}/summary').json['signal']['flagged']
+    found=crm.get('/api/search',query_string={'q':marker}).json['items']
+    assert {'ticket','lift','building','master'} <= {i['type'] for i in found}
+    assert crm.get('/api/dashboard').status_code==200
+    with crm.session_transaction() as s: s['_user_id']=str(uid)
+    for path in ['/api/buildings','/api/dashboard','/api/reports/overview',f'/api/lifts/{aid}/summary']:
+        assert crm.get(path).status_code==403
+    assert crm.get(f'/api/me/lifts/{aid}/history').status_code==200
+    assert crm.get('/api/me/lifts/999999/history').status_code==403
+    found=crm.get('/api/search',query_string={'q':marker}).json['items']
+    assert {i['type'] for i in found} <= {'ticket','lift'}
+    assert all(i['url'].startswith('/mobile?ticket=') for i in found)
+    with crm.session_transaction() as s:s.clear()
+    assert crm.get('/api/dashboard').status_code==401

@@ -1069,6 +1069,17 @@ def get_ticket(ticket_id):
             }
             for c in (t.comments or [])
         ]
+        if not is_technician(current_user.role):
+            from ..reports.routes import problem_signal
+            related = db.query(Ticket).filter(Ticket.id != t.id, Ticket.archived_at.is_(None), Ticket.status.in_(["NEW","ASSIGNED","ACCEPTED","IN_PROGRESS","WAITING"]))
+            if t.asset_id:
+                related = related.filter_by(asset_id=t.asset_id)
+            elif t.building_id:
+                related = related.filter_by(building_id=t.building_id)
+            else:
+                related = related.filter(Ticket.id == -1)
+            payload["related_tickets"] = [{"id":r.id,"object_name":r.object_name,"status":r.status} for r in related.limit(10).all()]
+            payload["problem_signal"] = problem_signal(db.query(Ticket).filter_by(asset_id=t.asset_id).all()) if t.asset_id else None
         return jsonify(payload)
 
 
