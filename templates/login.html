@@ -1,41 +1,36 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PremierLift CRM — Вход</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="icon" href="/static/icons/icon-192.png">
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Вход · PremierLift</title>
+  <link rel="stylesheet" href="/static/vendor/tailwind.css"><link rel="stylesheet" href="/static/crm.css">
+  <meta name="theme-color" content="#142b29">
 </head>
-<body class="bg-slate-100 text-slate-900 min-h-screen">
-  <main class="max-w-md mx-auto px-4 py-10">
-    <div class="bg-white rounded-2xl shadow p-6 space-y-5">
-      <div>
-        <h1 class="text-2xl font-semibold">Вход</h1>
-        <p class="text-sm text-slate-600">Введите логин и пароль для доступа к заявкам.</p>
+<body class="login-page">
+  <main class="login-layout">
+    <section class="login-story" aria-label="PremierLift">
+      <a class="brand" href="/login"><span class="brand-mark" aria-hidden="true">↟</span><span>Premier<span class="brand-light">Lift</span><small>СЕРВИСНАЯ ПЛАТФОРМА</small></span></a>
+      <div class="login-message"><span class="eyebrow light">КАЖДЫЙ ДЕНЬ. НА ВЫСОТЕ.</span><h1>Сервис, на который<br>можно положиться.</h1><p>Заявки, объекты и команда в одном пространстве.<br>Всё, что нужно для слаженной работы.</p></div>
+      <div class="lift-illustration" aria-hidden="true"><div class="lift-floor">↑ <span>01</span></div><div class="lift-frame"><div class="lift-door"></div><div class="lift-door"></div><div class="lift-line"></div></div><div class="lift-side"><i></i><i></i></div></div>
+      <div class="login-story-footer"><span class="status-dot"></span> На связи с вашей командой <span>PREMIERLIFT / CRM</span></div>
+    </section>
+    <section class="login-form-side">
+      <div class="login-mobile-brand">↟ PremierLift</div>
+      <div class="login-form-box"><span class="eyebrow">РАБОЧЕЕ ПРОСТРАНСТВО</span><h2>С возвращением</h2><p class="muted">Войдите, чтобы продолжить работу.</p>
+        {% if error %}<div class="form-error" role="alert">{{ error }}</div>{% endif %}
+        <form method="post" action="/login" id="login-form">
+          <label for="username">Логин</label><input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus value="{{ request.form.get('username', '') }}" placeholder="Введите ваш логин">
+          <label for="password">Пароль</label><div class="password-field"><input id="password" name="password" type="password" autocomplete="current-password" required placeholder="Введите пароль"><button id="show-password" type="button" aria-label="Показать пароль" aria-pressed="false">Показать</button></div>
+          <input type="hidden" name="next" value="{{ next_url }}">
+          <p id="caps-warning" class="hidden muted" role="status">Включён Caps Lock</p>
+          <button class="primary login-submit" type="submit">Войти в систему <span aria-hidden="true">↗</span></button>
+        </form>
+        <div class="login-help"><span aria-hidden="true">ⓘ</span><p>Нужен доступ или забыли пароль?<br><strong>Обратитесь к вашему администратору.</strong></p></div>
       </div>
-      {% if error %}
-        <div class="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-          {{ error }}
-        </div>
-      {% endif %}
-      <form method="post" action="/login" class="space-y-4">
-        <div>
-          <label class="block text-sm font-medium mb-1" for="username">Логин</label>
-          <input id="username" name="username" type="text" autocomplete="username" required
-            class="w-full px-4 py-3 text-base rounded-xl ring-1 ring-slate-200 bg-slate-50" />
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-1" for="password">Пароль</label>
-          <input id="password" name="password" type="password" autocomplete="current-password" required
-            class="w-full px-4 py-3 text-base rounded-xl ring-1 ring-slate-200 bg-slate-50" />
-        </div>
-        <input type="hidden" name="next" value="{{ next_url }}" />
-        <button type="submit" class="w-full px-4 py-3 rounded-xl bg-slate-900 text-white text-base font-semibold">
-          Войти
-        </button>
-      </form>
-      <p class="text-xs text-slate-500">Если у вас нет доступа, обратитесь к администратору.</p>
-    </div>
+      <footer class="login-footer">PremierLift <span>Забота о лифтах. Порядок в работе.</span></footer>
+    </section>
   </main>
+  <script src="/static/login.js"></script>
 </body>
 </html>

@@ -1,14 +1,15 @@
 <!doctype html>
 <html lang="ru">
 <head>
+  <link rel="icon" href="/static/icons/icon-192.png">
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>PremierLift CRM — заявки и мастера</title>
   <link rel="manifest" href="/static/manifest.webmanifest">
   <meta name="theme-color" content="#0f172a">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <link rel="stylesheet" href="/static/vendor/tailwind.css"><link rel="stylesheet" href="/static/crm.css">
+  <link rel="stylesheet" href="/static/vendor/leaflet.css" crossorigin=""/>
+  <script src="/static/vendor/leaflet.js" crossorigin=""></script>
   <style>
     .modal{display:none;position:fixed;inset:0;background:rgba(2,6,23,.6);align-items:center;justify-content:center;z-index:60}
     .modal.open{display:flex}
@@ -70,35 +71,34 @@
     }
   </style>
 </head>
-<body class="bg-slate-50 text-slate-900">
-  <header class="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
-    <div class="max-w-6xl mx-auto px-4 py-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-      <h1 class="text-xl sm:text-2xl font-bold">🚀 PremierLift CRM</h1>
-      {% if user_role != 'technician' %}
-        <nav data-app-nav class="w-full flex items-center gap-2 overflow-x-auto pb-1 lg:w-auto lg:overflow-visible lg:pb-0">
-          {% if user_role == 'admin' %}
-            <button id="tab-admin" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white">Панель</button>
-            <button id="tab-ops" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Контроль этапов</button>
-            <button id="tab-assets" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Лифты</button>
-            <button id="tab-maintenance" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">ТО</button>
-            <button id="tab-objects" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Объекты</button>
-            <button id="tab-super" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Админ</button>
-            <button id="tab-access" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Пользователи и допуск</button>
-          {% elif user_role == 'dispatcher' %}
-            <button id="tab-admin" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white">Панель</button>
-            <button id="tab-ops" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Контроль этапов</button>
-            <button id="tab-assets" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Лифты</button>
-            <button id="tab-maintenance" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">ТО</button>
-            <button id="tab-objects" class="px-3 py-2 rounded-xl text-sm font-semibold bg-slate-100">Объекты</button>
-          {% endif %}
-        </nav>
-        <div class="flex w-full items-center justify-between gap-2 lg:w-auto lg:justify-end">
-          <span id="login-state" class="text-sm text-slate-600">Не вошли</span>
-          <button id="btn-login" class="px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Войти</button>
-          <button id="btn-logout" class="hidden px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Выйти</button>
-        </div>
-      {% endif %}
-    </div>
+<body class="workspace bg-slate-50 text-slate-900">
+  {% if user_role != 'technician' %}
+  <aside class="app-sidebar">
+    <a class="brand" href="/admin"><span class="brand-mark" aria-hidden="true">↟</span><span>Premier<span class="brand-light">Lift</span><small>СЕРВИСНАЯ ПЛАТФОРМА</small></span></a>
+    <div class="nav-caption">РАБОЧЕЕ ПРОСТРАНСТВО</div>
+    <nav data-app-nav aria-label="Основное меню">
+      <button id="tab-overview" class="bg-slate-900 text-white"><span class="nav-icon" aria-hidden="true">◫</span>Обзор</button>
+      <button id="tab-admin" class=""><span class="nav-icon" aria-hidden="true">≡</span>Заявки</button>
+      <button id="tab-ops" class=""><span class="nav-icon" aria-hidden="true">▥</span>Доска работ</button>
+      <button id="tab-buildings" class=""><span class="nav-icon" aria-hidden="true">▤</span>Объекты</button>
+      <button id="tab-assets" class=""><span class="nav-icon" aria-hidden="true">↟</span>Лифты</button>
+      <button id="tab-customers" class=""><span class="nav-icon" aria-hidden="true">◎</span>Клиенты и договоры</button>
+      <button id="tab-masters" class=""><span class="nav-icon" aria-hidden="true">♧</span>Мастера</button>
+      <button id="tab-maintenance" class=""><span class="nav-icon" aria-hidden="true">◷</span>Обслуживание</button>
+      <button id="tab-reports" class=""><span class="nav-icon" aria-hidden="true">▥</span>Отчёты</button>
+      <button id="tab-objects" class=""><span class="nav-icon" aria-hidden="true">⌖</span>Карта объектов</button>
+      {% if user_role == 'admin' %}<button id="tab-access"><span class="nav-icon" aria-hidden="true">⚙</span>Пользователи</button><button id="tab-super" class="hidden">Статистика</button>{% endif %}
+    </nav>
+    <div class="nav-bottom"><span class="status-dot"></span> Сервисная команда<p>Лифты в порядке. Работа под контролем.</p></div>
+  </aside>
+  <header class="app-topbar">
+    <button class="menu-toggle" id="menu-toggle" aria-label="Открыть меню" aria-expanded="false">☰</button>
+    <span class="topbar-location">Рабочее пространство <span class="mx-2">/</span> <strong id="page-location">Обзор</strong></span>
+    <div class="global-search"><input id="global-search" aria-label="Поиск по всей CRM" autocomplete="off" placeholder="Поиск заявок, объектов, лифтов…"><div id="global-results" class="search-results hidden"></div></div>
+    <div class="topbar-actions"><span id="login-state">Загрузка…</span><button id="btn-login" class="hidden">Войти</button><button id="btn-logout" class="rounded-lg">Выйти</button></div>
+  </header>
+  {% else %}
+  <header>
     {% if user_role == 'technician' %}
       <div class="border-t border-slate-200 bg-amber-50">
         <div class="max-w-6xl mx-auto px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -118,14 +118,16 @@
       </div>
     {% endif %}
   </header>
+  {% endif %}
 
   {% if user_role != 'technician' %}
-  <main class="max-w-6xl mx-auto p-4">
+  <main class="app-main">
+    {% include "crm_sections.html" %}
     <!-- Admin/Dispatcher Panel -->
-    <section id="view-admin" class="space-y-6">
-      <div class="grid md:grid-cols-3 gap-4">
-        <div class="bg-white rounded-2xl shadow p-4 md:col-span-1">
-          <h2 class="text-lg font-semibold mb-3">Создать заявку</h2>
+    <section id="view-admin" class="hidden space-y-6">
+      <div class="page-heading"><div><span class="eyebrow">ДИСПЕТЧЕРСКАЯ</span><h1>Заявки</h1><p>Все обращения и текущий ход работ.</p></div><button class="primary" data-create-ticket>＋ Новая заявка</button></div>
+      <div class="ticket-layout grid md:grid-cols-3 gap-4">
+        <div class="create-card bg-white rounded-2xl shadow p-4 md:col-span-1" id="create-card" role="dialog" aria-modal="true" aria-labelledby="create-title"><div class="create-title"><h2 id="create-title">Новая заявка</h2><button type="button" class="create-close" id="create-close" aria-label="Закрыть">×</button></div>
           <form id="form-create" class="space-y-3">
             <div>
               <label class="block text-sm">Лифт</label>
@@ -161,7 +163,7 @@
             <div><label class="block text-sm">Описание</label><textarea name="description" rows="3" class="w-full px-3 py-2 bg-slate-50 rounded-xl ring-1 ring-slate-200" placeholder="Неисправен привод двери..."></textarea></div>
             <details id="create-advanced" class="rounded-xl ring-1 ring-slate-200 bg-slate-50">
               <summary class="cursor-pointer px-3 py-2 text-sm font-semibold text-slate-700">Дополнительно</summary>
-              <div class="space-y-3 px-3 pb-3 pt-1">
+              <div class="space-y-3 px-3 pb-3 pt-1"><label class="block text-sm">Заявка по объекту без выбора лифта<select id="create-building" name="building_id" class="w-full px-3 py-2 bg-white rounded-xl ring-1 ring-slate-200"><option value="">Без выбора объекта</option></select></label>
                 <div><label class="block text-sm">Адрес</label>
                   <input name="address" class="w-full px-3 py-2 bg-white rounded-xl ring-1 ring-slate-200" placeholder="г. Алматы, ..."></div>
                 <div class="grid grid-cols-2 gap-3">
@@ -187,7 +189,7 @@
               <button class="px-4 py-2 rounded-xl bg-slate-900 text-white font-semibold">Создать</button>
             </div>
             <p id="create-msg" class="text-xs text-slate-500"></p>
-            <p class="text-xs text-slate-500 mt-2">
+            <p class="hidden text-xs text-slate-500 mt-2">
               {% if user_role == 'admin' %}
                 * Создание/управление — роли Диспетчер/Админ.
               {% else %}
@@ -213,6 +215,7 @@
               <span class="text-xs text-slate-500">Статус</span>
               <select id="filter-status" class="px-2 py-1 rounded-lg ring-1 ring-slate-200 bg-white text-sm min-w-[150px]">
                 <option value="">Все</option>
+                <option value="NEW,ASSIGNED,ACCEPTED,IN_PROGRESS,WAITING">Активные</option>
                 <option value="NEW">Новая</option>
                 <option value="ASSIGNED">Назначена</option>
                 <option value="ACCEPTED">Принята</option>
@@ -268,9 +271,9 @@
           <h2 class="text-lg font-semibold">Реестр лифтов</h2>
           <p class="text-sm text-slate-600">
             {% if user_role == 'admin' %}
-              SQL-реестр оборудования. Создание/редактирование — роли Диспетчер/Админ.
+              Карточки оборудования, адреса и история обслуживания.
             {% else %}
-              SQL-реестр оборудования. Создание/редактирование — роль Диспетчер.
+              Карточки оборудования, адреса и история обслуживания.
             {% endif %}
           </p>
         </div>
@@ -292,7 +295,7 @@
           <button type="submit" class="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm md:shrink-0">Импорт</button>
         </form>
         <div id="assets-import-result" class="mt-3 text-sm"></div>
-        <div class="mt-5 grid gap-4 lg:grid-cols-2">
+        <div id="customers-content" class="mt-5 grid gap-4 lg:grid-cols-2">
           <div class="rounded-xl border border-slate-200 p-3">
             <div class="flex items-center justify-between gap-2">
               <h3 class="font-semibold text-sm">Клиенты</h3>
@@ -329,13 +332,13 @@
               <input name="start_date" type="date" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
               <input name="end_date" type="date" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
               <select name="status" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
-                <option value="active">active</option>
-                <option value="paused">paused</option>
-                <option value="expired">expired</option>
+                <option value="active">Действует</option>
+                <option value="paused">Приостановлен</option>
+                <option value="expired">Истёк</option>
               </select>
-              <input name="sla_hours_normal" type="number" min="0" step="0.1" placeholder="SLA normal, ч" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
-              <input name="sla_hours_high" type="number" min="0" step="0.1" placeholder="SLA high, ч" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
-              <input name="sla_hours_emergency" type="number" min="0" step="0.1" placeholder="SLA emergency, ч" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
+              <input name="sla_hours_normal" type="number" min="0" step="0.1" placeholder="Срок обычной заявки, ч" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
+              <input name="sla_hours_high" type="number" min="0" step="0.1" placeholder="Срок срочной заявки, ч" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
+              <input name="sla_hours_emergency" type="number" min="0" step="0.1" placeholder="Срок аварийной заявки, ч" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm">
               <textarea name="notes" rows="2" placeholder="Заметки" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50 text-sm md:col-span-2"></textarea>
               <div class="md:col-span-2 flex items-center justify-between gap-2">
                 <span id="contract-form-msg" class="text-xs text-slate-500"></span>
@@ -378,20 +381,20 @@
               <div>
                 <label class="block text-xs text-slate-500">Интервал</label>
                 <select name="interval_type" class="w-full px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50">
-                  <option value="monthly">monthly</option>
-                  <option value="quarterly">quarterly</option>
-                  <option value="semiannual">semiannual</option>
-                  <option value="annual">annual</option>
-                  <option value="custom">custom</option>
+                  <option value="monthly">Ежемесячно</option>
+                  <option value="quarterly">Ежеквартально</option>
+                  <option value="semiannual">Раз в полгода</option>
+                  <option value="annual">Ежегодно</option>
+                  <option value="custom">По графику</option>
                 </select>
               </div>
               <div>
                 <label class="block text-xs text-slate-500">Статус</label>
                 <select name="status" class="w-full px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50">
-                  <option value="active">active</option>
-                  <option value="paused">paused</option>
-                  <option value="completed">completed</option>
-                  <option value="overdue">overdue</option>
+                  <option value="active">Действует</option>
+                  <option value="paused">Приостановлен</option>
+                  <option value="completed">Завершён</option>
+                  <option value="overdue">Просрочен</option>
                 </select>
               </div>
             </div>
@@ -441,9 +444,9 @@
             <select name="status" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50">
               <option value="">Активные на 30 дней</option>
               <option value="overdue">Только просроченные</option>
-              <option value="active">active</option>
-              <option value="paused">paused</option>
-              <option value="completed">completed</option>
+              <option value="active">Действует</option>
+              <option value="paused">Приостановлен</option>
+              <option value="completed">Завершён</option>
             </select>
             <select name="assigned_master_id" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50"></select>
             <input name="date_from" type="date" class="px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50">
@@ -686,7 +689,7 @@
         <button id="asset-modal-close" class="px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200 text-sm">Закрыть</button>
       </div>
       <form id="asset-form" class="mt-4 space-y-3 text-sm">
-        <input type="hidden" id="asset-id-input" name="asset_id">
+        <input type="hidden" id="asset-id-input" name="asset_id"><label class="block text-sm">Объект<select name="building_id" id="asset-building" class="w-full px-3 py-2 rounded-xl ring-1 ring-slate-200"><option value="">Определить по адресу</option></select></label>
         <div>
           <label class="block text-xs text-slate-500">Адрес *</label>
           <input name="address" required class="w-full px-3 py-2 rounded-xl ring-1 ring-slate-200 bg-slate-50">
@@ -1182,6 +1185,16 @@
     let ticketTimerInterval = null;
 
     function setTab(which) {
+      document.querySelectorAll('[data-app-nav] > button').forEach(b=>b.classList.remove('bg-slate-900','text-white'));
+      document.querySelectorAll('.app-main > section').forEach(v=>v.classList.add('hidden'));
+      const extraView = document.getElementById(`view-${which}`);
+      const extraTab = document.getElementById(`tab-${which}`);
+      if (extraView) extraView.classList.remove('hidden');
+      if (extraTab) extraTab.classList.add('bg-slate-900','text-white');
+      const locationLabel=document.getElementById('page-location');
+      if(locationLabel && extraTab) locationLabel.textContent=extraTab.textContent.trim().replace(/^[^А-ЯЁ]+/, '');
+      document.body.classList.remove('menu-open');
+      document.getElementById('menu-toggle')?.setAttribute('aria-expanded','false');
       for (const btn of [tabAdmin, tabOps, tabAssets, tabMaintenance, tabObjects, tabSuper, tabAccess]) {
         if (!btn) continue;
         btn.classList.remove('bg-slate-900','text-white');
@@ -1220,13 +1233,7 @@
     const loginState = document.getElementById('login-state');
     const btnLogin = document.getElementById('btn-login');
     const btnLogout = document.getElementById('btn-logout');
-    if (btnLogin) btnLogin.onclick = async () => {
-      const username = prompt('Логин (admin/dispatcher/tech..):','admin'); if (!username) return;
-      const password = prompt('Пароль (admin123 / disp123 / выданный администратором):','admin123'); if (!password) return;
-      const res = await fetch('/api/login',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username,password})});
-      const data = await res.json(); if (!res.ok) return alert(data.error||'Ошибка входа');
-      await refreshMe(); await loadTicketFilters(); await loadTickets(); await loadKanban(); if (tabAccess) { loadAccessMasters(); } if (tabSuper) { loadDashboard(); loadMetrics(); }
-    };
+    if (btnLogin) btnLogin.onclick = () => { window.location.href='/login'; };
     if (btnLogout) btnLogout.onclick = () => { window.location.href = '/logout'; };
     async function refreshMe(){ const res=await fetch('/api/me'); me=await res.json(); renderAuth(); }
     function renderAuth(){
@@ -1474,6 +1481,7 @@
           <div id="ticket-history-list" class="mt-3 space-y-2 text-xs text-slate-600"></div>
         </div>
       `;
+      window.CRM?.enhanceTicket(ticket);
       bindTicketProblemTypeForm(ticket.id);
       bindTicketCommentForm(ticket.id);
     }
@@ -1618,6 +1626,7 @@
     }
 
     function applyAssetSelection(asset){
+      const buildingSelect=document.getElementById('create-building');if(buildingSelect)buildingSelect.value='';
       if(!assetIdField || !assetSearchInput) return;
       assetIdField.value = asset.id;
       assetSearchInput.value = `${formatAssetLabel(asset)} — ${asset.address || ''}`.trim();
@@ -1744,16 +1753,23 @@
     if (formCreate) formCreate.addEventListener('submit', async (e)=>{
       e.preventDefault(); const fd=new FormData(formCreate); const body=Object.fromEntries(fd.entries());
       delete body.asset_search;
+      if(body.building_id==='')delete body.building_id;else body.building_id=Number(body.building_id);
       if(body.asset_id==='') delete body.asset_id; else body.asset_id=parseInt(body.asset_id, 10);
       if(body.lat==='') delete body.lat; else body.lat=parseFloat(body.lat);
       if(body.lon==='') delete body.lon; else body.lon=parseFloat(body.lon);
       if(body.custom_sla_response_minutes==='') delete body.custom_sla_response_minutes; else body.custom_sla_response_minutes=parseInt(body.custom_sla_response_minutes,10);
       if(body.custom_sla_completion_minutes==='') delete body.custom_sla_completion_minutes; else body.custom_sla_completion_minutes=parseInt(body.custom_sla_completion_minutes,10);
       if(body.problem_type==='') delete body.problem_type;
+      const submitButton=formCreate.querySelector('button:not([type])');
+      if(submitButton?.disabled)return;
+      if(submitButton)submitButton.disabled=true;
       createMsg.textContent='Создаю...';
+      try {
       const res=await fetch('/api/tickets',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); const data=await res.json();
       if(!res.ok){ createMsg.textContent=extractErrorMessage(data,'Ошибка создания заявки'); return; }
-      createMsg.textContent=`Готово! №${data.id} → мастер: ${data.assigned_master_id ?? '—'}, статус: ${getStatusLabel(data.status)}`; formCreate.reset(); await loadTickets(); await loadKanban(); if(!viewObjects.classList.contains('hidden')){ await loadObjects(); }
+      createMsg.textContent=`Готово! №${data.id} → мастер: ${data.assigned_master_id ?? '—'}, статус: ${getStatusLabel(data.status)}`; formCreate.reset(); window.CRM?.created(data.id); await loadTickets(); await loadKanban(); if(!viewObjects.classList.contains('hidden')){ await loadObjects(); }
+      }catch(err){createMsg.textContent='Не удалось сохранить заявку. Проверьте связь и обновите список перед повтором.';}
+      finally{if(submitButton)submitButton.disabled=false;}
     });
     const fillLocButton = document.getElementById('btn-fill-loc');
     if (fillLocButton) fillLocButton.onclick=()=>{ if(!navigator.geolocation) return alert('Геолокация не поддерживается.');
@@ -1769,17 +1785,18 @@
     let ticketFilterTimer = null;
     function scheduleTicketsReload(){
       clearTimeout(ticketFilterTimer);
+      if(window.CRM) window.CRM.completedToday=null;
       ticketFilterTimer = setTimeout(loadTickets, 250);
     }
     if (filterQ) filterQ.oninput = () => { ticketFilters.q = filterQ.value.trim(); scheduleTicketsReload(); };
-    if (filterStatus) filterStatus.onchange = () => { ticketFilters.status = filterStatus.value; loadTickets(); };
+    if (filterStatus) filterStatus.onchange = () => { if(window.CRM)window.CRM.completedToday=null; ticketFilters.status = filterStatus.value; loadTickets(); };
     if (filterOverdue) filterOverdue.onchange = () => { ticketFilters.overdue = filterOverdue.checked; loadTickets(); };
     if (filterUnassigned) filterUnassigned.onchange = () => { ticketFilters.unassigned = filterUnassigned.checked; loadTickets(); };
     if (filterMaster) filterMaster.onchange = () => { ticketFilters.masterId = filterMaster.value; loadTickets(); };
     if (filterPriority) filterPriority.onchange = () => { ticketFilters.priority = filterPriority.value; loadTickets(); };
     if (filterDateFrom) filterDateFrom.onchange = () => { ticketFilters.dateFrom = filterDateFrom.value; loadTickets(); };
     if (filterDateTo) filterDateTo.onchange = () => { ticketFilters.dateTo = filterDateTo.value; loadTickets(); };
-    if (filterReset) filterReset.onclick = () => {
+    if (filterReset) filterReset.onclick = () => { if(window.CRM)window.CRM.completedToday=null;
       Object.assign(ticketFilters, {q:'', status:'', overdue:false, unassigned:false, masterId:'', priority:'', dateFrom:'', dateTo:''});
       loadTickets();
     };
@@ -1873,57 +1890,20 @@
       if(filterDateFrom) filterDateFrom.value = ticketFilters.dateFrom;
       if(filterDateTo) filterDateTo.value = ticketFilters.dateTo;
       const res=await fetch(`/api/tickets${buildTicketsQuery()}`,{cache:'no-store'}); if(!res.ok){ tableHolder.innerHTML='<div class="text-sm text-slate-500">Требуется вход.</div>'; return; }
-      const data=await res.json();
+      let data=await res.json();
+      if(window.CRM?.completedToday) data=data.filter(t=>t.completed_at&&new Date(t.completed_at).toLocaleDateString('en-CA',{timeZone:'Asia/Almaty'})===window.CRM.completedToday);
       const canEditPriority = me && ['admin','dispatcher'].includes(normalizeRole(me.role));
-      const showSlaOverrides = canEditPriority;
-      const slaOverrideHeader = showSlaOverrides ? '<th class="py-2 px-2">Кастом SLA (мин)</th>' : '';
-      let html=`<table class="min-w-full text-sm"><thead><tr class="text-left border-b">
-      <th class="py-2 px-2">№</th><th class="py-2 px-2">Объект</th><th class="py-2 px-2">Тип</th><th class="py-2 px-2">Лифт</th><th class="py-2 px-2">Адрес</th><th class="py-2 px-2">Координаты</th><th class="py-2 px-2">Мастер</th><th class="py-2 px-2">Статус</th><th class="py-2 px-2">Без мастера</th><th class="py-2 px-2">SLA</th><th class="py-2 px-2">Приоритет</th><th class="py-2 px-2">Причина закрытия</th>${slaOverrideHeader}<th class="py-2 px-2">Сроки</th><th class="py-2 px-2">Файлы</th><th class="py-2 px-2">Действия</th>
-      </tr></thead><tbody>`;
+      let html=`<table class="compact-tickets min-w-full text-sm"><thead><tr><th>№</th><th>Объект / обращение</th><th>Приоритет</th><th>Мастер</th><th>Статус</th><th>Срок</th><th></th></tr></thead><tbody>`;
       for(const t of data){
-        const hasCoords = Number.isFinite(t.lat) && Number.isFinite(t.lon);
-        const coords = hasCoords ? `${t.lat.toFixed(6)}, ${t.lon.toFixed(6)}` : '—';
-        const mapButton = hasCoords
-          ? `<button type="button" data-open-map="${encodeURIComponent(JSON.stringify({id:t.id, asset_id:t.asset_id, lat:t.lat, lon:t.lon, object_name:t.object_name, address:t.address}))}" class="ml-2 text-xs px-2 py-1 rounded-lg bg-slate-100 ring-1 ring-slate-200">📍 Карта</button>`
-          : '';
-        const files=t.attachments?.map(a=>`<a class="underline" href="${escapeHtml(a.url)}" target="_blank">${escapeHtml(a.name)}</a>`).join(', ')||'—';
-        const priorityBadge = renderPriorityBadge(t.priority);
-        const emergencyRowClass = normalizePriority(t.priority) === 'EMERGENCY' ? 'bg-red-50/80' : '';
-        const prioritySelect = canEditPriority ? `<select data-edit-priority="${t.id}" class="px-2 py-1 text-xs rounded-lg ring-1 ring-slate-200 bg-white">${renderPriorityOptions(t.priority)}</select>` : '';
-        const priorityCell = canEditPriority ? `<div class="flex items-center gap-2">${priorityBadge}${prioritySelect}</div>` : priorityBadge;
-        const unassignedTimer = `<span class="font-mono text-xs" data-unassigned-timer data-created-at="${t.created_at ?? ''}" data-assigned-at="${t.assigned_at ?? ''}" data-updated-at="${t.updated_at ?? ''}" data-assigned="${t.assigned_master_id ? '1' : '0'}">—</span>`;
-        const slaOverdueBadge = renderSlaOverdueBadge(t);
         const openPayload = encodeURIComponent(JSON.stringify(t));
-        const overrideCell = showSlaOverrides ? `<div class="space-y-1">
-          <div class="text-[11px] text-slate-600">Ответ</div>
-          <input type="number" min="1" data-sla-response="${t.id}" value="${t.custom_sla_response_minutes ?? ''}" placeholder="—" class="w-full px-2 py-1 text-xs rounded-lg ring-1 ring-slate-200">
-          <div class="text-[11px] text-slate-600">Завершение</div>
-          <input type="number" min="1" data-sla-completion="${t.id}" value="${t.custom_sla_completion_minutes ?? ''}" placeholder="—" class="w-full px-2 py-1 text-xs rounded-lg ring-1 ring-slate-200">
-          <button data-save-sla="${t.id}" class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white">Сохранить</button>
-          <p class="text-[10px] text-slate-500">Если заполнено, заменяет стандартный SLA.</p>
-        </div>` : '';
-        html+=`<tr class="border-b last:border-none ${emergencyRowClass}"><td class="py-2 px-2 font-mono">${t.id}</td>
-        <td class="py-2 px-2">${escapeHtml(t.object_name ?? '')}<div class="text-xs text-slate-500">${escapeHtml(t.description ?? '')}</div></td>
-        <td class="py-2 px-2">${escapeHtml(formatProblemType(t.problem_type))}</td>
-        <td class="py-2 px-2 text-xs">${escapeHtml(renderAssetSummary(t) || '—')}</td>
-        <td class="py-2 px-2">${escapeHtml(t.address ?? '')}</td><td class="py-2 px-2">${hasCoords ? `<button class="underline" onclick="openMap(${t.lat},${t.lon})">${coords}</button>${mapButton}` : '—'}</td>
-        <td class="py-2 px-2">${escapeHtml(t.assigned_master_name ?? '—')}</td><td class="py-2 px-2"><span class="px-2 py-1 rounded-lg ring-1 ring-slate-200">${getStatusLabel(t.status)}</span></td>
-        <td class="py-2 px-2">${unassignedTimer}</td>
-        <td class="py-2 px-2">${slaOverdueBadge}</td>
-        <td class="py-2 px-2">${priorityCell}</td>
-        <td class="py-2 px-2">${formatCloseReason(t.close_reason)}</td>
-        ${showSlaOverrides?`<td class="py-2 px-2 align-top">${overrideCell}</td>`:''}
-        <td class="py-2 px-2">${renderSla(t)}</td>
-        <td class="py-2 px-2">${files}</td>
-        <td class="py-2 px-2"><div class="flex gap-2 items-center">
-          <div id="assign-controls-${t.id}" class="flex gap-2">
-            <button data-admin-only class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" onclick="showAssign(${t.id})">Назначить</button>
-          </div>
-          <button data-admin-only class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" onclick="openCancelModal(${t.id})">Отменить</button>
-          <button class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white" data-open-ticket="${openPayload}">Открыть</button>
-          <button data-admin-only class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" onclick="archiveTicket(${t.id})">В архив</button>
-        </div></td></tr>`;
+        html+=`<tr><td class="font-mono text-slate-500">#${t.id}</td>
+          <td><button class="ticket-link text-left" data-open-ticket="${openPayload}">${escapeHtml(t.building_name || t.object_name || 'Без названия')}</button><div class="ticket-desc">${escapeHtml(t.address || '')} · ${escapeHtml(renderAssetSummary(t) || formatProblemType(t.problem_type))}</div><div class="ticket-desc">${escapeHtml(t.description || '')}</div></td>
+          <td>${renderPriorityBadge(t.priority)}</td><td>${escapeHtml(t.assigned_master_name || 'Не назначен')}</td>
+          <td><span class="pill ${t.status==='WAITING'?'warn':''}">${escapeHtml(getStatusLabel(t.status))}</span></td>
+          <td>${['COMPLETED','CANCELLED'].includes(t.status)?'<span class="muted">Закрыта</span>':(t.sla_response_breached||t.sla_completion_breached?'<span class="pill danger">Просрочена</span>':'<span class="pill">В срок</span>')}</td>
+          <td><div id="assign-controls-${t.id}" class="flex gap-2"><button class="text-link" data-open-ticket="${openPayload}" aria-label="Открыть заявку ${t.id}">Открыть ↗</button></div></td></tr>`;
       }
+      if(!data.length) html+='<tr><td colspan="7"><div class="empty-state"><strong>Заявок пока нет</strong>Измените фильтры или создайте новое обращение.</div></td></tr>';
       html+='</tbody></table>'; tableHolder.innerHTML=html; renderAuth();
       tableHolder.querySelectorAll('button[data-open-map]').forEach(btn => {
         btn.onclick = () => {
@@ -2190,6 +2170,7 @@
       if(ev.key === 'Escape' && assetModal?.classList.contains('open')) closeAssetModal();
     });
     function openAssetModal(asset = null){
+      window.CRM?.populateBuildings(asset?.building_id);
       if(!assetForm || !assetModal) return;
       assetForm.reset();
       assetFormMsg.textContent = '';
@@ -2471,11 +2452,11 @@
           <td class="py-2 px-2">${escapeHtml(asset.entrance || '—')}</td>
           <td class="py-2 px-2">${escapeHtml(asset.customer_name || '—')}</td>
           <td class="py-2 px-2">${escapeHtml(asset.contract_title || asset.contract_number || '—')}</td>
-          <td class="py-2 px-2">${escapeHtml(asset.status || 'ACTIVE')}</td>
+          <td class="py-2 px-2">${escapeHtml(asset.status === 'INACTIVE' ? 'Не обслуживается' : 'На обслуживании')}</td>
           <td class="py-2 px-2">
             <div class="flex gap-2">
               <button class="px-2 py-1 text-xs rounded-lg bg-slate-100 ring-1 ring-slate-200" data-edit-asset="${asset.id}">Редактировать</button>
-              <a class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white" href="/lifts/${asset.id}#history">Открыть</a>
+              <a class="px-2 py-1 text-xs rounded-lg bg-slate-900 text-white" href="/lifts/${asset.id}">Открыть</a>
             </div>
           </td>
         </tr>`;
@@ -3431,6 +3412,7 @@
       const params = new URLSearchParams(window.location.search);
       const tab = params.get('tab');
       if(!tab) return;
+      if(['overview','buildings','reports','customers','masters'].includes(tab)){ window.CRM?.navigate(tab); return; }
       if(tab === 'assets'){ loadCustomersContracts(); loadAssets(); setTab('assets'); return; }
       if(tab === 'maintenance'){ loadMaintenance(); setTab('maintenance'); return; }
       if(tab === 'objects'){ loadObjects(); setTab('objects'); return; }
@@ -3451,6 +3433,7 @@
       setInterval(()=>{ if(!viewOps.classList.contains('hidden')) loadKanban(); }, 5000);
     }
   </script>
+  <script src="/static/crm.js"></script>
   {% endif %}
 </body>
 </html>

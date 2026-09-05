@@ -35,7 +35,7 @@
     btn.addEventListener("click", () => setActiveTab(btn.dataset.tab));
   });
 
-  const initialTab = window.location.hash.replace("#", "") || "history";
+  const initialTab = window.location.hash.replace("#", "") || "info";
   setActiveTab(initialTab === "info" ? "info" : "history");
 
   function formatDateTime(ts) {

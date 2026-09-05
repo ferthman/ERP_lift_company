@@ -7,9 +7,9 @@
 ## Progress
 
 - [x] (2026-09-05 15:15 +0500) Прочитаны AGENTS.md и весь PLANS.md, изучены маршруты, модели, UI, PWA и тесты. Рабочее дерево чистое. Baseline: 161 passed, 6 subtests passed.
-- [x] (2026-09-05 15:35 +0500) M1: объектная модель, безопасная миграция, API объектов и связи заявок/лифтов.
-- [x] (2026-09-05 15:45 +0500) M2: сводки лифтов, история для мастера, отчёты и общий поиск с проверкой доступа.
-- [ ] M3: единый локальный стиль, вход, dashboard, компактные заявки, объекты и карточки.
+- [x] (2026-09-05 15:18 +0500) M1: объектная модель, безопасная миграция, API объектов и связи заявок/лифтов.
+- [x] (2026-09-05 15:23 +0500) M2: сводки лифтов, история для мастера, отчёты и общий поиск с проверкой доступа.
+- [x] (2026-09-05 16:05 +0500) M3: единый локальный стиль, вход, dashboard, компактные заявки, объекты и карточки.
 - [ ] M4: мобильный интерфейс, изоляция кеша пользователей, перезапуск offline, очередь и восстановление связи.
 - [ ] M5: полные тесты, браузерные сценарии desktop/mobile/offline, проверка существующей БД, документация и локальный запуск.
 
@@ -54,3 +54,9 @@ Baseline: 161 passed, 6 subtests passed за 23.77 s. Дальнейшие ре�
 M1 outcome: 36 passed, 6 subtests passed (new object CRUD/snapshot/coordinate/migration tests plus existing assets, DB init, filters, maintenance). Legacy DB without attachments exposed missing-table index assumption; index creation now checks table existence. Closed-ticket SLA now freezes at cancellation instead of growing forever.
 
 M2 outcome: 16 passed (CRM reports, search scopes, mobile lift history, legacy metrics/history). Counts include archived history, exclude cancelled tickets from repeated-fault ranking, and define reporting dates in Asia/Almaty. Mobile history requires an active assigned ticket.
+
+M3/M4 progress (2026-09-05): новый desktop/login осмотрен при 1440x960, screenshot сохранён. 23 focused UI/auth tests passed. Full suite выявил привязку Building к перезагруженному ORM mapper в тестах миграции; link_asset теперь использует mapper фактического Asset. Недостающие Leaflet images добавлены локально. Mobile backend получил root-scope public shell и X-Mobile-User guard, UI и outbox isolation реализованы; offline browser scenario ещё выполняется.
+
+Additional M4 decision (2026-09-05): upload_file used second-resolution filenames, so photos with the same name could overwrite each other. Add random filenames plus optional Attachment.upload_key with a unique index, send the mobile photo UUID, return the existing attachment on retries. Validate collision avoidance and retry idempotence. This is an additive migration; legacy uploads keep their existing URLs.
+
+M3 outcome: dispatcher browser login, dashboard, lift autocomplete -> ticket #25 creation, ticket comment persisted, building #5 created via form; screenshots login-desktop.png, dashboard-desktop.png, ticket-card.png. Desktop focused UI/RBAC/login checks: 23 passed. Additional core search/upload/migration checks: 25 passed.
