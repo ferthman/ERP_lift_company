@@ -1,114 +1,51 @@
-# Архитектура Lift CRM
+# Архитектура PremierLift CRM
 
-## Обзор стека
-- **Backend:** Flask + SQLAlchemy (SQLite, file `lift_crm.db`).【F:app.py†L23-L91】
-- **Frontend:** Single-page HTML (Jinja template), Tailwind CDN, Vanilla JS, Leaflet, сервис-воркер для PWA-манифеста.【F:templates/index.html†L1-L27】【F:templates/index.html†L200-L351】
-- **Auth:** Flask-Login с cookie-сессиями; роли: admin, dispatcher, master.【F:app.py†L1-L91】【F:templates/index.html†L219-L262】
-- **Файлы и данные:** Excel через openpyxl (есть в `vendor/openpyxl`), загрузки в `uploads/`, архив `archive.xlsx`, реестр лифтов в SQL-таблице `assets` (экспорт в CSV/XLSX).【F:liftcrm/db.py†L46-L104】【F:liftcrm/assets/routes.py†L1-L176】
+Актуально для обновления 2026-09-05. Однокомпанейская Flask CRM с SQLite. Серверная авторизация обязательна для бизнес-API; интерфейс не является границей доступа.
 
-## Карта директорий и ответственности
-- `/app.py` — тонкий вход: создаёт приложение через `liftcrm.create_app()` и запускает сервер.【F:app.py†L1-L5】
-- `/liftcrm/__init__.py` — фабрика приложения, конфиг, регистрация blueprints, инициализация БД/файлов на первом запросе.【F:liftcrm/__init__.py†L1-L129】
-- `/liftcrm/config.py` — корневые пути (архив, объекты, uploads).【F:liftcrm/config.py†L1-L4】
-- `/liftcrm/db.py` — engine/SessionLocal/Base + модели Master/User/Ticket/Attachment/Asset и миграции init/ensure.【F:liftcrm/db.py†L1-L122】
-- `/liftcrm/extensions.py` — login manager экземпляр.【F:liftcrm/extensions.py†L1-L2】
-- `/liftcrm/auth/routes.py` — login/logout/me и user_loader для Flask-Login.【F:liftcrm/auth/routes.py†L1-L35】
-- `/liftcrm/tickets/routes.py` — мастера, CRUD заявок, статусы, файлы, архив, метрики, uploads; без изменения путей.【F:liftcrm/tickets/routes.py†L1-L424】
-- `/liftcrm/tickets/service.py` — назначение мастеров, геозона, отправка отчёта, архивирование.【F:liftcrm/tickets/service.py†L1-L103】
-- `/liftcrm/tickets/repository.py` — сериализация заявок (ответ API).【F:liftcrm/tickets/repository.py†L1-L25】
-- `/liftcrm/assets/routes.py` — CRUD + экспорт SQL-реестра лифтов (admin/dispatcher).【F:liftcrm/assets/routes.py†L1-L176】
-- `/liftcrm/objects/routes.py` — deprecated alias `/api/objects` → список лифтов из SQL (без Excel runtime).【F:liftcrm/objects/routes.py†L1-L21】
-- `/liftcrm/utils/` — security (role_required), time (UTC helper), health endpoint, excel helpers.【F:liftcrm/utils/security.py†L1-L14】【F:liftcrm/utils/time.py†L1-L5】【F:liftcrm/utils/health.py†L1-L6】
-- `/templates/index.html` — единственный HTML; UI логика, запросы к API, отрисовка таблиц/канбан/карт, формы, загрузки файлов, реестр лифтов и карта с заявками.【F:templates/index.html†L1-L620】
-- `/static/` — PWA манифест и иконки; сервис-воркер `sw.js`.【F:static/manifest.webmanifest†L1-L19】
-- `/scripts/seed_assets_from_objects_xlsx.py` — одноразовый сид из `objects.xlsx` в SQL-реестр лифтов (идемпотент).【F:scripts/seed_assets_from_objects_xlsx.py†L1-L104】
-- `/archive.xlsx` — итоговый экспорт и накопительный архив удалённых заявок; содержит колонку `priority` для фиксации важности тикетов.【F:liftcrm/tickets/service.py†L39-L97】【F:liftcrm/tickets/routes.py†L390-L421】
-- `/vendor/openpyxl` — встроенная копия openpyxl для оффлайн-окружений (подхватывается через sys.path).【F:liftcrm/__init__.py†L7-L20】
-- `/uploads/` — создаётся при первом запросе; хранение загруженных фото вложений для заявок.【F:liftcrm/__init__.py†L33-L44】【F:liftcrm/tickets/routes.py†L259-L282】
-- `/requirements.txt` — зависимости Python (Flask, SQLAlchemy, Flask-Login/CORS, Pillow, pandas, openpyxl).【F:requirements.txt†L1-L8】
+## Слои
 
-## Основные модели и роли
-- `User`: username, password_hash, role (`admin|dispatcher|master`), связь `master_id`.【F:liftcrm/db.py†L27-L43】
-- `Master`: справочник мастеров, флаг `is_active`.【F:liftcrm/db.py†L11-L24】
-- `Ticket`: заявка со статусами `NEW/ASSIGNED/ACCEPTED/IN_PROGRESS/WAITING/COMPLETED/CANCELLED`, версией для мобильной синхронизации, координатами, временами принятия/прибытия/ожидания/завершения, e-mail клиента, гео фактами прибытия/завершения, вложениями, полем **priority** (`HIGH|MEDIUM|LOW`, дефолт MEDIUM), **custom_sla_response_minutes/custom_sla_completion_minutes** (опциональные, только для admin/dispatcher, перекрывают конфиг SLA), **close_reason** и привязкой к `assets` через `asset_id` + summary поля в сериализации.【F:liftcrm/db.py†L46-L112】【F:liftcrm/tickets/repository.py†L17-L43】
-- `Asset`: реестр лифтов (адрес, подъезд, метка, серийник, координаты, статус).【F:liftcrm/db.py†L82-L112】
-- `Attachment`: файл, связанный с заявкой, лежит в `uploads/`.【F:liftcrm/db.py†L76-L84】
+- `app.py` создаёт приложение и запускает локальный сервер; `liftcrm/__init__.py` регистрирует маршруты, cookie/auth/origin-проверки, корневой service worker и публичную мобильную оболочку.
+- `liftcrm/db.py`: SQLAlchemy-модели, `init_db`, добавочные `ensure_migrations`, SQLite `crm_casefold` для поиска на кириллице. Инициализация выполняется на первом запросе процесса.
+- `liftcrm/tickets/`: заявки, статусы, комментарии, вложения, назначения, архив, event sync, сериализация и SLA.
+- `liftcrm/assets/`: реестр лифтов, импорт/экспорт, нормализация идентификаторов.
+- `liftcrm/buildings/`: объекты, безопасная миграция связей, CRUD, карточка со сводкой.
+- `liftcrm/assets/routes.py` также содержит API клиентов, договоров и планов обслуживания; `liftcrm/access/routes.py` — управление пользователями и допуском.
+- `liftcrm/reports/routes.py`: dashboard, отчёты, сводки лифтов, ограниченная история для мастера и общий поиск.
+- `templates/index.html`: существующие формы/таблицы/доска/карта; `crm_sections.html`, `static/crm.js` и `crm.css` — новый обзор, реестры, поиск, отчёты и дополнения карточок. `crm-detail.js` — сводки объектов/лифтов, `lift_detail.js` — история лифта.
+- `templates/mobile.html`, `static/mobile.js`, `mobile.css`, `mobile-2gis.js`, `sw.js`: приложение мастера.
+- `static/vendor/`: собранный Tailwind и локальный Leaflet с лицензией. Исходник CSS — `static/tailwind.input.css`, конфигурация — `tailwind.config.js`.
 
-### Связка Users ↔ Masters
-- `masters` хранит сущность мастера (ФИО, активность) — без логина/пароля.
-- `users` хранит учётные записи. Для ролей `admin/dispatcher` поле `master_id` пустое. Для роли `master` поле `users.master_id` обязательно и указывает на конкретную запись в `masters`.
-- Каждому мастеру соответствует ровно один пользователь с `role=master` (создаётся при первичной инициализации и при добавлении мастера). Пароль для мастерского пользователя уникален и выдаётся как временный при создании или через сброс. 【F:liftcrm/db.py†L11-L73】【F:liftcrm/tickets/routes.py†L33-L120】
+## Данные и доступ
 
-### Назначение заявок на мастеров
-- В заявке поле `tickets.assigned_master_id` ссылается на `masters.id` и определяет исполнителя.
-- Автоназанчение выбирает активного мастера с минимальной нагрузкой по открытым статусам (`NEW|ASSIGNED|ACCEPTED|IN_PROGRESS|WAITING`).【F:liftcrm/tickets/service.py†L15-L38】
-- Ручное назначение/переназначение через `POST /api/tickets/{id}/assign/{master_id}` проставляет `assigned_master_id` (только активным мастерам) и, при необходимости, переводит статус в `ASSIGNED`.【F:liftcrm/tickets/routes.py†L299-L324】
-- При удалении или деактивации мастера открытые заявки перераспределяются на других активных мастеров; связанные `users` с ролью master удаляются или остаются в зависимости от операции удаления мастера.【F:liftcrm/tickets/routes.py†L33-L122】
+`Customer → Contract`; `Building` ссылается на клиента/договор, объединяет `Asset` (лифты) и `Ticket`. Лифт хранит адрес, подъезд, метку, серийный номер, координаты и статус обслуживания. Заявка хранит необязательные `asset_id`/`building_id`, снимок адреса и координат, описание, тип поломки, приоритет, исполнителя, статус, версию и времена событий.
 
-### Карта статусов (бизнес → enum → эндпойнт → таймстемпы)
+Миграция Building группирует существующие записи по нормализованному адресу, клиенту и договору, затем связывает заявки через лифт или ручной адрес. Она идемпотентна. Изменение объекта обновляет текущие данные связанных лифтов; исторический адрес заявки сохраняется. Исторический снимок клиента/договора в заявке не создаётся: этот контекст читается из текущей связи с лифтом/объектом.
 
-| Бизнес-термин               | `Ticket.status`  | Основной эндпойнт                    | Таймстемпы               |
-|-----------------------------|------------------|--------------------------------------|--------------------------|
-| Новая                       | `NEW`            | `POST /api/tickets` (создание)       | `created_at`             |
-| Назначена                   | `ASSIGNED`       | автоназначение или `.../assign/{id}` | `created_at`             |
-| Принята                    | `ACCEPTED`       | `/api/sync/events` (`TICKET_ACCEPT`) | `accepted_at`           |
-| В работе / На месте (факт прибытия) | `IN_PROGRESS`   | `/api/sync/events` (`TICKET_IN_PROGRESS`) или `POST /api/tickets/{id}/arrive` | `arrived_at`, `arrival_lat/lon` |
-| Ожидание                   | `WAITING`        | `/api/sync/events` (`TICKET_WAITING`) | `waiting_at`, `waiting_reason` |
-| Выполнено                   | `COMPLETED`      | `POST /api/tickets/{id}/complete`    | `completed_at`, `completion_lat/lon`, `close_reason` |
-| Отменено                    | `CANCELLED`      | `POST /api/tickets/{id}/cancel`      | —                        |
-| (Удалено → архивируется)    | — (запись удаляется) | `DELETE /api/tickets/{id}`          | В архив пишется все поля |
+`User` хранит логин, хеш пароля, роль и необязательный `master_id`. `Master` — профиль сотрудника. Канонические роли: `admin`, `dispatcher`, `technician`; старый `master` нормализуется. Администратор управляет доступами, диспетчер — рабочими справочниками и заявками. Мастер видит свои заявки и связанные лифты. История лифта для мастера доступна только при наличии его активной назначенной заявки, ограничена десятью записями без персональных контактов клиента.
 
-### SLA (ответ и завершение)
-- Конфиги SLA в минутах: `SLA_RESPONSE_MINUTES` (по умолчанию 30) и `SLA_COMPLETION_MINUTES` (по умолчанию 120) в `liftcrm/config.py`. Админ/диспетчер могут задать кастомные минуты в полях заявки `custom_sla_response_minutes/custom_sla_completion_minutes` (валидация >0), чтобы перекрыть конфиг только для конкретного тикета.【F:liftcrm/tickets/routes.py†L174-L240】【F:templates/index.html†L38-L78】【F:templates/index.html†L268-L334】
-- Дедлайны рассчитываются на лету: `created_at + SLA_{...}_MINUTES`, где приоритет — кастомные поля заявки, иначе значения конфига; в сериализации тикета добавлены поля с дедлайнами, флагами нарушения и оставшимися минутами (могут быть отрицательными).【F:liftcrm/tickets/repository.py†L10-L68】
-- Нарушение фиксируется как по факту (arrived/completed позже дедлайна), так и для открытых заявок, если текущее время вышло за пределы SLA. Экспорт `archive.xlsx` включает флаги нарушений и кастомные SLA; метрики `/api/metrics` дополнены счётчиками/процентами нарушений, UI их визуализирует в таблице, канбане и дашборде.【F:liftcrm/tickets/routes.py†L142-L212】【F:liftcrm/tickets/routes.py†L390-L421】【F:templates/index.html†L268-L341】【F:templates/index.html†L520-L567】
-- Метрики `/api/metrics` дополнительно выдают `tickets_by_close_reason`, `sla_breaches_by_reason` и `tickets_by_priority` для аналитики причин/важности в UI/архивах.【F:liftcrm/tickets/routes.py†L212-L242】【F:templates/index.html†L531-L548】
+`Attachment` связан с заявкой; файл имеет случайное имя, исходное название хранится отдельно. Необязательный `upload_key` уникален и обеспечивает повторяемость мобильного upload. Старые URL вложений сохраняются. `/uploads/` проверяет права на соответствующую заявку.
 
-## Existing behaviors (frozen)
-- Автоназанчение: используется только активные мастера; метрика нагрузки — количество открытых заявок в статусах `NEW/ASSIGNED/ACCEPTED/IN_PROGRESS/WAITING`, выбирается минимальная нагрузка (и минимальный id как тайбрейк).【F:liftcrm/tickets/service.py†L15-L38】
-- Переназначение при удалении/деактивации мастера: все открытые заявки (`NEW/ASSIGNED/ACCEPTED/IN_PROGRESS/WAITING`) переводятся на других активных мастеров по той же логике минимальной нагрузки; если активных мастеров нет — операция запрещена.【F:liftcrm/tickets/routes.py†L33-L122】
-- Ограничение: назначение/переназначение возможно только на активных мастеров; закрытые (`COMPLETED/CANCELLED`) заявки не учитываются при распределении.
+## Статусы и сроки
 
-## Потоки запросов (текстовые диаграммы)
+Основной путь: `NEW → ASSIGNED → ACCEPTED → IN_PROGRESS → COMPLETED`. Из `IN_PROGRESS` возможен `WAITING` с причиной и возврат в работу. Отмена требует разрешённой причины. Архивирование мягкое: история в SQL сохраняется, архивированные заявки скрываются из активного списка.
 
-### 1) Логин
-`/templates/index.html` → `POST /api/login` → проверка пользователя, `login_user`, ответ `role/username/master_id` → фронт вызывает `/api/me` для актуализации UI.【F:app.py†L149-L167】【F:templates/index.html†L219-L262】
+Автоназначение использует активных мастеров и минимальную нагрузку по открытым статусам, при равенстве — меньший id. При деактивации сотрудника открытые заявки перераспределяются. Мобильные события проверяют владельца, ожидаемую версию, допустимый переход и UUID события; AppliedEvent предотвращает повторное применение.
 
-### 2) Список заявок
-UI: `loadTickets()` → `GET /api/tickets` (auth required) → SQLAlchemy выборка всех Ticket → сериализация (мастер, статусы, вложения, тайминги) → JSON → отрисовка таблицы и канбана.【F:app.py†L223-L262】【F:templates/index.html†L255-L334】
+Начало работ из `ACCEPTED` требует координат мастера/объекта и серверной геозоны 500 м. Возврат из ожидания не требует повторного GPS. Мобильное завершение требует причины; legacy arrive/complete сохраняют собственные проверки координат.
 
-### 3) Создание заявки
-UI форма с выбором лифта + приоритета (`HIGH|MEDIUM|LOW`, дефолт MEDIUM) → `POST /api/tickets` (admin/dispatcher) c `object_name`, `lat`, `lon`, опционально `asset_id/address/description/email/priority` → сервер создаёт Ticket, автоназначает активного мастера (балансировка) и привязывает/создаёт asset → статус `ASSIGNED|NEW` → ответ id/assigned/status → UI обновляет список/канбан.【F:liftcrm/tickets/routes.py†L174-L223】【F:templates/index.html†L33-L87】
+SLA ответа/завершения задаются на уровне заявки или конфигурации. Высокий/аварийный приоритет при создании получает специальные значения, если не заданы ручные. Закрытые и отменённые заявки не накапливают просрочку бесконечно. Отчёты используют даты создания в Asia/Almaty и включают архивную историю; рейтинг повторных неисправностей исключает отменённые. Сигнал проблемного лифта: ≥3 неотменённых обращения за 30 дней или ≥2 HIGH/EMERGENCY за тот же период.
 
-### 4) Изменение приоритета
-Админ/диспетчер могут изменить приоритет заявки через `PATCH /api/tickets/{id}` c JSON `{ "priority": "HIGH|MEDIUM|LOW" }`; поле доступно из таблицы заявок (select рядом с бейджем).【F:liftcrm/tickets/routes.py†L204-L236】【F:templates/index.html†L285-L334】
+## Мобильный offline
 
-### 5) Назначение мастера (ручное)
-UI `showReassign()` выбирает master → `POST /api/tickets/{id}/assign/{master_id}` (admin/dispatcher) → проверка активности мастера → обновление `assigned_master_id`, статус `ASSIGNED` если нужно → JSON подтверждение → UI перерисовывает списки.【F:app.py†L618-L639】【F:templates/index.html†L308-L334】
+1. Серверный HTML сообщает user id; `/api/me` подтверждает личность. IndexedDB называется `liftcrm-mobile-<user-id>`, старое общее хранилище не импортируется в чужую учётную запись.
+2. Список, детали, история, события и фото сохраняются в IndexedDB. Действия меняют локальную версию; очередь сохраняется до подтверждения сервера. Ошибки явно показываются пользователю.
+3. `syncAll` допускает одну отправку за раз. Каждый запрос несёт `X-Mobile-User`; сервер отклоняет несовпадение с текущей cookie-сессией. Повтор UUID события или фото не создаёт дубль.
+4. `/sw.js` обслуживает scope `/` и кеширует только публичную `/mobile-shell` и статические ресурсы. `/mobile` при сетевой ошибке получает публичную оболочку, которая открывает локальные данные последнего вошедшего мастера. API, файлы, login и авторизованный HTML не записываются в service-worker кеш.
+5. При выходе/открытии страницы входа удаляется указатель последней личности, но личная очередь остаётся до следующего входа в тот же аккаунт. При смене сессии приложение блокирует отправку и предлагает войти снова.
+6. Удаление ошибочного действия online требует подтверждения, удаляет зависимые последующие версии этой заявки и восстанавливает серверное состояние. Фото не удаляются этим действием.
 
-### 6) Обновление статуса мастером
-- **Принял в `/mobile`:** `TICKET_ACCEPT` → `/api/sync/events` проверяет владельца, версию заявки и переход `ASSIGNED → ACCEPTED`; координаты мастера не требуются.【F:liftcrm/tickets/routes.py†L883-L1015】【F:static/mobile.js†L446-L448】
-- **В работу в `/mobile`:** `TICKET_IN_PROGRESS` из `ACCEPTED` → клиент запрашивает геолокацию → `/api/sync/events` после проверки версии требует координаты мастера и объекта, проверяет геозону 500 м (haversine), затем пишет `IN_PROGRESS`, `arrived_at`, `arrival_lat/lon`. Возврат из `WAITING → IN_PROGRESS` координаты заново не требует.【F:liftcrm/tickets/routes.py†L1015-L1147】【F:static/mobile.js†L449-L470】
-- **Прибыл через legacy endpoint:** `POST /api/tickets/{id}/arrive` (role technician) → проверка владельца, геозона 500 м; из `ASSIGNED` backend сначала фиксирует `ACCEPTED`, затем `IN_PROGRESS` для обратной совместимости.【F:liftcrm/tickets/routes.py†L1330-L1398】
-- **Завершил:** мастерский UI → выбор причины закрытия (dropdown, без неё кнопка блокируется) → геолокация → `POST /api/tickets/{id}/complete` (role technician) → проверки аналогичны → статус `COMPLETED`, `completed_at`, координаты завершения, `close_reason` из разрешённого списка → попытка `send_report()` по email → JSON.【F:liftcrm/tickets/routes.py†L1417-L1485】
+На незапароленном устройстве локальный кеш не является шифрованным сейфом. Ограничения удалённого отзыва доступа во время отсутствия сети присущи offline-режиму. Сервер повторно проверяет все права при синхронизации.
 
-### 7) Отмена / удаление и архив
-- **Отмена:** `POST /api/tickets/{id}/cancel` (admin/dispatcher) → статус `CANCELLED` → ответ.【F:app.py†L326-L338】【F:templates/index.html†L287-L299】
-- **Удаление:** `DELETE /api/tickets/{id}` (admin/dispatcher) → `archive_ticket()` пишет строку в `archive.xlsx` (и копию `archive_N.xlsx`), удаляет вложения с диска → удаляет Ticket → ответ. Экспортируемый архив содержит колонку `close_reason` для аналитики причин закрытия.【F:liftcrm/tickets/service.py†L39-L83】【F:liftcrm/tickets/routes.py†L390-L433】
+## Границы
 
-### 8) Скачивание архива
-UI кнопка → `GET /api/archive` (admin/dispatcher) → в рантайме создаётся новый `archive.xlsx` со всеми текущими заявками через openpyxl → send_from_directory с attachment.【F:app.py†L667-L693】【F:templates/index.html†L464-L472】
-
-### 9) Загрузка объектов для карты
-`GET /api/assets` (auth) → SQL-реестр лифтов → фронт строит Leaflet circleMarker, поиск по адресам/серийникам/меткам, доп. слой открытых заявок через `GET /api/tickets?include_archived=0`.【F:liftcrm/assets/routes.py†L1-L176】【F:templates/index.html†L430-L566】
-
-## Технический долг и риски
-- **Монолитный файл** `app.py` объединяет модели, API, миграции, утилиты; трудно расширять и тестировать по слоям.【F:app.py†L23-L804】
-- **SQLite в файле** (`lift_crm.db`) без блокировок и бэкапов; конкурентные записи/удаления могут блокировать файл, нет миграций через Alembic.【F:app.py†L34-L118】
-- **Нет валидации входных данных** (Pydantic отсутствует); потенциальные ValueError/TypeError и слабая защита от неверных типов.【F:app.py†L264-L444】
-- **Глобальные побочные эффекты** в `before_request` (инициализация БД/директорий/файлов) — дорого при первом запросе, сложно тестировать, риск гонок при многопроцессном запуске.【F:app.py†L124-L180】
-- **openpyxl копия** (`vendor/openpyxl`) + системная установка — разные версии могут расходиться, нет проверки совместимости.【F:app.py†L12-L21】
-- **Отсутствие CSRF/HTTPS настроек**; CORS разрешён с cred-сессиями без ограничений origin.【F:app.py†L22-L33】
-- **Файлы загрузок без вирус-скана/квот**; путь хранения в локальной ФС, нет S3/backup, нет очистки старых вложений вне удалений заявок.【F:app.py†L568-L616】
-- **Архивирование на удаление** создаёт копии `archive_N.xlsx` без лимита → рост диска, отсутствие ротации.【F:app.py†L216-L259】
-- **Логика геозоны/статусов в UI и backend дублируется**, нет централизованного enum/констант, возможны рассинхроны.【F:app.py†L347-L444】【F:templates/index.html†L255-L419】
+Рабочий объём — CRM обслуживания. Бухгалтерия, склад, биллинг, push-уведомления и отдельные нативные мобильные сборки не реализованы. SQLite подходит для текущего локального приложения; масштабирование на несколько процессов/инстансов требует отдельной проверки миграций и конкуренции. Login rate limit хранится в памяти процесса. HTTPS и WSGI-развёртывание на сервере настраиваются отдельно от локального запуска.
