@@ -212,6 +212,8 @@ def create_app():
     app.register_blueprint(assets_bp)
     app.register_blueprint(objects_bp)
     app.register_blueprint(health_bp)
+    from .buildings.routes import bp as buildings_bp
+    app.register_blueprint(buildings_bp)
 
     from werkzeug.exceptions import HTTPException
     from flask import request, jsonify

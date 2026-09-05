@@ -29,8 +29,9 @@ def compute_sla_fields(t: Ticket):
     arrived = to_utc(t.arrived_at)
     completed = to_utc(t.completed_at)
 
-    response_elapsed_end = arrived or now
-    completion_elapsed_end = completed or now
+    closed = completed or to_utc(t.cancelled_at)
+    response_elapsed_end = arrived or closed or now
+    completion_elapsed_end = closed or now
 
     response_elapsed_minutes = int((response_elapsed_end - created).total_seconds() // 60)
     completion_elapsed_minutes = int((completion_elapsed_end - created).total_seconds() // 60)
@@ -72,6 +73,8 @@ def serialize_ticket(t: Ticket):
         "status": t.status,
         "version": t.version or 1,
         "asset_id": t.asset_id,
+        "building_id": t.building_id,
+        "building_name": t.building.name if t.building else None,
         "maintenance_plan_id": t.maintenance_plan_id,
         "maintenance_due_date": t.maintenance_due_date.isoformat() if t.maintenance_due_date else None,
         "asset_serial_no": (t.asset.serial_no if t.asset else None),

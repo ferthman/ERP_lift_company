@@ -1,3 +1,5 @@
+from ..buildings.service import link_asset, ensure_building, coordinates
+from ..db import Building
 import logging
 import math
 import os
@@ -707,7 +709,7 @@ def create_ticket():
             asset_id = int(asset_id)
         except Exception:
             return jsonify({"error": "Invalid asset_id"}), 400
-    if "object_name" not in data and not asset_id:
+    if "object_name" not in data and not asset_id and not data.get("building_id"):
         return jsonify({"error": "Missing field: object_name"}), 400
     priority = _normalize_priority(data.get("priority"))
     if not priority:
@@ -737,20 +739,33 @@ def create_ticket():
             asset = db.get(Asset, asset_id)
             if not asset:
                 return jsonify({"error": "Asset not found"}), 404
-        object_name = (data.get("object_name") or "").strip()
+        building = None
+        if data.get("building_id"):
+            try: building = db.get(Building, int(data["building_id"]))
+            except (ValueError, TypeError): return jsonify(error="Некорректный объект"),400
+            if not building or not building.is_active: return jsonify(error="Объект не найден или отключён"),400
+            if asset and asset.building_id != building.id: return jsonify(error="Лифт относится к другому объекту"),400
+        object_name = (data.get("object_name") or (building.name if building else "")).strip()
         if not object_name and asset:
             object_name = (asset.lift_label or asset.serial_no or asset.address or "Лифт")
-        address = data.get("address")
+        address = data.get("address") or (building.address if building else None)
         if not address and asset:
             address = asset.address
         lat = data.get("lat")
         lon = data.get("lon")
         if (lat is None or lon is None) and asset and asset.lat is not None and asset.lon is not None:
             lat, lon = asset.lat, asset.lon
+        if building:
+            lat = lat if lat is not None else building.lat
+            lon = lon if lon is not None else building.lon
+        try:
+            lat, lon = coordinates(lat, lon)
+        except ValueError as exc:
+            return jsonify(error=str(exc)),400
         if lat is None or lon is None:
             return jsonify({"error": "Missing field: lat/lon"}), 400
-        lat = float(lat)
-        lon = float(lon)
+        if not object_name:
+            return jsonify(error="Укажите название объекта"),400
         if asset and (asset.lat is None or asset.lon is None) and rounded_coords(lat, lon)[0] is not None:
             asset.lat = asset.lat if asset.lat is not None else lat
             asset.lon = asset.lon if asset.lon is not None else lon
@@ -769,10 +784,15 @@ def create_ticket():
             asset_id=asset.id if asset else None,
         )
         _apply_priority_sla_defaults(t)
-        if not asset and address:
+        if not asset and address and not building:
             asset = upsert_asset_from_ticket(db, object_name, address, lat, lon)
             if asset:
                 t.asset_id = asset.id
+        if asset:
+            building = link_asset(db, asset)
+        elif not building and address:
+            building = ensure_building(db, address, lat, lon, name=object_name)
+        t.building_id = building.id if building else None
         m = auto_assign_master(db)
         if m:
             t.assigned_master_id, t.status = m.id, "ASSIGNED"

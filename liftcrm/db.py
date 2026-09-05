@@ -81,6 +81,8 @@ class Ticket(Base):
     maintenance_plan_id = Column(Integer, ForeignKey("maintenance_plans.id"), nullable=True)
     maintenance_due_date = Column(Date, nullable=True)
     asset = relationship("Asset", back_populates="tickets")
+    building_id = Column(Integer, ForeignKey("buildings.id"), nullable=True)
+    building = relationship("Building", back_populates="tickets")
 
 
 class Customer(Base):
@@ -147,6 +149,29 @@ class MaintenancePlan(Base):
     assigned_master = relationship("Master")
 
 
+class Building(Base):
+    __tablename__ = "buildings"
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    address = Column(Text, nullable=False)
+    address_norm = Column(Text, nullable=False, index=True)
+    lat = Column(Float, nullable=True)
+    lon = Column(Float, nullable=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True, index=True)
+    contract_id = Column(Integer, ForeignKey("contracts.id"), nullable=True, index=True)
+    contact_person = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+    is_active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    customer = relationship("Customer")
+    contract = relationship("Contract")
+    assets = relationship("Asset", back_populates="building")
+    tickets = relationship("Ticket", back_populates="building")
+
+
 class Asset(Base):
     __tablename__ = "assets"
     id = Column(Integer, primary_key=True)
@@ -170,6 +195,8 @@ class Asset(Base):
     customer = relationship("Customer", back_populates="assets")
     contract = relationship("Contract", back_populates="assets")
     maintenance_plans = relationship("MaintenancePlan", back_populates="asset")
+    building_id = Column(Integer, ForeignKey("buildings.id"), nullable=True)
+    building = relationship("Building", back_populates="assets")
 
 
 class Attachment(Base):
@@ -559,6 +586,9 @@ def ensure_migrations():
                 """
             )
             conn.commit()
+        conn.commit()
         conn.close()
-    except Exception as e:
-        print("Migration check failed:", e)
+        from .buildings.service import migrate_buildings
+        migrate_buildings(config.DB_PATH)
+    except Exception:
+        raise

@@ -7,7 +7,7 @@
 ## Progress
 
 - [x] (2026-09-05 15:15 +0500) Прочитаны AGENTS.md и весь PLANS.md, изучены маршруты, модели, UI, PWA и тесты. Рабочее дерево чистое. Baseline: 161 passed, 6 subtests passed.
-- [ ] M1: объектная модель, безопасная миграция, API объектов и связи заявок/лифтов.
+- [x] (2026-09-05 15:35 +0500) M1: объектная модель, безопасная миграция, API объектов и связи заявок/лифтов.
 - [ ] M2: сводки лифтов, история для мастера, отчёты и общий поиск с проверкой доступа.
 - [ ] M3: единый локальный стиль, вход, dashboard, компактные заявки, объекты и карточки.
 - [ ] M4: мобильный интерфейс, изоляция кеша пользователей, перезапуск offline, очередь и восстановление связи.
@@ -50,3 +50,5 @@ M5: `venv/bin/python -m pytest -q`, syntax checks JS, `git diff --check`. В б�
 ## Outcomes & Retrospective
 
 Baseline: 161 passed, 6 subtests passed за 23.77 s. Дальнейшие результаты записывать после каждого milestone. Публикация/HTTPS на сервере заказчика и реальные проверки GPS на телефоне требуют соответствующего окружения; локальная проверка не подменяет их.
+
+M1 outcome: 36 passed, 6 subtests passed (new object CRUD/snapshot/coordinate/migration tests plus existing assets, DB init, filters, maintenance). Legacy DB without attachments exposed missing-table index assumption; index creation now checks table existence. Closed-ticket SLA now freezes at cancellation instead of growing forever.
