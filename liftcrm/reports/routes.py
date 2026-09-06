@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone, time, date
 from zoneinfo import ZoneInfo
 from flask import Blueprint, jsonify, request
 from flask_login import current_user, login_required
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import selectinload
 from ..db import SessionLocal, Ticket, Asset, Building, Master, Customer, Contract, MaintenancePlan
 from ..assets.routes import serialize_asset, serialize_maintenance_plan
@@ -68,7 +69,7 @@ def dashboard():
         queue = sorted(active,key=lambda t:(0 if t.priority=='EMERGENCY' else 1 if t in overdue else 2, to_utc(t.created_at) or datetime.now(timezone.utc)))
         return jsonify(active=len(active),unassigned=sum(not t.assigned_master_id for t in active),overdue=len(overdue),emergency=sum(t.priority=='EMERGENCY' for t in active),completed_today=daily[-1]['completed'],
             buildings=db.query(Building).filter_by(is_active=1).count(),lifts=db.query(Asset).filter_by(status='ACTIVE').count(),
-            due_maintenance=db.query(MaintenancePlan).filter(MaintenancePlan.status=='active',MaintenancePlan.next_due_date<=today).count(),
+            due_maintenance=db.query(MaintenancePlan).filter(or_(MaintenancePlan.status=='overdue',and_(MaintenancePlan.status=='active',MaintenancePlan.next_due_date<=today))).count(),
             statuses=dict(Counter(t.status for t in active)),daily=daily,attention=[serialize_ticket(t) for t in queue[:7]],
             masters=[dict(id=m.id,name=m.name,active=bool(m.is_active),backlog=sum(t.assigned_master_id==m.id for t in active)) for m in masters],updated_at=datetime.now(timezone.utc).isoformat())
 

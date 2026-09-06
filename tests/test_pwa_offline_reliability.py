@@ -22,7 +22,7 @@ def test_service_worker_does_not_cache_api_or_authenticated_responses():
 def test_service_worker_makes_deploy_updates_predictable():
     source = read_repo_file("static/sw.js")
 
-    assert "const CACHE_NAME = \"liftcrm-shell-v7\"" in source
+    assert "const CACHE_NAME = \"liftcrm-shell-v8\"" in source
     assert "self.skipWaiting()" in source
     assert "self.clients.claim()" in source
     assert "caches.delete(name)" in source

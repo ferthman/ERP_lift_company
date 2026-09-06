@@ -150,3 +150,39 @@ def test_ticket_search_handles_cyrillic_id_and_literal_wildcards(crm):
     assert tid in [row['id'] for row in crm.get('/api/tickets',query_string={'q':'70%_х'}).json]
     assert tid not in [row['id'] for row in crm.get('/api/tickets',query_string={'q':'70%_другое'}).json]
     assert crm.get('/api/tickets?date_from=2026-12-31&date_to=2026-01-01').status_code==400
+
+
+def test_dashboard_counts_due_active_and_explicitly_overdue_maintenance(crm):
+    from zoneinfo import ZoneInfo
+    from liftcrm.db import MaintenancePlan
+    before=crm.get('/api/dashboard').json['due_maintenance']
+    today=datetime.now(ZoneInfo('Asia/Almaty')).date()
+    with SessionLocal() as db:
+        asset=Asset(address='Maintenance KPI regression')
+        db.add(asset);db.flush()
+        for status,offset in [('active',-1),('active',0),('active',1),('overdue',-1),('overdue',1),('paused',-1),('completed',-1)]:
+            db.add(MaintenancePlan(asset_id=asset.id,title='KPI regression',interval_type='monthly',status=status,next_due_date=today+timedelta(days=offset)))
+        db.commit()
+    assert crm.get('/api/dashboard').json['due_maintenance']==before+4
+
+
+def test_technician_search_closed_links_are_accessible_only_to_owner(crm):
+    import uuid
+    marker='HistoryLink-'+uuid.uuid4().hex
+    with SessionLocal() as db:
+        masters=db.query(Master).order_by(Master.id).limit(2).all()
+        owner=db.query(User).filter_by(master_id=masters[0].id,role='technician').first()
+        ids=[]
+        for archived in [None,datetime.now(timezone.utc)]:
+            ticket=Ticket(object_name=marker,lat=43.2,lon=76.9,status='COMPLETED',assigned_master_id=masters[0].id,archived_at=archived)
+            db.add(ticket);db.flush();ids.append(ticket.id)
+        foreign=Ticket(object_name=marker,lat=43.2,lon=76.9,status='COMPLETED',assigned_master_id=masters[1].id)
+        db.add(foreign);db.commit();owner_id=owner.id;foreign_id=foreign.id
+    with crm.session_transaction() as session: session['_user_id']=str(owner_id)
+    assert not set(ids)&{t['id'] for t in crm.get('/api/me/tickets').json}
+    found=crm.get('/api/search',query_string={'q':marker}).json['items']
+    assert {item['id'] for item in found if item['type']=='ticket'}==set(ids)
+    for item in found:
+        assert item['url']==f'/mobile?ticket={item["id"]}'
+        assert crm.get(f'/api/tickets/{item["id"]}').status_code==200
+    assert crm.get(f'/api/tickets/{foreign_id}').status_code==403

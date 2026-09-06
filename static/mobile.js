@@ -790,7 +790,13 @@ async function openTicket(id) {
   if (state.online && !queued) {
     try {
       const res = await mobileFetch(`/api/tickets/${id}`);
-      if([403,404].includes(res.status)){elements.ticketDetailCard?.classList.add('hidden');await withStore('tickets_cache','readwrite',store=>store.delete(id));return;}
+      if([403,404].includes(res.status)){
+        state.selectedId=null;
+        await withStore('tickets_cache','readwrite',store=>store.delete(id));
+        renderDetail(null);
+        elements.detail.textContent='Заявка не найдена или недоступна вашей учётной записи.';
+        return;
+      }
       if (res.ok) {
         ticket = await res.json();
         await saveTicketCache(ticket);
@@ -1152,7 +1158,7 @@ async function init() {
   await refreshTickets();
   await updateSyncIndicators();
   const deepTicket=Number(new URLSearchParams(location.search).get('ticket'));
-  if(deepTicket&&state.tickets.some(t=>t.id===deepTicket))await openTicket(deepTicket);
+  if(Number.isSafeInteger(deepTicket)&&deepTicket>0)await openTicket(deepTicket);
   await syncAll();
   window.addEventListener("online", async () => {
     state.online = true;
