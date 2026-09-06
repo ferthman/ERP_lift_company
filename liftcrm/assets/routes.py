@@ -13,6 +13,7 @@ from ..utils.audit import log_audit
 from ..utils.security import role_required
 from ..utils.time import to_utc
 from .service import normalize_text
+from ..buildings.service import link_asset, coordinates
 
 bp = Blueprint("assets", __name__)
 logger = logging.getLogger(__name__)
@@ -76,6 +77,8 @@ def serialize_asset(asset: Asset):
     return {
         "id": asset.id,
         "address": asset.address,
+        "building_id": asset.building_id,
+        "building_name": asset.building.name if asset.building else None,
         "entrance": asset.entrance,
         "lift_label": asset.lift_label,
         "serial_no": asset.serial_no,
@@ -602,6 +605,10 @@ def _validate_import_row(row_number, row):
         errors.append({"row": row_number, "field": "address", "message": "address is required"})
     lat = _parse_optional_float(row.get("lat"), "lat", row_number, errors)
     lon = _parse_optional_float(row.get("lon"), "lon", row_number, errors)
+    try:
+        lat, lon = coordinates(lat, lon)
+    except ValueError as exc:
+        errors.append({"row": row_number, "field": "lat/lon", "message": str(exc)})
     status = _normalize_import_status(row.get("status"), row_number, errors)
     if errors:
         return None, errors
@@ -1002,6 +1009,7 @@ def generate_ticket_from_maintenance_plan(plan_id):
             priority="MEDIUM",
             status="NEW",
             asset_id=asset.id,
+            building_id=link_asset(db, asset).id,
             assigned_master_id=plan.assigned_master_id,
             maintenance_plan_id=plan.id,
             maintenance_due_date=due_date,
@@ -1077,7 +1085,11 @@ def complete_maintenance_plan(plan_id):
 def list_assets():
     search = request.args.get("search")
     with SessionLocal() as db:
-        assets = db.query(Asset).order_by(Asset.id.desc()).all()
+        query = db.query(Asset)
+        if current_user.role == 'technician':
+            if not current_user.master_id: return jsonify([])
+            query = query.filter(Asset.id.in_(db.query(Ticket.asset_id).filter(Ticket.assigned_master_id==current_user.master_id, Ticket.archived_at.is_(None))))
+        assets = query.order_by(Asset.id.desc()).all()
         if search:
             term = normalize_text(search)
             if term:
@@ -1130,6 +1142,11 @@ def create_asset():
         if asset.status not in {"ACTIVE", "INACTIVE"}:
             return jsonify({"error": "Invalid status"}), 400
         db.add(asset)
+        try:
+            asset.lat, asset.lon = coordinates(asset.lat, asset.lon)
+            link_asset(db, asset, data.get("building_id"))
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
         db.commit()
         db.refresh(asset)
         return jsonify(serialize_asset(asset)), 201
@@ -1199,6 +1216,11 @@ def update_asset(asset_id):
                 return jsonify({"error": str(exc)}), 400
             asset.customer_id = customer_id
             asset.contract_id = contract_id
+        try:
+            asset.lat, asset.lon = coordinates(asset.lat, asset.lon)
+            link_asset(db, asset, data.get("building_id"), regroup=any(k in data for k in ("address","customer_id","contract_id")))
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
         asset.updated_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(asset)
@@ -1293,6 +1315,7 @@ def import_assets():
                 updated_at=now,
             )
             db.add(asset)
+            link_asset(db, asset)
             if serial_key:
                 seen_serials.add(serial_key)
             if composite_key:

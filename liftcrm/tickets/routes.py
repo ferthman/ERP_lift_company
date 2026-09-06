@@ -1,12 +1,16 @@
+from ..buildings.service import link_asset, ensure_building, coordinates
+from ..db import Building
 import logging
 import math
 import os
 import json
+import uuid
+from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone
 
 from flask import Blueprint, abort, current_app, jsonify, request, send_from_directory
 from flask_login import login_required, current_user
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from werkzeug.security import generate_password_hash
 
 from .service import (
@@ -300,6 +304,8 @@ def list_tickets():
         date_to = datetime.strptime(date_to_raw, "%Y-%m-%d").date() if date_to_raw else None
     except ValueError:
         return jsonify({"error": "Invalid date range"}), 400
+    if date_from and date_to and date_from > date_to:
+        return jsonify(error="Начало периода позже окончания"),400
     start_dt = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc) if date_from else None
     end_dt = datetime.combine(date_to, datetime.max.time(), tzinfo=timezone.utc) if date_to else None
     with SessionLocal() as db:
@@ -325,19 +331,12 @@ def list_tickets():
         if end_dt:
             query = query.filter(Ticket.created_at <= end_dt)
         if q:
-            pattern = f"%{q}%"
-            query = query.outerjoin(Asset).filter(
-                or_(
-                    Ticket.object_name.ilike(pattern),
-                    Ticket.address.ilike(pattern),
-                    Ticket.description.ilike(pattern),
-                    Ticket.email.ilike(pattern),
-                    Asset.address.ilike(pattern),
-                    Asset.serial_no.ilike(pattern),
-                    Asset.lift_label.ilike(pattern),
-                    Asset.entrance.ilike(pattern),
-                )
-            )
+            term = q.casefold()
+            match_fields = (Ticket.object_name, Ticket.address, Ticket.description, Ticket.email, Asset.address, Asset.serial_no, Asset.lift_label, Asset.entrance)
+            conditions = [func.crm_casefold(field).contains(term, autoescape=True) for field in match_fields]
+            if q.lstrip('#').isdigit():
+                conditions.append(Ticket.id == int(q.lstrip('#')))
+            query = query.outerjoin(Asset).filter(or_(*conditions))
         if kanban_view:
             open_statuses = ["NEW", "ASSIGNED", "ACCEPTED", "IN_PROGRESS", "WAITING"]
             closed_statuses = ["COMPLETED", "CANCELLED"]
@@ -707,7 +706,7 @@ def create_ticket():
             asset_id = int(asset_id)
         except Exception:
             return jsonify({"error": "Invalid asset_id"}), 400
-    if "object_name" not in data and not asset_id:
+    if "object_name" not in data and not asset_id and not data.get("building_id"):
         return jsonify({"error": "Missing field: object_name"}), 400
     priority = _normalize_priority(data.get("priority"))
     if not priority:
@@ -737,20 +736,33 @@ def create_ticket():
             asset = db.get(Asset, asset_id)
             if not asset:
                 return jsonify({"error": "Asset not found"}), 404
-        object_name = (data.get("object_name") or "").strip()
+        building = None
+        if data.get("building_id"):
+            try: building = db.get(Building, int(data["building_id"]))
+            except (ValueError, TypeError): return jsonify(error="Некорректный объект"),400
+            if not building or not building.is_active: return jsonify(error="Объект не найден или отключён"),400
+            if asset and asset.building_id != building.id: return jsonify(error="Лифт относится к другому объекту"),400
+        object_name = (data.get("object_name") or (building.name if building else "")).strip()
         if not object_name and asset:
             object_name = (asset.lift_label or asset.serial_no or asset.address or "Лифт")
-        address = data.get("address")
+        address = data.get("address") or (building.address if building else None)
         if not address and asset:
             address = asset.address
         lat = data.get("lat")
         lon = data.get("lon")
         if (lat is None or lon is None) and asset and asset.lat is not None and asset.lon is not None:
             lat, lon = asset.lat, asset.lon
+        if building:
+            lat = lat if lat is not None else building.lat
+            lon = lon if lon is not None else building.lon
+        try:
+            lat, lon = coordinates(lat, lon)
+        except ValueError as exc:
+            return jsonify(error=str(exc)),400
         if lat is None or lon is None:
             return jsonify({"error": "Missing field: lat/lon"}), 400
-        lat = float(lat)
-        lon = float(lon)
+        if not object_name:
+            return jsonify(error="Укажите название объекта"),400
         if asset and (asset.lat is None or asset.lon is None) and rounded_coords(lat, lon)[0] is not None:
             asset.lat = asset.lat if asset.lat is not None else lat
             asset.lon = asset.lon if asset.lon is not None else lon
@@ -769,10 +781,15 @@ def create_ticket():
             asset_id=asset.id if asset else None,
         )
         _apply_priority_sla_defaults(t)
-        if not asset and address:
+        if not asset and address and not building:
             asset = upsert_asset_from_ticket(db, object_name, address, lat, lon)
             if asset:
                 t.asset_id = asset.id
+        if asset:
+            building = link_asset(db, asset)
+        elif not building and address:
+            building = ensure_building(db, address, lat, lon, name=object_name)
+        t.building_id = building.id if building else None
         m = auto_assign_master(db)
         if m:
             t.assigned_master_id, t.status = m.id, "ASSIGNED"
@@ -1049,6 +1066,17 @@ def get_ticket(ticket_id):
             }
             for c in (t.comments or [])
         ]
+        if not is_technician(current_user.role):
+            from ..reports.routes import problem_signal
+            related = db.query(Ticket).filter(Ticket.id != t.id, Ticket.archived_at.is_(None), Ticket.status.in_(["NEW","ASSIGNED","ACCEPTED","IN_PROGRESS","WAITING"]))
+            if t.asset_id:
+                related = related.filter_by(asset_id=t.asset_id)
+            elif t.building_id:
+                related = related.filter_by(building_id=t.building_id)
+            else:
+                related = related.filter(Ticket.id == -1)
+            payload["related_tickets"] = [{"id":r.id,"object_name":r.object_name,"status":r.status} for r in related.limit(10).all()]
+            payload["problem_signal"] = problem_signal(db.query(Ticket).filter_by(asset_id=t.asset_id).all()) if t.asset_id else None
         return jsonify(payload)
 
 
@@ -1746,13 +1774,33 @@ def upload_file(ticket_id):
         return jsonify({"error": "Empty filename"}), 400
     if not ("." in f.filename and f.filename.rsplit(".", 1)[-1].lower() in ALLOWED_EXTS):
         return jsonify({"error": "Only png/jpg/jpeg/webp allowed"}), 400
-    fname = secure_filename(f.filename)
-    unique = f"{int(datetime.now(timezone.utc).timestamp())}_{fname}"
-    f.save(os.path.join(current_app.config["UPLOAD_FOLDER"], unique))
+    fname = secure_filename(f.filename) or 'photo.jpg'
+    upload_key = None
+    if request.form.get('upload_id'):
+        try:
+            upload_id = str(uuid.UUID(request.form['upload_id']))
+        except (ValueError, AttributeError):
+            return jsonify(error="Некорректный идентификатор фото"),400
+        upload_key = f"{current_user.id}:{ticket_id}:{upload_id}"
+    unique = f"{uuid.uuid4().hex}_{fname}"
+    path = os.path.join(current_app.config["UPLOAD_FOLDER"], unique)
     with SessionLocal() as db:
-        a = Attachment(ticket_id=ticket_id, filename=unique, orig_name=fname)
+        if upload_key:
+            existing = db.query(Attachment).filter_by(upload_key=upload_key).first()
+            if existing:
+                return jsonify(ok=True,url=f"/uploads/{existing.filename}",name=existing.orig_name)
+        f.save(path)
+        a = Attachment(ticket_id=ticket_id, filename=unique, orig_name=fname, upload_key=upload_key)
         db.add(a)
-        db.flush()
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            os.remove(path)
+            existing = db.query(Attachment).filter_by(upload_key=upload_key).first() if upload_key else None
+            if existing:
+                return jsonify(ok=True,url=f"/uploads/{existing.filename}",name=existing.orig_name)
+            raise
         ticket = db.get(Ticket, ticket_id)
         if ticket:
             bump_ticket_version(ticket)

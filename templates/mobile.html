@@ -1,12 +1,13 @@
 <!doctype html>
 <html lang="ru">
 <head>
+  <link rel="icon" href="/static/icons/icon-192.png">
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>PremierLift CRM — Мастер</title>
   <link rel="manifest" href="/static/manifest.mobile.webmanifest">
-  <meta name="theme-color" content="#0f172a">
-  <script src="https://cdn.tailwindcss.com"></script>
+  <meta name="theme-color" content="#183b34"><meta name="apple-mobile-web-app-capable" content="yes"><link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+  <link rel="stylesheet" href="/static/vendor/tailwind.css"><link rel="stylesheet" href="/static/crm.css"><link rel="stylesheet" href="/static/mobile.css">
   <style>
     .mobile-action-grid button:disabled{
       cursor:not-allowed;
@@ -14,29 +15,18 @@
     }
   </style>
 </head>
-<body class="bg-slate-100 text-slate-900 min-h-screen">
-  <main class="max-w-3xl mx-auto px-4 py-4 space-y-4">
-    <header class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <h1 class="text-xl font-semibold">Приложение мастера</h1>
-        <p class="text-sm text-slate-600">Оффлайн-очередь для заявок; начало работы подтверждается геозоной 500 м.</p>
-      </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <a href="/admin?ui=admin" class="px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">
-          Перейти в админку
-        </a>
-        <span id="sync-status" class="px-3 py-1 rounded-full text-xs font-semibold bg-slate-200 text-slate-700">—</span>
-        <button id="btn-sync" class="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm">Синхронизировать</button>
-        <button id="btn-reset" class="px-3 py-2 rounded-xl bg-slate-100 ring-1 ring-slate-200 text-sm">Сброс офлайн-данных</button>
-      </div>
-    </header>
+<body class="mobile-page bg-slate-100 text-slate-900 min-h-screen">
+  <div id="mobile-auth" class="hidden mobile-auth"><h1>Войдите в приложение</h1><p>Очередь сохранена на этом устройстве. Войдите под своей учётной записью, чтобы продолжить.</p><a class="primary" href="/login?next=/mobile">Перейти ко входу</a></div>
+  <main id="mobile-workspace" class="max-w-3xl mx-auto px-4 py-4 space-y-4">
+    <header class="mobile-header"><a href="/mobile" class="brand"><span class="brand-mark">↟</span><span>Premier<span class="brand-light">Lift</span><small>Приложение мастера</small></span></a><button id="open-settings" class="mobile-settings-button" aria-label="Настройки приложения">⚙</button></header>
+    <div class="mobile-greeting"><span class="eyebrow">ВАША СМЕНА</span><h1>Хорошего рабочего дня</h1><p id="mobile-user-label">{{ username or 'Мастер' }}</p></div>
+    <div class="mobile-connection"><span id="sync-status" role="status">Подключаемся…</span><button id="btn-sync" aria-label="Обновить и синхронизировать">Обновить ↻</button></div>
+    <div id="mobile-counters" class="mobile-counters"></div>
+    <div class="mobile-filterbar"><input id="mobile-search" type="search" placeholder="Адрес или номер заявки" aria-label="Поиск моих заявок"><select id="mobile-filter" aria-label="Фильтр заявок"><option value="all">Все активные</option><option value="new">Новые</option><option value="progress">В работе</option><option value="urgent">Срочные</option></select></div>
+    <nav class="mobile-bottom-nav" aria-label="Разделы приложения"><button id="tab-tickets" class="active"><span aria-hidden="true">▤</span>Мои заявки</button><button id="tab-history"><span aria-hidden="true">◷</span>История</button><button id="tab-settings"><span aria-hidden="true">⚙</span>Настройки</button></nav>
 
     <section class="bg-white rounded-2xl shadow p-4 space-y-3">
       <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div class="flex items-center gap-2">
-          <button id="tab-tickets" class="px-3 py-1 rounded-full text-xs font-semibold bg-slate-900 text-white">Мои заявки</button>
-          <button id="tab-history" class="px-3 py-1 rounded-full text-xs font-semibold bg-slate-200 text-slate-700">История</button>
-        </div>
         <span id="last-sync" class="text-xs text-slate-500">—</span>
       </div>
       <div id="tickets-panel" class="space-y-2">
@@ -73,9 +63,9 @@
       </div>
     </section>
 
-    <section id="ticket-detail-card" class="bg-white rounded-2xl shadow p-4 space-y-3">
+    <section id="ticket-detail-card" class="hidden mobile-detail bg-white rounded-2xl shadow p-4 space-y-3">
       <div class="flex items-center justify-between">
-        <h2 class="font-semibold">Детали заявки</h2>
+        <button id="mobile-back" class="text-link">← К списку</button><h2 class="font-semibold">Заявка</h2>
         <span id="ticket-status" class="text-xs text-slate-500">—</span>
       </div>
       <div id="ticket-detail" class="text-sm text-slate-700">Выберите заявку в списке.</div>
@@ -89,11 +79,21 @@
       <div id="history-detail" class="text-sm text-slate-700">Выберите заявку в списке истории.</div>
     </section>
   </main>
+  <dialog id="mobile-settings" class="mobile-settings-dialog">
+    <div class="flex justify-between items-center"><h2 class="text-xl font-semibold">Настройки</h2><button id="close-settings" class="secondary">Закрыть</button></div>
+    <p class="muted text-sm mt-5">После первого входа заявки доступны без интернета. Изменения отправятся, когда связь восстановится.</p>
+    <button id="btn-install" class="primary mt-5 w-full hidden">Установить приложение</button>
+    <p class="muted text-sm mt-4">На iPhone: «Поделиться» → «На экран Домой». Для установки на телефон нужен защищённый адрес HTTPS.</p>
+    <button id="btn-reset" class="secondary mt-5 w-full">Сброс офлайн-данных</button>
+    <button id="mobile-logout" class="secondary mt-3 w-full">Выйти из аккаунта</button>
+  </dialog>
 
   <script>
     window.MOBILE_BOOTSTRAP = {
       notTechnician: false,
-      username: {{ (username or '')|tojson }}
+      username: {{ (username or '')|tojson }},
+      userId: {{ (user_id or none)|tojson }},
+      offlineShell: {{ (offline_shell or false)|tojson }}
     };
   </script>
   <script src="/static/mobile-2gis.js"></script>

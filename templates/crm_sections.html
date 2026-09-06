@@ -1,0 +1,32 @@
+<section id="view-overview">
+  <div class="page-heading"><div><span class="eyebrow">ОПЕРАТИВНЫЙ ОБЗОР</span><h1>Всё под контролем</h1><p>Что происходит с заявками и командой прямо сейчас.</p></div><div class="heading-tools"><span class="date-chip" id="today-label"></span><button class="primary" data-create-ticket>＋ Новая заявка</button></div></div>
+  <div id="dashboard-content" aria-live="polite"><div class="empty-state">Загружаем обзор…</div></div>
+  <footer class="dashboard-footer"><span>Данные вашей сервисной команды</span><button class="text-link" id="overview-refresh">Обновить данные ↻</button></footer>
+</section>
+<section id="view-buildings" class="hidden">
+  <div class="page-heading"><div><span class="eyebrow">ОБЪЕКТЫ КОМПАНИИ</span><h1>Адреса под нашей заботой</h1><p>Контакты, лифты и история работ по каждому объекту.</p></div><button id="new-building" class="primary">＋ Добавить объект</button></div>
+  <input id="buildings-search" class="w-full mb-5 px-4 py-3 rounded-xl bg-white border border-slate-200" placeholder="Найти объект по названию или адресу" aria-label="Найти объект">
+  <div id="buildings-grid" class="building-grid"></div>
+</section>
+<section id="view-customers" class="hidden"><div class="page-heading"><div><span class="eyebrow">ОТНОШЕНИЯ С КЛИЕНТАМИ</span><h1>Клиенты и договоры</h1><p>Контактные лица, условия и сроки обслуживания.</p></div></div><div id="customers-slot" class="panel p-5"></div></section>
+<section id="view-masters" class="hidden"><div class="page-heading"><div><span class="eyebrow">СЕРВИСНАЯ КОМАНДА</span><h1>Мастера</h1><p>Текущая загрузка и доступность специалистов.</p></div></div><div id="masters-overview" class="building-grid"></div></section>
+<section id="view-reports" class="hidden">
+  <div class="page-heading"><div><span class="eyebrow">АНАЛИТИКА РАБОТ</span><h1>Отчёты</h1><p>Заявки за период по дате создания. Время Алматы.</p></div></div>
+  <form id="reports-form" class="report-filter"><label>С даты<input id="reports-from" type="date" required></label><label>По дату<input id="reports-to" type="date" required></label><button class="primary" type="submit">Показать отчёт</button><span id="report-period-note" class="muted text-xs">Включая архивные заявки</span></form>
+  <div id="reports-content"></div>
+</section>
+<div id="create-scrim" class="create-scrim hidden"></div>
+<dialog id="building-dialog" class="rounded-2xl p-6 w-full max-w-xl" aria-labelledby="building-dialog-title">
+  <div class="create-title"><h2 id="building-dialog-title">Новый объект</h2><button type="button" id="building-dialog-close" class="create-close" aria-label="Закрыть">×</button></div>
+  <form id="building-form" class="building-form">
+    <input name="id" type="hidden"><label class="span-full">Название объекта *<input name="name" required placeholder="Например, ЖК Центральный"></label>
+    <label class="span-full">Адрес *<input name="address" required placeholder="Город, улица, дом"></label>
+    <label>Широта<input name="lat" type="number" step="any" min="-90" max="90" placeholder="43.2389"></label><label>Долгота<input name="lon" type="number" step="any" min="-180" max="180" placeholder="76.8897"></label>
+    <label>Клиент<select name="customer_id" id="building-customer"></select></label><label>Договор<select name="contract_id" id="building-contract"></select></label>
+    <label>Контактное лицо<input name="contact_person"></label><label>Телефон<input name="phone" type="tel"></label>
+    <label>Email<input name="email" type="email"></label><label>Состояние<select name="is_active"><option value="1">Обслуживается</option><option value="0">Не обслуживается</option></select></label>
+    <label class="span-full">Заметки<textarea name="notes" rows="2" placeholder="Доступ к объекту, ключи, важные детали"></textarea></label>
+    <div class="span-full flex justify-between items-center gap-3"><span id="building-form-msg" role="status" class="text-xs text-red-700"></span><button class="primary" type="submit">Сохранить объект</button></div>
+  </form>
+</dialog>
+<div id="crm-toast" class="toast hidden" role="status"></div>

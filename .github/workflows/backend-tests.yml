@@ -34,3 +34,11 @@ jobs:
 
       - name: Run pytest
         run: python -m pytest -q
+
+      - name: Set up Node.js for mobile regression tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run mobile regression tests
+        run: node --test tests/*.test.cjs

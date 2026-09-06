@@ -13,8 +13,8 @@ def test_admin_header_is_responsive_on_narrow_viewports():
 
     assert "data-app-nav" in source
     assert "overflow-x-auto" in source
-    assert "lg:flex-row" in source
-    assert "lg:w-auto" in source
+    assert 'id="menu-toggle"' in source
+    assert "@media(max-width:800px)" in read_repo_file("static/crm.css")
     assert "[data-app-nav] > button{flex:0 0 auto;white-space:nowrap}" in source
 
 

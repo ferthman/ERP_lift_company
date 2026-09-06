@@ -3,7 +3,7 @@
   "short_name": "PremierLift CRM",
   "start_url": "/mobile",
   "display": "standalone",
-  "theme_color": "#0f172a",
+  "theme_color": "#183b34",
   "background_color": "#ffffff",
   "icons": [
     {

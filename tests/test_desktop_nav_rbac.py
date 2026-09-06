@@ -71,11 +71,11 @@ class DesktopNavRbacTest(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         body = res.get_data(as_text=True)
         for label in [
-            "Панель",
-            "Контроль этапов",
+            "Обзор",
+            "Доска работ",
             "Лифты",
             "Объекты",
-            "Админ",
+            "Пользователи",
             "Пользователи и допуск",
         ]:
             self.assertIn(label, body)
@@ -86,9 +86,9 @@ class DesktopNavRbacTest(unittest.TestCase):
         res = self.client.get("/admin")
         self.assertEqual(res.status_code, 200)
         body = res.get_data(as_text=True)
-        for label in ["Панель", "Контроль этапов", "Лифты", "Объекты"]:
+        for label in ["Обзор", "Доска работ", "Лифты", "Объекты"]:
             self.assertIn(label, body)
-        self.assertNotIn("Админ", body)
+        self.assertNotIn("Пользователи", body)
         self.assertNotIn("Пользователи и допуск", body)
         self.assertNotIn("Приложение мастера", body)
 
@@ -110,7 +110,7 @@ class DesktopNavRbacTest(unittest.TestCase):
         res = self.client.get("/admin")
         self.assertEqual(res.status_code, 200)
         body = res.get_data(as_text=True)
-        for label in ["Панель", "Контроль этапов", "Лифты", "Объекты", "Админ", "Пользователи и допуск"]:
+        for label in ["Обзор", "Доска работ", "Лифты", "Объекты", "Пользователи", "Пользователи и допуск"]:
             self.assertNotIn(label, body)
         self.assertNotIn("const API = location.origin", body)
         self.assertIn("Вернуться в приложение мастера", body)

@@ -69,7 +69,7 @@ class MobileLoginFlowTest(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         body = res.get_data(as_text=True)
         self.assertIn("Вход", body)
-        self.assertIn("Если у вас нет доступа, обратитесь к администратору.", body)
+        self.assertIn("Обратитесь к вашему администратору.", body)
 
     def test_mobile_unauthenticated_redirects_to_login(self):
         res = self.client.get("/mobile")
